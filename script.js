@@ -32,8 +32,13 @@ let cachedImageData = null;
 
 
 // -----------------------------------------------------------------------------
-// Mandelbrot-Berechnung und Rendering
+// Mandelbrot-Berechnung
 // -----------------------------------------------------------------------------
+
+// Berechnet die Anzahl der Iterationen für einen Bildpunkt, 
+// bis die Divergenz eintritt
+// Optimierungen: Schnelle Überprüfungen für Punkte, die sicher in der 
+// Menge liegen
 function mandelbrotIterations(cx, cy, maxIterations) {
 
   // Schnelle Überprüfung: Periode-2-Glühbirne (Kreis auf der linken Seite)
@@ -47,6 +52,8 @@ function mandelbrotIterations(cx, cy, maxIterations) {
     return maxIterations;
   }
 
+  // Standard-Iterationen für Punkte, die nicht in den schnellen 
+  // Überprüfungen liegen
   let zx = 0;
   let zy = 0;
   let iteration = 0;
@@ -61,7 +68,9 @@ function mandelbrotIterations(cx, cy, maxIterations) {
   return iteration;
 }
 
+// Berechnet das Mandelbrot-Bild für die gegebenen Parameter
 function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations) {
+
   const data = new Uint16Array(width * height);
 
   for (let py = 0; py < height; py++) {
@@ -79,22 +88,54 @@ function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations)
 // Rendering-Funktionen für die Zahlenmatrix
 // -----------------------------------------------------------------------------
 
+// Konvertiert HSV-Farbraum zu RGB
+function hsvToRgb(h, s, v) {
+  const c = v * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = v - c;
+
+  let r, g, b;
+
+  if (h < 60) {
+    r = c; g = x; b = 0;
+  } else if (h < 120) {
+    r = x; g = c; b = 0;
+  } else if (h < 180) {
+    r = 0; g = c; b = x;
+  } else if (h < 240) {
+    r = 0; g = x; b = c;
+  } else if (h < 300) {
+    r = x; g = 0; b = c;
+  } else {
+    r = c; g = 0; b = x;
+  }
+
+  return [
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((b + m) * 255)
+  ];
+}
+
 // Einfache Farbzuordnung basierend auf der Anzahl der Iterationen
-// Punkte, die zur Divergenz führen, werden heller dargestellt
+// Punkte, die zur Divergenz führen, werden farbig dargestellt
 // Punkte, die innerhalb der Menge liegen, werden schwarz dargestellt
-// -----------------------------------------------------------------------------
-
 function iterationToColor(iterations, maxIterations) {
-    if (iterations === maxIterations) {
-    return [0, 0, 0];
-    }
 
-  const value = Math.floor((iterations / maxIterations) * 255);
-    return [value, value, 255 - value];
+  if (iterations === maxIterations) {
+    return [0, 0, 0];
+  }
+
+  // Blue -> Yellow
+  // const value = Math.floor((iterations / maxIterations) * 255);
+  // return [value, value, 255 - value];
+
+  // Farbbanding mit HSV-Farbraum für ein schöneres Farbspektrum
+  const hue = Math.floor((iterations / maxIterations) * 360);
+  return hsvToRgb(hue, 1, 1);
 }
 
 // Rendering-Funktion für die Zahlenmatrix
-// -----------------------------------------------------------------------------
 function renderMandelbrot(ctx, width, height, data, maxIterations) {
   const imageData = ctx.createImageData(width, height);
   const pixels = imageData.data;
