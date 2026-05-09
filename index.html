@@ -1,12 +1,90 @@
 <!DOCTYPE html>
 <html lang="de">
+   
 <head>
     <meta charset="UTF-8">
     <title>Mandelbrot-Viewer</title>
+    <style>
+        body {
+            background-color: #e9e9e9;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            background-color: white;
+            padding: 10px;
+            border-bottom: 1px solid #aaaaaa;
+            display: flex;
+            gap: 10px;
+        }
+
+        .canvas-wrapper {
+            width:100%;
+            max-width: 1200px;
+        }
+
+        #info {
+            width: 300px;
+            font-family: Verdana, Helvetica, Arial, sans-serif;
+            font-size: 14px;
+            background: #e9e9e9;
+            padding: 10px;
+            border: 1px solid #ccc;
+            overflow-y: auto;
+            height: fit-content;
+        }
+
+        .controls {
+            font-family: Verdana, Helvetica, Arial, sans-serif;
+            font-size: 14px;
+            background: #e9e9e9;
+            padding: 10px;
+            border: 0px solid #ccc;
+            overflow-y: auto;
+            height: fit-content;
+        }
+
+        h1 {
+            margin: 0 0 10px 0;
+            font-family:  Verdana, Helvetica, Arial, sans-serif;
+        }
+
+        #mandelbrotCanvas {
+            max-width: 1200px;
+            max-height: 900px;
+            width: 100%;
+            aspect-ratio: 1200 / 900;
+            border: 1px solid black;
+            display: block;
+        }
+    </style>
 </head>
+
 <body>
-    <h1>Unser Mandelbrot-Viewer</h1>
-    <canvas id="mandelbrotCanvas" width="1200" height="900" style="border:1px solid black;"></canvas>
+
+    <div style="padding: 10px;">
+        <h1>Mandelbrot-Viewer</h1>
+    </div>
+
+    <div class="container">
+        <div class="canvas-wrapper">
+            <canvas id="mandelbrotCanvas" width="1200" height="900" style="border:1px solid black;"></canvas>
+        </div>
+        <div id="info">Lade...</div>
+    </div>
+
+    <div class="controls">
+        <h2>Steuerung</h2>
+        <ul>
+            <li><strong>Zoom-In:</strong> rechte Maustaste + Mausrad</li>
+            <li><strong>Zoom-Out:</strong> linke Maustaste</li>
+            <li><strong>Iterationstiefe +/-:</strong> Mausrad</li>
+        </ul>
+    </div>
+
     <script src="script.js"></script>
+
 </body>
-</html> 
+
+</html>

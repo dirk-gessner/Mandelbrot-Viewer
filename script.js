@@ -46,7 +46,7 @@ function mandelbrotIterations(cx, cy, maxIterations) {
   if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) {
     return maxIterations;
   }
-      
+
   let zx = 0;
   let zy = 0;
   let iteration = 0;
@@ -76,21 +76,23 @@ function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations)
 }
 
 // -----------------------------------------------------------------------------
+// Rendering-Funktionen für die Zahlenmatrix
+// -----------------------------------------------------------------------------
+
 // Einfache Farbzuordnung basierend auf der Anzahl der Iterationen
 // Punkte, die zur Divergenz führen, werden heller dargestellt
 // Punkte, die innerhalb der Menge liegen, werden schwarz dargestellt
 // -----------------------------------------------------------------------------
 
 function iterationToColor(iterations, maxIterations) {
-  if (iterations === maxIterations) {
+    if (iterations === maxIterations) {
     return [0, 0, 0];
-  }
+    }
 
   const value = Math.floor((iterations / maxIterations) * 255);
-  return [value, value, 255 - value];
+    return [value, value, 255 - value];
 }
 
-// -----------------------------------------------------------------------------
 // Rendering-Funktion für die Zahlenmatrix
 // -----------------------------------------------------------------------------
 function renderMandelbrot(ctx, width, height, data, maxIterations) {
@@ -114,6 +116,9 @@ function renderMandelbrot(ctx, width, height, data, maxIterations) {
 // und Caching des Images
 // -----------------------------------------------------------------------------
 function computeAndCacheMandelbrot() {
+
+    updateInfo();
+
   const data = computeMandelbrot(width, height, view.minX, view.maxX, view.minY, view.maxY, maxIterations);
   cachedImageData = ctx.createImageData(width, height);
   const pixels = cachedImageData.data;
@@ -291,6 +296,22 @@ canvas.addEventListener('mouseup', () => {
   renderScene();
 });
 
+// -----------------------------------------------------------------------------
+// Funktionen für das Info-Panel
+// -----------------------------------------------------------------------------
+function updateInfo() {
+  const infoDiv = document.getElementById('info');
+  infoDiv.innerHTML = `
+    <strong>Aktueller View:</strong><br>
+    X: ${view.minX.toFixed(6)} bis ${view.maxX.toFixed(6)}<br>
+    Y: ${view.minY.toFixed(6)} bis ${view.maxY.toFixed(6)}<br>
+    <strong>Iterationstiefe:</strong> ${maxIterations}<br>
+    <strong>Zoom-Level:</strong> ${(initialView.maxX - initialView.minX) / (view.maxX - view.minX)}x
+  `;
+}
+
+
 // Initiale Berechnung
 computeAndCacheMandelbrot();
+updateInfo();
 renderScene();
