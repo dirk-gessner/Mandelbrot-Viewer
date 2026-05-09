@@ -6,50 +6,68 @@ const ctx = canvas.getContext('2d');
 const width = canvas.width;
 const height = canvas.height;
 
-// Bereich der Mandelbrot-Menge (x: -2.5 bis 1, y: -1 bis 1 – das ist der "Standard"-Bereich)
-const minX = -3, maxX = 1;
-const minY = -1.5, maxY = 1.5;
+// Bereich der Mandelbrot-Menge
+const minX = -3;
+const maxX = 1;
+const minY = -1.5;
+const maxY = 1.5;
 
-// Maximale Iterationen (je höher, desto genauer, aber langsamer)
+// Maximale Iterationen
 const maxIterations = 100;
 
-// Funktion, um zu prüfen, ob ein Punkt zur Mandelbrot-Menge gehört
-function mandelbrot(x, y) {
-    let zx = 0, zy = 0;
-    let iteration = 0;
-    while (zx * zx + zy * zy < 4 && iteration < maxIterations) {
-        let temp = zx * zx - zy * zy + x;
-        zy = 2 * zx * zy + y;
-        zx = temp;
-        iteration++;
-    }
-    return iteration;
+function mandelbrotIterations(cx, cy, maxIterations) {
+  let zx = 0;
+  let zy = 0;
+  let iteration = 0;
+
+  while (zx * zx + zy * zy < 4 && iteration < maxIterations) {
+    const temp = zx * zx - zy * zy + cx;
+    zy = 2 * zx * zy + cy;
+    zx = temp;
+    iteration++;
+  }
+
+  return iteration;
 }
 
-// Zeichnen des Bildes
-function drawMandelbrot() {
-    const imageData = ctx.createImageData(width, height);
-    const data = imageData.data;
+function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations) {
+  const data = new Uint16Array(width * height);
 
+  for (let py = 0; py < height; py++) {
     for (let px = 0; px < width; px++) {
-        for (let py = 0; py < height; py++) {
-            // Umrechnung von Pixel-Koordinaten zu komplexen Zahlen
-            const x = minX + (px / width) * (maxX - minX);
-            const y = minY + (py / height) * (maxY - minY);
-
-            const iterations = mandelbrot(x, y);
-            const color = iterations === maxIterations ? 0 : (iterations * 255 / maxIterations);
-
-            const index = (py * width + px) * 4;
-            data[index] = color;     // Rot
-            data[index + 1] = color; // Grün
-            data[index + 2] = color; // Blau
-            data[index + 3] = 255;   // Alpha (Transparenz)
-        }
+      const x = minX + (px / width) * (maxX - minX);
+      const y = minY + (py / height) * (maxY - minY);
+      data[py * width + px] = mandelbrotIterations(x, y, maxIterations);
     }
+  }
 
-    ctx.putImageData(imageData, 0, 0);
+  return data;
 }
 
-// Zeichnen starten
-drawMandelbrot();
+function iterationToColor(iterations, maxIterations) {
+  if (iterations === maxIterations) {
+    return [0, 0, 0];
+  }
+
+  const value = Math.floor((iterations / maxIterations) * 255);
+  return [value, value, 255 - value];
+}
+
+function renderMandelbrot(ctx, width, height, data, maxIterations) {
+  const imageData = ctx.createImageData(width, height);
+  const pixels = imageData.data;
+
+  for (let i = 0; i < data.length; i++) {
+    const [r, g, b] = iterationToColor(data[i], maxIterations);
+    const idx = i * 4;
+    pixels[idx] = r;
+    pixels[idx + 1] = g;
+    pixels[idx + 2] = b;
+    pixels[idx + 3] = 255;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
+const mandelbrotData = computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations);
+renderMandelbrot(ctx, width, height, mandelbrotData, maxIterations);
