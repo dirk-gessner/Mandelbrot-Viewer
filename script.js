@@ -32,8 +32,13 @@ let cachedImageData = null;
 
 
 // -----------------------------------------------------------------------------
-// Mandelbrot-Berechnung und Rendering
+// Mandelbrot-Berechnung
 // -----------------------------------------------------------------------------
+
+// Berechnet die Anzahl der Iterationen für einen Bildpunkt, 
+// bis die Divergenz eintritt
+// Optimierungen: Schnelle Überprüfungen für Punkte, die sicher in der 
+// Menge liegen
 function mandelbrotIterations(cx, cy, maxIterations) {
 
   // Schnelle Überprüfung: Periode-2-Glühbirne (Kreis auf der linken Seite)
@@ -46,7 +51,9 @@ function mandelbrotIterations(cx, cy, maxIterations) {
   if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) {
     return maxIterations;
   }
-      
+
+  // Standard-Iterationen für Punkte, die nicht in den schnellen 
+  // Überprüfungen liegen
   let zx = 0;
   let zy = 0;
   let iteration = 0;
@@ -61,7 +68,9 @@ function mandelbrotIterations(cx, cy, maxIterations) {
   return iteration;
 }
 
+// Berechnet das Mandelbrot-Bild für die gegebenen Parameter
 function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations) {
+
   const data = new Uint16Array(width * height);
 
   for (let py = 0; py < height; py++) {
@@ -76,23 +85,57 @@ function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations)
 }
 
 // -----------------------------------------------------------------------------
-// Einfache Farbzuordnung basierend auf der Anzahl der Iterationen
-// Punkte, die zur Divergenz führen, werden heller dargestellt
-// Punkte, die innerhalb der Menge liegen, werden schwarz dargestellt
+// Rendering-Funktionen für die Zahlenmatrix
 // -----------------------------------------------------------------------------
 
+// Konvertiert HSV-Farbraum zu RGB
+function hsvToRgb(h, s, v) {
+  const c = v * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = v - c;
+
+  let r, g, b;
+
+  if (h < 60) {
+    r = c; g = x; b = 0;
+  } else if (h < 120) {
+    r = x; g = c; b = 0;
+  } else if (h < 180) {
+    r = 0; g = c; b = x;
+  } else if (h < 240) {
+    r = 0; g = x; b = c;
+  } else if (h < 300) {
+    r = x; g = 0; b = c;
+  } else {
+    r = c; g = 0; b = x;
+  }
+
+  return [
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((b + m) * 255)
+  ];
+}
+
+// Einfache Farbzuordnung basierend auf der Anzahl der Iterationen
+// Punkte, die zur Divergenz führen, werden farbig dargestellt
+// Punkte, die innerhalb der Menge liegen, werden schwarz dargestellt
 function iterationToColor(iterations, maxIterations) {
+
   if (iterations === maxIterations) {
     return [0, 0, 0];
   }
 
-  const value = Math.floor((iterations / maxIterations) * 255);
-  return [value, value, 255 - value];
+  // Blue -> Yellow
+  // const value = Math.floor((iterations / maxIterations) * 255);
+  // return [value, value, 255 - value];
+
+  // Farbbanding mit HSV-Farbraum für ein schöneres Farbspektrum
+  const hue = Math.floor((iterations / maxIterations) * 360);
+  return hsvToRgb(hue, 1, 1);
 }
 
-// -----------------------------------------------------------------------------
 // Rendering-Funktion für die Zahlenmatrix
-// -----------------------------------------------------------------------------
 function renderMandelbrot(ctx, width, height, data, maxIterations) {
   const imageData = ctx.createImageData(width, height);
   const pixels = imageData.data;
@@ -114,6 +157,9 @@ function renderMandelbrot(ctx, width, height, data, maxIterations) {
 // und Caching des Images
 // -----------------------------------------------------------------------------
 function computeAndCacheMandelbrot() {
+
+    updateInfo();
+
   const data = computeMandelbrot(width, height, view.minX, view.maxX, view.minY, view.maxY, maxIterations);
   cachedImageData = ctx.createImageData(width, height);
   const pixels = cachedImageData.data;
@@ -214,9 +260,12 @@ function commitSelection() {
 // korrekt zu interpretieren
 function getCanvasCoords(event) {
   const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+
   return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY,
   };
 }
 
@@ -274,7 +323,7 @@ canvas.addEventListener('wheel', (event) => {
     selection.height = Math.max(20, Math.min(selection.height, height));
   } else {
     maxIterations += event.deltaY < 0 ? 50 : -50;
-    maxIterations = Math.max(10, Math.min(maxIterations, 1000));
+    maxIterations = Math.max(10, Math.min(maxIterations, 2000));
     computeAndCacheMandelbrot();
   }
   renderScene();
@@ -291,6 +340,22 @@ canvas.addEventListener('mouseup', () => {
   renderScene();
 });
 
+// -----------------------------------------------------------------------------
+// Funktionen für das Info-Panel
+// -----------------------------------------------------------------------------
+function updateInfo() {
+  const infoDiv = document.getElementById('info');
+  infoDiv.innerHTML = `
+    <strong>Aktueller View:</strong><br>
+    X: ${view.minX.toFixed(6)} bis ${view.maxX.toFixed(6)}<br>
+    Y: ${view.minY.toFixed(6)} bis ${view.maxY.toFixed(6)}<br>
+    <strong>Iterationstiefe:</strong> ${maxIterations}<br>
+    <strong>Zoom-Level:</strong> ${(initialView.maxX - initialView.minX) / (view.maxX - view.minX)}x
+  `;
+}
+
+
 // Initiale Berechnung
 computeAndCacheMandelbrot();
+updateInfo();
 renderScene();
