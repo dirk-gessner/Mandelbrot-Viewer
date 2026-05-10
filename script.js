@@ -260,9 +260,12 @@ function commitSelection() {
 // korrekt zu interpretieren
 function getCanvasCoords(event) {
   const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+
   return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY,
   };
 }
 
@@ -320,7 +323,7 @@ canvas.addEventListener('wheel', (event) => {
     selection.height = Math.max(20, Math.min(selection.height, height));
   } else {
     maxIterations += event.deltaY < 0 ? 50 : -50;
-    maxIterations = Math.max(10, Math.min(maxIterations, 1000));
+    maxIterations = Math.max(10, Math.min(maxIterations, 2000));
     computeAndCacheMandelbrot();
   }
   renderScene();
