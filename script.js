@@ -27,8 +27,39 @@ const selection = {
 // Maximale Iterationen
 let maxIterations = 100;
 
-// Cache für das Mandelbrot-Bild
-let cachedImageData = null; 
+// Mandelbrot-Daten und Bild-Cache
+let cachedMandelbrotData = null;
+let cachedImageData = null;
+
+// Einstellungen für das Rendering (z.B. Gamma-Korrektur)
+const renderSettings = {
+  gamma: 1.0,
+  colorscaling_correction: 1.0,
+};
+
+// -----------------------------------------------------------------------------
+// Vue.js-App für die Steuer-Elemente (z.B. Gamma-Korrektur)
+// -----------------------------------------------------------------------------
+Vue.createApp({
+  data() {
+    return {
+      gamma: renderSettings.gamma,
+      colorscaling_correction: renderSettings.colorscaling_correction,
+    };
+  },
+  methods: {
+    updateGamma() {
+      renderSettings.gamma = this.gamma;
+      renderColorsFromCachedData();
+      renderScene();
+    },
+    updateColorscalingCorrection() {
+      renderSettings.colorscaling_correction = this.colorscaling_correction;
+      renderColorsFromCachedData();
+      renderScene();
+    }
+  },
+}).mount('#control-panel');
 
 
 // -----------------------------------------------------------------------------
@@ -43,13 +74,19 @@ function mandelbrotIterations(cx, cy, maxIterations) {
 
   // Schnelle Überprüfung: Periode-2-Glühbirne (Kreis auf der linken Seite)
   if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) { // 1/16 = 0.0625
-    return maxIterations;
+    return {
+      iterations: maxIterations,
+      escapeValue: 0,
+    };
   }
 
   // Schnelle Überprüfung: Hauptkardiode (Herzform in der Mitte)
   const q = (cx - 0.25) * (cx - 0.25) + cy * cy;
   if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) {
-    return maxIterations;
+    return {
+      iterations: maxIterations,
+      escapeValue: 0,
+    };
   }
 
   // Standard-Iterationen für Punkte, die nicht in den schnellen 
@@ -65,23 +102,41 @@ function mandelbrotIterations(cx, cy, maxIterations) {
     iteration++;
   }
 
-  return iteration;
+  return {
+    iterations: iteration,
+    escapeValue: zx * zx + zy * zy,
+  };
 }
 
 // Berechnet das Mandelbrot-Bild für die gegebenen Parameter
 function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations) {
 
-  const data = new Uint16Array(width * height);
+  const iterations = new Uint16Array(width * height);
+  const escapeValues = new Float64Array(width * height);
+  let minIterations = maxIterations; 
+
 
   for (let py = 0; py < height; py++) {
     for (let px = 0; px < width; px++) {
       const x = minX + (px / width) * (maxX - minX);
       const y = minY + (py / height) * (maxY - minY);
-      data[py * width + px] = mandelbrotIterations(x, y, maxIterations);
+      const index = py * width + px;
+      const result = mandelbrotIterations(x, y, maxIterations);
+
+      if ( result.iterations < minIterations ) {
+        minIterations = result.iterations;
+      }
+
+      iterations[index] = result.iterations;
+      escapeValues[index] = result.escapeValue;
     }
   }
 
-  return data;
+  return {
+    iterations,
+    escapeValues,
+    minIterations
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -120,36 +175,55 @@ function hsvToRgb(h, s, v) {
 // Einfache Farbzuordnung basierend auf der Anzahl der Iterationen
 // Punkte, die zur Divergenz führen, werden farbig dargestellt
 // Punkte, die innerhalb der Menge liegen, werden schwarz dargestellt
-function iterationToColor(iterations, maxIterations) {
+function iterationToColor(iterations, 
+                          escapeValue, 
+                          minIterations, 
+                          maxIterations) {
 
   if (iterations === maxIterations) {
     return [0, 0, 0];
   }
 
-  // Blue -> Yellow
-  // const value = Math.floor((iterations / maxIterations) * 255);
-  // return [value, value, 255 - value];
+  // Smooth Coloring (Farbwert als Fließkommazahl basierend auf der Escape-Rate)
+  let smoothIteration = iterations + 1 - Math.log2(Math.log2(Math.sqrt(escapeValue)));
 
-  // Farbbanding mit HSV-Farbraum für ein schöneres Farbspektrum
-  const hue = Math.floor((iterations / maxIterations) * 360);
-  return hsvToRgb(hue, 1, 1);
+  // Logarithmische Skalierung für bessere Farbverteilung
+  smoothIteration = Math.log(smoothIteration - minIterations + renderSettings.colorscaling_correction) 
+                  / Math.log(maxIterations   - minIterations + renderSettings.colorscaling_correction);
+  // Gamma-Korrektur für bessere Kontraste                  
+  smoothIteration = Math.pow(smoothIteration, renderSettings.gamma); 
+
+  // Cosinus-Färbung 
+  // Parameter für Gold-Blau-Palette
+  const palette = {
+    a: [0.5, 0.5, 0.5], // Helligkeit
+    b: [0.5, 0.5, 0.5], // Kontrast
+    c: [1.0, 1.0, 1.0], // Frequenz (Weiß)
+    d: [0.0, 0.1, 0.2], // Phasenverschiebung (Rot, Grün, Blau)
+  }
+
+  let r = 255 * (palette.a[0] + palette.b[0] * Math.cos(2* Math.PI * (palette.c[0] * smoothIteration + palette.d[0])));
+  let g = 255 * (palette.a[1] + palette.b[1] * Math.cos(2* Math.PI * (palette.c[1] * smoothIteration + palette.d[1])));
+  let b = 255 * (palette.a[2] + palette.b[2] * Math.cos(2* Math.PI * (palette.c[2] * smoothIteration + palette.d[2])));
+
+  return [r, g, b];
 }
 
-// Rendering-Funktion für die Zahlenmatrix
-function renderMandelbrot(ctx, width, height, data, maxIterations) {
-  const imageData = ctx.createImageData(width, height);
-  const pixels = imageData.data;
+// Rendert die Farben basierend auf den gecachten Mandelbrot-Daten
+function renderColorsFromCachedData() {
 
-  for (let i = 0; i < data.length; i++) {
-    const [r, g, b] = iterationToColor(data[i], maxIterations);
+  data = cachedMandelbrotData;
+  cachedImageData = ctx.createImageData(width, height);
+  const pixels = cachedImageData.data;
+
+  for (let i = 0; i < data.iterations.length; i++) {
+    const [r, g, b] = iterationToColor(data.iterations[i], data.escapeValues[i], data.minIterations, maxIterations);
     const idx = i * 4;
     pixels[idx] = r;
     pixels[idx + 1] = g;
     pixels[idx + 2] = b;
     pixels[idx + 3] = 255;
   }
-
-  ctx.putImageData(imageData, 0, 0);
 }
 
 // -----------------------------------------------------------------------------
@@ -157,21 +231,9 @@ function renderMandelbrot(ctx, width, height, data, maxIterations) {
 // und Caching des Images
 // -----------------------------------------------------------------------------
 function computeAndCacheMandelbrot() {
-
-    updateInfo();
-
-  const data = computeMandelbrot(width, height, view.minX, view.maxX, view.minY, view.maxY, maxIterations);
-  cachedImageData = ctx.createImageData(width, height);
-  const pixels = cachedImageData.data;
-
-  for (let i = 0; i < data.length; i++) {
-    const [r, g, b] = iterationToColor(data[i], maxIterations);
-    const idx = i * 4;
-    pixels[idx] = r;
-    pixels[idx + 1] = g;
-    pixels[idx + 2] = b;
-    pixels[idx + 3] = 255;
-  }
+  updateInfo();
+  cachedMandelbrotData = computeMandelbrot(width, height, view.minX, view.maxX, view.minY, view.maxY, maxIterations);
+  renderColorsFromCachedData();
 }
 
 // -----------------------------------------------------------------------------
@@ -350,7 +412,9 @@ function updateInfo() {
     X: ${view.minX.toFixed(6)} bis ${view.maxX.toFixed(6)}<br>
     Y: ${view.minY.toFixed(6)} bis ${view.maxY.toFixed(6)}<br>
     <strong>Iterationstiefe:</strong> ${maxIterations}<br>
-    <strong>Zoom-Level:</strong> ${(initialView.maxX - initialView.minX) / (view.maxX - view.minX)}x
+    <strong>Zoom-Level:</strong> ${(initialView.maxX - initialView.minX) / (view.maxX - view.minX)}x<br>
+    <br>
+    <strong>Image-Korrekturen:</strong><br>
   `;
 }
 

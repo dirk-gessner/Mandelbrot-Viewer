@@ -33,6 +33,7 @@
 
             display: flex;
             align-items: center;
+            gap: 24px;
 
             border-bottom: 1px solid #aaa;
             background: #e9e9e9;
@@ -84,8 +85,9 @@
         }
 
         #info {
-            font-family: Verdana, Helvetica, Arial, sans-serif;
+            font-family: Garamond, serif;
             font-size: 14px;
+            /* font-weight: lighter; */
         }
 
         .controls {
@@ -94,8 +96,9 @@
             overflow:auto;
             padding: 10px;
 
-            font-family: Verdana, Helvetica, Arial, sans-serif;
+            font-family: Garamond, serif;
             font-size: 14px;
+            font-weight: lighter;
 
             background: #e9e9e9;
             border-top: 1px solid #aaa;
@@ -104,7 +107,10 @@
 
         h1 {
             margin: 0 0 10px 0;
-            font-family:  Verdana, Helvetica, Arial, sans-serif;
+            /* font-family:  Verdana, Helvetica, Arial, sans-serif; */
+            font-family: Garamond, serif;
+            font-size:x-large;
+            font-weight: lighter;
         }
 
     </style>
@@ -113,7 +119,8 @@
 <body>
 
     <header class="page-header">
-        <h1>Mandelbrot-Viewer</h1>
+        <img src="definition.svg" alt="Mathematical formula: z subscript 0 equals 0, z subscript n plus 1 equals z subscript n squared plus c; c is an element of M if and only if the limit superior as n approaches infinity of the absolute value of z subscript n is less than or equal to 2. This formula defines the Mandelbrot set, a fundamental concept in fractal geometry and complex dynamics.">
+        <h1>lightweight Mandelbrot viewer</h1> 
     </header>
 
     <main class="layout">
@@ -126,8 +133,31 @@
                     aria-label="Interaktives Mandelbrot-Set. Klicken Sie mit der rechten Maustaste und scrollen Sie, um hinein zu zoomen. Klicken Sie mit der linken Maustaste, um heraus zu zoomen. Scrollen Sie, um die Iterationstiefe zu ändern.">
                 </canvas>
             </div>
-            <aside class="info-box">
+            <aside id="control-panel" class="info-box">
                 <div id="info" aria-live="polite">Lade...</div>
+
+                <label>
+                    Gamma: {{ gamma.toFixed(2) }}
+                    <input 
+                        type="range" 
+                        min="0" 
+                        max="5" 
+                        step="0.2" 
+                        v-model.number="gamma"
+                        @input="updateGamma"
+                        aria-label="Gamma-Korrektur anpassen">
+                </label>
+                <label>
+                    Farbskalierung: {{ colorscaling_correction.toFixed(2) }}
+                    <input 
+                        type="range" 
+                        min="0" 
+                        max="5" 
+                        step="0.2" 
+                        v-model.number="colorscaling_correction"
+                        @input="updateColorscalingCorrection"
+                        aria-label="Farbskalierung anpassen">
+                </label>
             </aside>
         </div>
 
@@ -141,6 +171,7 @@
         </section>
     </main>
 
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="script.js"></script>
 
 </body>
