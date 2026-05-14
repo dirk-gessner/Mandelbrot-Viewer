@@ -438,25 +438,34 @@ canvas.addEventListener('mousemove', (event) => {
 // oder zu verringern
 // -----------------------------------------------------------------------------
 canvas.addEventListener('wheel', (event) => {
+
   if (selection.active) {
-    const { width, height } = canvas;
-    const { maxIterations } = computationSettings;
-    
+
     event.preventDefault();
 
+    const cv = canvas;
+    const sl = selection;
     const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1;
-    selection.width *= zoomFactor;
-    selection.height *= zoomFactor;
+
+    sl.width *= zoomFactor;
+    sl.height *= zoomFactor;
 
     // Optional: Mindest- und Max-Größe begrenzen
-    selection.width = Math.max(20, Math.min(selection.width, width));
-    selection.height = Math.max(20, Math.min(selection.height, height));
+    sl.width = Math.max(20, Math.min(sl.width, cv.width));
+    sl.height = Math.max(20, Math.min(sl.height, cv.height));
+
   } else {
-    maxIterations += event.deltaY < 0 ? 50 : -50;
-    maxIterations = Math.max(50, Math.min(maxIterations, 2000));
+
+    // Verändere die maxIterations mit dem Mausrad
+
+    // Alias für einfacheren Zugriff
+    const cs = computationSettings;
+
+    cs.maxIterations += event.deltaY < 0 ? 50 : -50;
+    cs.maxIterations = Math.max(50, Math.min(cs.maxIterations, 2000));
 
     // Synchronisiere mit Vue-Inputfeld
-    app.maxIterationsInput = maxIterations; 
+    app.maxIterationsInput = cs.maxIterations; 
     computeAndCacheMandelbrot();
   }
   renderScene();
