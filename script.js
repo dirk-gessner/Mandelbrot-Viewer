@@ -16,16 +16,9 @@ let cachedMandelbrotData = null;
 let cachedImageData = null;
 
 // Einstellungen für die Mandelbrot-Berechnung
-const initialView = Object.freeze({
-    minX: -3,
-    maxX: 1,
-    minY: -1.5,
-    maxY: 1.5,
-});
-
 const computationSettings = {
-    initialView,
-    view: { ...initialView },
+    initialView: null,
+    view: null,
     maxIterations: 100,
     escapeRadius: 2,
 };
@@ -501,8 +494,62 @@ function updateInfo() {
         <strong>Zoom-Level:</strong> ${((initialView.maxX - initialView.minX) / (view.maxX - view.minX)).toFixed(2)}x<br>`;
 }
 
+function createInitialViewForAspectRatio(aspectRatio) {
+    const requiredView = {
+        minX: -2.5,
+        maxX: 1.0,
+        minY: -1.5,
+        maxY: 1.5,
+    };
+
+    const requiredWidth = requiredView.maxX - requiredView.minX;
+    const requiredHeight = requiredView.maxY - requiredView.minY;
+    const requiredAspectRatio = requiredWidth / requiredHeight;
+
+    const centerX = (requiredView.minX + requiredView.maxX) / 2;
+    const centerY = (requiredView.minY + requiredView.maxY) / 2;
+
+    if (aspectRatio > requiredAspectRatio) {
+        const height = requiredHeight;
+        const width = height * aspectRatio;
+
+        return {
+            minX: centerX - width / 2,
+            maxX: centerX + width / 2,
+            minY: requiredView.minY,
+            maxY: requiredView.maxY,
+        };
+    }
+
+    const width = requiredWidth;
+    const height = width / aspectRatio;
+
+    return {
+        minX: requiredView.minX,
+        maxX: requiredView.maxX,
+        minY: centerY - height / 2,
+        maxY: centerY + height / 2,
+    };
+}
+
+function resizeCanvasToDisplaySize() {
+    const rect = canvas.getBoundingClientRect();
+
+    canvas.width = Math.floor(rect.width);
+    canvas.height = Math.floor(rect.height);
+}
+
+function initializeCanvasAndView() {
+  resizeCanvasToDisplaySize();
+
+  const initialView = createInitialViewForAspectRatio(canvas.width / canvas.height);
+
+  computationSettings.initialView = initialView;
+  computationSettings.view = { ...initialView };
+}
 
 // Initiale Berechnung
-computeAndCacheMandelbrot();
+initializeCanvasAndView();
 updateInfo();
+computeAndCacheMandelbrot();
 renderScene();
