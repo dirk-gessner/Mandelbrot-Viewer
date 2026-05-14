@@ -15,6 +15,7 @@ const initialView = {
 
 let view = { ...initialView };
 let maxIterations = 100;
+let escapeRadius = 2;
 
 const selection = {
   active: false,
@@ -76,7 +77,7 @@ const app = Vue.createApp({
 // bis die Divergenz eintritt
 // Optimierungen: Schnelle Überprüfungen für Punkte, die sicher in der 
 // Menge liegen
-function mandelbrotIterations(cx, cy, maxIterations) {
+function mandelbrotIterations(cx, cy, maxIterations, escapeRadius) {
 
   // Schnelle Überprüfung: Periode-2-Glühbirne (Kreis auf der linken Seite)
   if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) { // 1/16 = 0.0625
@@ -100,8 +101,9 @@ function mandelbrotIterations(cx, cy, maxIterations) {
   let zx = 0;
   let zy = 0;
   let iteration = 0;
+  const escapeRadiusSquared = escapeRadius * escapeRadius;
 
-  while (zx * zx + zy * zy < 100 && iteration < maxIterations) {
+  while (zx * zx + zy * zy < escapeRadiusSquared && iteration < maxIterations) {
     const temp = zx * zx - zy * zy + cx;
     zy = 2 * zx * zy + cy;
     zx = temp;
@@ -115,7 +117,7 @@ function mandelbrotIterations(cx, cy, maxIterations) {
 }
 
 // Berechnet das Mandelbrot-Bild für die gegebenen Parameter
-function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations) {
+function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations, escapeRadius) {
 
   const iterations = new Uint16Array(width * height);
   const escapeValues = new Float64Array(width * height);
@@ -127,7 +129,7 @@ function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations)
       const x = minX + (px / width) * (maxX - minX);
       const y = minY + (py / height) * (maxY - minY);
       const index = py * width + px;
-      const result = mandelbrotIterations(x, y, maxIterations);
+      const result = mandelbrotIterations(x, y, maxIterations, escapeRadius);
 
       if ( result.iterations < minIterations ) {
         minIterations = result.iterations;
@@ -237,7 +239,10 @@ function renderColorsFromCachedData() {
 // und Caching des Images
 // -----------------------------------------------------------------------------
 function computeAndCacheMandelbrot() {
-  cachedMandelbrotData = computeMandelbrot(width, height, view.minX, view.maxX, view.minY, view.maxY, maxIterations);
+  cachedMandelbrotData = computeMandelbrot(
+                            width, height, 
+                            view.minX, view.maxX, view.minY, view.maxY, 
+                            maxIterations, escapeRadius);
   updateInfo();
   renderColorsFromCachedData();
 }
