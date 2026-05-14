@@ -85,6 +85,14 @@ body {
 .control-group {
     border-top: 1px solid #aaa;
     margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+.control-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 5px;
 }
 
 .control-group label {
