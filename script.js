@@ -245,7 +245,7 @@ function iterationToColor(iterations,
     let smoothie = iterations; 
 
     // Smooth Coloring (Farbwert als Fließkommazahl basierend auf der Escape-Rate)
-    let smoothie = smoothie + 1 - Math.log2(Math.log2(Math.sqrt(escapeValue)));
+    smoothie = smoothie + 1 - Math.log2(Math.log2(Math.sqrt(escapeValue)));
 
     // Logarithmische Skalierung für bessere Farbverteilung
     smoothie = Math.log(smoothie - minIterations + renderSettings.colorScalingCorrection) 
