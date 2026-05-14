@@ -6,7 +6,6 @@ const ctx = canvas.getContext('2d');
 const width = canvas.width;
 const height = canvas.height;
 
-// initialer Bereich der Mandelbrot-Menge
 const initialView = {
   minX: -3,
   maxX: 1,
@@ -14,7 +13,8 @@ const initialView = {
   maxY: 1.5,
 };
 
-const view = { ...initialView };
+let view = { ...initialView };
+let maxIterations = 100;
 
 const selection = {
   active: false,
@@ -24,9 +24,6 @@ const selection = {
   height: 0,
 };
 
-// Maximale Iterationen
-let maxIterations = 100;
-
 // Mandelbrot-Daten und Bild-Cache
 let cachedMandelbrotData = null;
 let cachedImageData = null;
@@ -34,31 +31,40 @@ let cachedImageData = null;
 // Einstellungen für das Rendering (z.B. Gamma-Korrektur)
 const renderSettings = {
   gamma: 1.0,
-  colorscaling_correction: 1.0,
+  colorScalingCorrection: 1.0,
 };
 
 // -----------------------------------------------------------------------------
 // Vue.js-App für die Steuer-Elemente (z.B. Gamma-Korrektur)
 // -----------------------------------------------------------------------------
-Vue.createApp({
-  data() {
-    return {
-      gamma: renderSettings.gamma,
-      colorscaling_correction: renderSettings.colorscaling_correction,
-    };
-  },
-  methods: {
-    updateGamma() {
-      renderSettings.gamma = this.gamma;
-      renderColorsFromCachedData();
-      renderScene();
+const app = Vue.createApp({
+    data() {
+        return {
+          maxIterationsInput: maxIterations,
+          gamma: renderSettings.gamma,
+          colorScalingCorrection: renderSettings.colorScalingCorrection,
+        };
     },
-    updateColorscalingCorrection() {
-      renderSettings.colorscaling_correction = this.colorscaling_correction;
-      renderColorsFromCachedData();
-      renderScene();
-    }
-  },
+    methods: {
+        updateMaxIterations() {
+          maxIterations = Math.max(10, Math.min(Number(this.maxIterationsInput), 2000));
+          this.maxIterationsInput = maxIterations;
+
+          computeAndCacheMandelbrot();
+          updateInfo();
+          renderScene();
+        }, 
+        updateGamma() {
+            renderSettings.gamma = this.gamma;
+            renderColorsFromCachedData();
+            renderScene();
+        },
+        updateColorscalingCorrection() {
+            renderSettings.colorScalingCorrection = this.colorScalingCorrection;
+            renderColorsFromCachedData();
+            renderScene();
+        }
+    },
 }).mount('#control-panel');
 
 
@@ -95,7 +101,7 @@ function mandelbrotIterations(cx, cy, maxIterations) {
   let zy = 0;
   let iteration = 0;
 
-  while (zx * zx + zy * zy < 4 && iteration < maxIterations) {
+  while (zx * zx + zy * zy < 100 && iteration < maxIterations) {
     const temp = zx * zx - zy * zy + cx;
     zy = 2 * zx * zy + cy;
     zx = temp;
@@ -188,8 +194,8 @@ function iterationToColor(iterations,
   let smoothIteration = iterations + 1 - Math.log2(Math.log2(Math.sqrt(escapeValue)));
 
   // Logarithmische Skalierung für bessere Farbverteilung
-  smoothIteration = Math.log(smoothIteration - minIterations + renderSettings.colorscaling_correction) 
-                  / Math.log(maxIterations   - minIterations + renderSettings.colorscaling_correction);
+  smoothIteration = Math.log(smoothIteration - minIterations + renderSettings.colorScalingCorrection) 
+                  / Math.log(maxIterations   - minIterations + renderSettings.colorScalingCorrection);
   // Gamma-Korrektur für bessere Kontraste                  
   smoothIteration = Math.pow(smoothIteration, renderSettings.gamma); 
 
@@ -231,8 +237,8 @@ function renderColorsFromCachedData() {
 // und Caching des Images
 // -----------------------------------------------------------------------------
 function computeAndCacheMandelbrot() {
-  updateInfo();
   cachedMandelbrotData = computeMandelbrot(width, height, view.minX, view.maxX, view.minY, view.maxY, maxIterations);
+  updateInfo();
   renderColorsFromCachedData();
 }
 
@@ -385,7 +391,10 @@ canvas.addEventListener('wheel', (event) => {
     selection.height = Math.max(20, Math.min(selection.height, height));
   } else {
     maxIterations += event.deltaY < 0 ? 50 : -50;
-    maxIterations = Math.max(10, Math.min(maxIterations, 2000));
+    maxIterations = Math.max(50, Math.min(maxIterations, 2000));
+
+    // Synchronisiere mit Vue-Inputfeld
+    app.maxIterationsInput = maxIterations; 
     computeAndCacheMandelbrot();
   }
   renderScene();
@@ -408,13 +417,9 @@ canvas.addEventListener('mouseup', () => {
 function updateInfo() {
   const infoDiv = document.getElementById('info');
   infoDiv.innerHTML = `
-    <strong>Aktueller View:</strong><br>
     X: ${view.minX.toFixed(6)} bis ${view.maxX.toFixed(6)}<br>
     Y: ${view.minY.toFixed(6)} bis ${view.maxY.toFixed(6)}<br>
-    <strong>Iterationstiefe:</strong> ${maxIterations}<br>
-    <strong>Zoom-Level:</strong> ${(initialView.maxX - initialView.minX) / (view.maxX - view.minX)}x<br>
-    <br>
-    <strong>Image-Korrekturen:</strong><br>
+    <strong>Zoom-Level:</strong> ${((initialView.maxX - initialView.minX) / (view.maxX - view.minX)).toFixed(2)}x<br>
   `;
 }
 
