@@ -30,36 +30,88 @@
                 <div id="info">Lade...</div>
 
                 <div class="control-group">
-                    <h3>Parameter für die Berechnung<h3>
-                    <label for="maxIterationsInput">Iterationstiefe:&nbsp;</label>
-                    <input
-                        id="maxIterationsInput"
-                        type="number"
-                        min="10"
-                        max="2000"
-                        step="50"
-                        value="100"
-                        v-model.number="maxIterationsInput"
-                        @change="updateMaxIterations">
->
+
+                    <h3>Parameter für die Berechnung</h3>
+                    <div class="control-row">
+                        <label for="maxIterationsInput">Iterationstiefe:&nbsp;</label>
+                        <input
+                            id="maxIterationsInput"
+                            type="number"
+                            min="10"
+                            max="2000"
+                            step="50"
+                            value="100"
+                            v-model.number="maxIterationsInput"
+                            @change="updateMaxIterations">
+                    </div>
+
+                    <div class="control-row">
+                        <label for="escapeRadiusInput">Escape-Radius:&nbsp;</label>
+                        <input
+                            id="escapeRadiusInput"
+                            type="number"
+                        min="1.1"
+                        max="20"
+                        step="0.1"
+                        value="2"
+                        v-model.number="escapeRadiusInput"
+                        @change="updateEscapeRadius">
+                    </div>
+                </div>
+                <div class="control-group">
 
                     <h3>Image-Korrekturen</h3>
-                    <label>Gamma: {{ gamma.toFixed(2) }}</label><br>
-                    <input 
-                        type="range" 
-                        min="0" 
-                        max="10" 
-                        step="0.2" 
-                        v-model.number="gamma"
-                        @input="updateGamma">
-                    <label>Farbskalierung: {{ colorScalingCorrection.toFixed(2) }}</label><br>
-                    <input 
-                        type="range" 
-                        min="0" 
-                        max="5" 
-                        step="0.5" 
-                        v-model.number="colorScalingCorrection"
-                        @input="updateColorscalingCorrection">
+                    <div class="control-row">
+                        <label for="paletteSelect">Farbpalette:</label>
+                        <select
+                            id="paletteSelect"
+                            v-model="selectedPaletteKey"
+                            @change="updatePalette">
+                            <option
+                                v-for="(palette, key) in availablePalettes"
+                                :key="key"
+                                :value="key">
+                                {{ palette.name }}
+                            </option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-row">
+                        <label for="innerSetColorSelect">Färbung der inneren Menge:</label>
+                        <select
+                            id="innerSetColorSelect"
+                            v-model="selectedInnerSetColorKey"
+                            @change="updateInnerSetColor">
+                            <option
+                                v-for="(color, key) in availableColors"
+                                :key="key"
+                                :value="key">
+                                {{ key }}
+                            </option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-row">
+                        <label>Gamma: {{ gamma.toFixed(2) }}</label><br>
+                        <input 
+                            type="range" 
+                            min="0" 
+                            max="10" 
+                            step="0.2" 
+                            v-model.number="gamma"
+                            @input="updateGamma">
+                    </div>
+
+                    <div class="control-row">
+                        <label>Korrekturwert Farbskalierung: {{ colorScalingCorrection.toFixed(2) }}</label><br>
+                        <input 
+                            type="range" 
+                            min="0" 
+                            max="5" 
+                            step="0.5" 
+                            v-model.number="colorScalingCorrection"
+                            @input="updateColorscalingCorrection">
+                    </div>  
                 </div>
             </aside>
 
