@@ -53,10 +53,34 @@ body {
     width: 100%;
     height: 100%;
 
+    position: relative;
+
     box-sizing: border-box;
     border: 1px solid #aaa;
 }
 
+.canvas-wrapper.is-rendering canvas {
+    filter: grayscale(1);
+}
+
+.render-overlay {
+
+    position: absolute;
+    inset:0; 
+
+    display: grid; 
+    place-items: center;
+
+    background: rgba(255, 255, 255, 0.35);
+    font-size: larger;
+    font-weight: 500;
+    color: black;
+    pointer-events: none; /* Verhindert Interaktion mit dem Overlay */
+}
+
+.render-overlay.hidden {
+    display: none;
+}
 
 .canvas canvas {
   display: block;
