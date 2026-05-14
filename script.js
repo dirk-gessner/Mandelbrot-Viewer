@@ -15,6 +15,14 @@ const selection = {
 let cachedMandelbrotData = null;
 let cachedImageData = null;
 
+// timer für die Verzögerung der Neuberechnung 
+// bei schnellen Mausrad-Events
+let wheelTimer = null;
+
+// timer für die Verzögerung der Neuberechnung 
+// bei Fenstergrößenänderung
+let resizeTimer = null;
+
 // Einstellungen für die Mandelbrot-Berechnung
 const computationSettings = {
     initialView: null,
@@ -465,7 +473,11 @@ canvas.addEventListener('wheel', (event) => {
 
         // Synchronisiere mit Vue-Inputfeld
         app.maxIterationsInput = cs.maxIterations; 
-        computeAndCacheMandelbrot();
+
+        clearTimeout(wheelTimer);
+        wheelTimer = setTimeout(() => {     
+            computeAndCacheMandelbrot();
+        }, 150); // Verzögerung von 150ms nach dem letzten Mausrad-Event;
     }
     renderScene();
 }, { passive: false });
@@ -494,6 +506,13 @@ function updateInfo() {
         <strong>Zoom-Level:</strong> ${((initialView.maxX - initialView.minX) / (view.maxX - view.minX)).toFixed(2)}x<br>`;
 }
 
+// -----------------------------------------------------------------------------
+// Funktionen für flexible Zeichenflächen- und View-Größen
+// -----------------------------------------------------------------------------
+
+// Berechnet den initialen View basierend auf dem Seitenverhältnis der Canvas,
+// um sicherzustellen, dass der relevante Bereich der Mandelbrot-Menge immer 
+// vollständig sichtbar ist, ohne Verzerrung
 function createInitialViewForAspectRatio(aspectRatio) {
     const requiredView = {
         minX: -2.5,
@@ -532,6 +551,52 @@ function createInitialViewForAspectRatio(aspectRatio) {
     };
 }
 
+// Erweitert den aktuellen View so, dass er das Ziel-Seitenverhältnis erfüllt,
+// ohne den Mittelpunkt zu verändern, um Verzerrungen zu vermeiden
+function expandViewToAspectRatio(view, targetAspectRatio) {
+  const currentWidth = view.maxX - view.minX;
+  const currentHeight = view.maxY - view.minY;
+  const currentAspectRatio = currentWidth / currentHeight;
+
+  const centerX = (view.minX + view.maxX) / 2;
+  const centerY = (view.minY + view.maxY) / 2;
+
+  if (targetAspectRatio > currentAspectRatio) {
+    const newWidth = currentHeight * targetAspectRatio;
+
+    view.minX = centerX - newWidth / 2;
+    view.maxX = centerX + newWidth / 2;
+  } else {
+    const newHeight = currentWidth / targetAspectRatio;
+
+    view.minY = centerY - newHeight / 2;
+    view.maxY = centerY + newHeight / 2;
+  }
+}
+
+// Passt die Größe des Canvas an die tatsächliche Anzeigengröße an und erweitert den View,
+// um das neue Seitenverhältnis zu erfüllen, um sicherzustellen, dass die Mandelbrot-Menge
+// korrekt dargestellt wird, ohne Verzerrungen oder abgeschnittene Bereiche
+function resizeCanvasAndKeepView() {
+  const oldWidth = canvas.width;
+  const oldHeight = canvas.height;
+
+  resizeCanvasToDisplaySize();
+
+  if (canvas.width === oldWidth && canvas.height === oldHeight) {
+    return;
+  }
+
+  const newAspectRatio = canvas.width / canvas.height;
+
+  expandViewToAspectRatio(computationSettings.view, newAspectRatio);
+
+  computeAndCacheMandelbrot();
+  renderScene();
+}
+
+// Passt die Größe des Canvas an die tatsächliche Anzeigengröße an, 
+// um eine scharfe Darstellung zu gewährleisten
 function resizeCanvasToDisplaySize() {
     const rect = canvas.getBoundingClientRect();
 
@@ -539,6 +604,8 @@ function resizeCanvasToDisplaySize() {
     canvas.height = Math.floor(rect.height);
 }
 
+// Initialisiert die Canvas-Größe und den View basierend auf dem Seitenverhältnis,
+// um sicherzustellen, dass die Mandelbrot-Menge korrekt dargestellt wird
 function initializeCanvasAndView() {
   resizeCanvasToDisplaySize();
 
@@ -548,7 +615,18 @@ function initializeCanvasAndView() {
   computationSettings.view = { ...initialView };
 }
 
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+
+  resizeTimer = setTimeout(() => {
+    resizeCanvasAndKeepView();
+  }, 150);
+});
+
+
+// -----------------------------------------------------------------------------
 // Initiale Berechnung
+// -----------------------------------------------------------------------------
 initializeCanvasAndView();
 updateInfo();
 computeAndCacheMandelbrot();
