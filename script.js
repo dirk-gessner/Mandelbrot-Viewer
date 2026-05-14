@@ -2,20 +2,7 @@
 const canvas = document.getElementById('mandelbrotCanvas');
 const ctx = canvas.getContext('2d');
 
-// Bildgröße
-const width = canvas.width;
-const height = canvas.height;
-
-// initialer Bereich der Mandelbrot-Menge
-const initialView = {
-  minX: -3,
-  maxX: 1,
-  minY: -1.5,
-  maxY: 1.5,
-};
-
-const view = { ...initialView };
-
+// Startwerte für das Zoom-Selektionsfenster
 const selection = {
   active: false,
   centerX: 0,
@@ -24,11 +11,137 @@ const selection = {
   height: 0,
 };
 
-// Maximale Iterationen
-let maxIterations = 100;
+// Mandelbrot-Daten und Bild-Cache
+let cachedMandelbrotData = null;
+let cachedImageData = null;
 
-// Cache für das Mandelbrot-Bild
-let cachedImageData = null; 
+// Einstellungen für die Mandelbrot-Berechnung
+const initialView = Object.freeze({
+  minX: -3,
+  maxX: 1,
+  minY: -1.5,
+  maxY: 1.5,
+});
+
+const computationSettings = {
+  initialView,
+  view: { ...initialView },
+  maxIterations: 100,
+  escapeRadius: 2,
+};
+
+// Einstellungen für das Rendering (z.B. Gamma-Korrektur)
+const renderSettings = {
+  gamma: 1.0,
+  colorScalingCorrection: 1.0,
+  paletteKey: 'goldBlue',
+  innerSetColorKey: 'black',
+};
+
+const colors = {
+    white: [255, 255, 255],
+    black: [0, 0, 0],
+    magenta: [255, 0, 255],
+    cyan: [0, 255, 255],
+    yellow: [255, 255, 0],
+};
+
+const colorPalettes = {
+  goldBlue: {
+    name: 'Gold-Blau',
+    a: [0.5, 0.5, 0.5],
+    b: [0.5, 0.5, 0.5],
+    c: [1.0, 1.0, 1.0],
+    d: [0.0, 0.1, 0.2],
+  },
+
+  fire: {
+    name: 'Feuer',
+    a: [0.60, 0.28, 0.08],
+    b: [0.40, 0.30, 0.08],
+    c: [1.0, 1.2, 1.5],
+    d: [0.00, 0.05, 0.10],
+  },
+
+  ice: {
+    name: 'Eis',
+    a: [0.5, 0.5, 0.5],
+    b: [0.5, 0.5, 0.5],
+    c: [1.0, 1.0, 1.0],
+    d: [0.55, 0.65, 0.75],
+  },
+
+  party: {
+    name: 'Party',
+    a: [0.5, 0.5, 0.5],
+    b: [0.5, 0.5, 0.5],
+    c: [1.0, 1.0, 1.0],
+    d: [0.0, 0.33, 0.67],
+  },
+};
+
+
+// -----------------------------------------------------------------------------
+// Vue.js-App für die Steuer-Elemente (z.B. Gamma-Korrektur)
+// -----------------------------------------------------------------------------
+const app = Vue.createApp({
+    data() {
+        return {
+          maxIterationsInput: computationSettings.maxIterations,
+          escapeRadiusInput: computationSettings.escapeRadius,
+
+          availablePalettes: colorPalettes,
+          selectedPaletteKey: renderSettings.paletteKey,
+          availableColors: colors,
+          selectedInnerSetColorKey: renderSettings.innerSetColorKey,
+          gamma: renderSettings.gamma,
+          colorScalingCorrection: renderSettings.colorScalingCorrection,
+        };
+    },
+    methods: {
+        updateMaxIterations() {
+            computationSettings.maxIterations = Math.max(10, Math.min(Number(this.maxIterationsInput), 2000));
+            this.maxIterationsInput = computationSettings.maxIterations;
+
+            computeAndCacheMandelbrot();
+            updateInfo();
+            renderScene();
+        }, 
+
+        updateEscapeRadius() {
+            computationSettings.escapeRadius = Math.max(1.1, Math.min(Number(this.escapeRadiusInput), 20));
+            this.escapeRadiusInput = computationSettings.escapeRadius;
+
+            computeAndCacheMandelbrot();
+            updateInfo();
+            renderScene();
+        },
+
+        updateGamma() {
+            renderSettings.gamma = this.gamma;
+            renderColorsFromCachedData();
+            renderScene();
+        },
+
+        updateColorscalingCorrection() {
+            renderSettings.colorScalingCorrection = this.colorScalingCorrection;
+            renderColorsFromCachedData();
+            renderScene();
+        }, 
+
+        updatePalette() {
+            renderSettings.paletteKey = this.selectedPaletteKey;
+            renderColorsFromCachedData();
+            renderScene();
+        }, 
+
+        updateInnerSetColor() {
+            renderSettings.innerSetColorKey = this.selectedInnerSetColorKey;
+            renderColorsFromCachedData();
+            renderScene();
+        }, 
+    },
+}).mount('#control-panel');
 
 
 // -----------------------------------------------------------------------------
@@ -39,17 +152,23 @@ let cachedImageData = null;
 // bis die Divergenz eintritt
 // Optimierungen: Schnelle Überprüfungen für Punkte, die sicher in der 
 // Menge liegen
-function mandelbrotIterations(cx, cy, maxIterations) {
+function mandelbrotIterations(cx, cy, maxIterations, escapeRadius) {
 
   // Schnelle Überprüfung: Periode-2-Glühbirne (Kreis auf der linken Seite)
   if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) { // 1/16 = 0.0625
-    return maxIterations;
+    return {
+      iterations: maxIterations,
+      escapeValue: 0,
+    };
   }
 
   // Schnelle Überprüfung: Hauptkardiode (Herzform in der Mitte)
   const q = (cx - 0.25) * (cx - 0.25) + cy * cy;
   if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) {
-    return maxIterations;
+    return {
+      iterations: maxIterations,
+      escapeValue: 0,
+    };
   }
 
   // Standard-Iterationen für Punkte, die nicht in den schnellen 
@@ -57,99 +176,110 @@ function mandelbrotIterations(cx, cy, maxIterations) {
   let zx = 0;
   let zy = 0;
   let iteration = 0;
+  const escapeRadiusSquared = escapeRadius * escapeRadius;
 
-  while (zx * zx + zy * zy < 4 && iteration < maxIterations) {
+  while (zx * zx + zy * zy < escapeRadiusSquared && iteration < maxIterations) {
     const temp = zx * zx - zy * zy + cx;
     zy = 2 * zx * zy + cy;
     zx = temp;
     iteration++;
   }
 
-  return iteration;
+  return {
+    iterations: iteration,
+    escapeValue: zx * zx + zy * zy,
+  };
 }
 
 // Berechnet das Mandelbrot-Bild für die gegebenen Parameter
-function computeMandelbrot(width, height, minX, maxX, minY, maxY, maxIterations) {
+function computeMandelbrot(width, height, computationSettings) {
 
-  const data = new Uint16Array(width * height);
+  const { view, maxIterations, escapeRadius } = computationSettings;
+  const { minX, maxX, minY, maxY } = view;
+
+  const iterations = new Uint16Array(width * height);
+  const escapeValues = new Float64Array(width * height);
+  let minIterations = maxIterations; 
+
 
   for (let py = 0; py < height; py++) {
     for (let px = 0; px < width; px++) {
-      const x = minX + (px / width) * (maxX - minX);
+      const x = minX + (px / width ) * (maxX - minX);
       const y = minY + (py / height) * (maxY - minY);
-      data[py * width + px] = mandelbrotIterations(x, y, maxIterations);
+      const index = py * width + px;
+      const result = mandelbrotIterations(x, y, maxIterations, escapeRadius);
+
+      if ( result.iterations < minIterations ) {
+        minIterations = result.iterations;
+      }
+
+      iterations[index] = result.iterations;
+      escapeValues[index] = result.escapeValue;
     }
   }
 
-  return data;
+  return {
+    iterations,
+    escapeValues,
+    minIterations
+  };
 }
 
 // -----------------------------------------------------------------------------
 // Rendering-Funktionen für die Zahlenmatrix
 // -----------------------------------------------------------------------------
 
-// Konvertiert HSV-Farbraum zu RGB
-function hsvToRgb(h, s, v) {
-  const c = v * s;
-  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
-  const m = v - c;
-
-  let r, g, b;
-
-  if (h < 60) {
-    r = c; g = x; b = 0;
-  } else if (h < 120) {
-    r = x; g = c; b = 0;
-  } else if (h < 180) {
-    r = 0; g = c; b = x;
-  } else if (h < 240) {
-    r = 0; g = x; b = c;
-  } else if (h < 300) {
-    r = x; g = 0; b = c;
-  } else {
-    r = c; g = 0; b = x;
-  }
-
-  return [
-    Math.round((r + m) * 255),
-    Math.round((g + m) * 255),
-    Math.round((b + m) * 255)
-  ];
-}
-
 // Einfache Farbzuordnung basierend auf der Anzahl der Iterationen
 // Punkte, die zur Divergenz führen, werden farbig dargestellt
 // Punkte, die innerhalb der Menge liegen, werden schwarz dargestellt
-function iterationToColor(iterations, maxIterations) {
+function iterationToColor(iterations, 
+                          escapeValue, 
+                          minIterations, 
+                          maxIterations) {
 
+  const innerSetColor = colors[renderSettings.innerSetColorKey] || [0, 0, 0];                            
   if (iterations === maxIterations) {
-    return [0, 0, 0];
+    return innerSetColor;
   }
 
-  // Blue -> Yellow
-  // const value = Math.floor((iterations / maxIterations) * 255);
-  // return [value, value, 255 - value];
+  // Smooth Coloring (Farbwert als Fließkommazahl basierend auf der Escape-Rate)
+  let smoothIteration = iterations + 1 - Math.log2(Math.log2(Math.sqrt(escapeValue)));
 
-  // Farbbanding mit HSV-Farbraum für ein schöneres Farbspektrum
-  const hue = Math.floor((iterations / maxIterations) * 360);
-  return hsvToRgb(hue, 1, 1);
+  // Logarithmische Skalierung für bessere Farbverteilung
+  smoothIteration = Math.log(smoothIteration - minIterations + renderSettings.colorScalingCorrection) 
+                  / Math.log(maxIterations   - minIterations + renderSettings.colorScalingCorrection);
+
+  // Gamma-Korrektur für bessere Kontraste                  
+  smoothIteration = Math.pow(smoothIteration, renderSettings.gamma); 
+
+  // Cosinus-Färbung 
+  // Parameter für Gold-Blau-Palette
+  const palette = colorPalettes[renderSettings.paletteKey];
+
+  let r = 255 * (palette.a[0] + palette.b[0] * Math.cos(2* Math.PI * (palette.c[0] * smoothIteration + palette.d[0])));
+  let g = 255 * (palette.a[1] + palette.b[1] * Math.cos(2* Math.PI * (palette.c[1] * smoothIteration + palette.d[1])));
+  let b = 255 * (palette.a[2] + palette.b[2] * Math.cos(2* Math.PI * (palette.c[2] * smoothIteration + palette.d[2])));
+
+  return [r, g, b];
 }
 
-// Rendering-Funktion für die Zahlenmatrix
-function renderMandelbrot(ctx, width, height, data, maxIterations) {
-  const imageData = ctx.createImageData(width, height);
-  const pixels = imageData.data;
+// Rendert die Farben basierend auf den gecachten Mandelbrot-Daten
+function renderColorsFromCachedData() {
 
-  for (let i = 0; i < data.length; i++) {
-    const [r, g, b] = iterationToColor(data[i], maxIterations);
+  const { width, height } = canvas;
+  const { maxIterations } = computationSettings;
+  data = cachedMandelbrotData;
+  cachedImageData = ctx.createImageData(width, height);
+  const pixels = cachedImageData.data;
+
+  for (let i = 0; i < data.iterations.length; i++) {
+    const [r, g, b] = iterationToColor(data.iterations[i], data.escapeValues[i], data.minIterations, maxIterations);
     const idx = i * 4;
     pixels[idx] = r;
     pixels[idx + 1] = g;
     pixels[idx + 2] = b;
     pixels[idx + 3] = 255;
   }
-
-  ctx.putImageData(imageData, 0, 0);
 }
 
 // -----------------------------------------------------------------------------
@@ -157,21 +287,10 @@ function renderMandelbrot(ctx, width, height, data, maxIterations) {
 // und Caching des Images
 // -----------------------------------------------------------------------------
 function computeAndCacheMandelbrot() {
-
-    updateInfo();
-
-  const data = computeMandelbrot(width, height, view.minX, view.maxX, view.minY, view.maxY, maxIterations);
-  cachedImageData = ctx.createImageData(width, height);
-  const pixels = cachedImageData.data;
-
-  for (let i = 0; i < data.length; i++) {
-    const [r, g, b] = iterationToColor(data[i], maxIterations);
-    const idx = i * 4;
-    pixels[idx] = r;
-    pixels[idx + 1] = g;
-    pixels[idx + 2] = b;
-    pixels[idx + 3] = 255;
-  }
+  const { width, height } = canvas;
+  cachedMandelbrotData = computeMandelbrot(width, height, computationSettings);
+  updateInfo();
+  renderColorsFromCachedData();
 }
 
 // -----------------------------------------------------------------------------
@@ -208,6 +327,8 @@ function drawSelectionFrame() {
 // -----------------------------------------------------------------------------
 function zoomOutStep() {
 
+  const { view, initialView } = computationSettings;
+
   const zoomOutFactor = 2.0;
 
   const currentWidth = view.maxX - view.minX;
@@ -230,12 +351,17 @@ function zoomOutStep() {
   view.maxX = centerX + newWidth / 2;
   view.minY = centerY - newHeight / 2;
   view.maxY = centerY + newHeight / 2;
+
 }
 
 // -----------------------------------------------------------------------------
 // Berechnet die neuen View-Parameter basierend auf der aktuellen Auswahl
 // -----------------------------------------------------------------------------
 function commitSelection() {
+
+  const { view } = computationSettings;
+  const { width, height } = canvas;
+
   const left = selection.centerX - selection.width / 2;
   const top = selection.centerY - selection.height / 2;
   const right = left + selection.width;
@@ -285,6 +411,7 @@ canvas.addEventListener('mousedown', (event) => {
     canvas.addEventListener('contextmenu', event => event.preventDefault());
 
     const pos = getCanvasCoords(event);
+    const { width, height } = canvas;
 
     selection.active = true;
     selection.centerX = pos.x;
@@ -312,6 +439,9 @@ canvas.addEventListener('mousemove', (event) => {
 // -----------------------------------------------------------------------------
 canvas.addEventListener('wheel', (event) => {
   if (selection.active) {
+    const { width, height } = canvas;
+    const { maxIterations } = computationSettings;
+    
     event.preventDefault();
 
     const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1;
@@ -323,7 +453,10 @@ canvas.addEventListener('wheel', (event) => {
     selection.height = Math.max(20, Math.min(selection.height, height));
   } else {
     maxIterations += event.deltaY < 0 ? 50 : -50;
-    maxIterations = Math.max(10, Math.min(maxIterations, 2000));
+    maxIterations = Math.max(50, Math.min(maxIterations, 2000));
+
+    // Synchronisiere mit Vue-Inputfeld
+    app.maxIterationsInput = maxIterations; 
     computeAndCacheMandelbrot();
   }
   renderScene();
@@ -344,13 +477,12 @@ canvas.addEventListener('mouseup', () => {
 // Funktionen für das Info-Panel
 // -----------------------------------------------------------------------------
 function updateInfo() {
+  const { view, initialView } = computationSettings;
   const infoDiv = document.getElementById('info');
   infoDiv.innerHTML = `
-    <strong>Aktueller View:</strong><br>
     X: ${view.minX.toFixed(6)} bis ${view.maxX.toFixed(6)}<br>
     Y: ${view.minY.toFixed(6)} bis ${view.maxY.toFixed(6)}<br>
-    <strong>Iterationstiefe:</strong> ${maxIterations}<br>
-    <strong>Zoom-Level:</strong> ${(initialView.maxX - initialView.minX) / (view.maxX - view.minX)}x
+    <strong>Zoom-Level:</strong> ${((initialView.maxX - initialView.minX) / (view.maxX - view.minX)).toFixed(2)}x<br>
   `;
 }
 
