@@ -1,179 +1,77 @@
 <!DOCTYPE html>
 <html lang="de">
-   
 <head>
-    <meta charset="UTF-8">
-    <title>Mandelbrot-Viewer</title>
-    <style>
-        * {
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-        html, body {
-            margin: 0;
-            width: 100%;
-            height: 100%;
-        }
+  <title>Layout-Test</title>
 
-        body {
-            background-color:white;
-            margin: 0;
-            padding: 0;
-
-            min-height: 100dvh;
-            overflow: hidden;
-
-            display: grid;
-            grid-template-rows: 80px 1fr;
-        }
-
-        .page-header {
-            height:80px;
-            padding: 0 24px;
-
-            display: flex;
-            align-items: center;
-            gap: 24px;
-
-            border-bottom: 1px solid #aaa;
-            background: #e9e9e9;
-        }
-
-        .layout {
-            min-height: 0;
-            overflow: hidden;
-
-            display: grid;
-            grid-template-rows: auto auto;
-            align-content: start;
-        }
-
-        .canvas-area {
-            display: grid;
-            grid-template-columns: minmax(0, auto) 300px;
-            padding: 10px;
-            gap: 10px;
-
-            justify-content: left;
-            align-items: start;
-        }        
-
-        .canvas-wrapper {
-            width: min(
-                1200px,
-                calc(100vw - 300px - 30px),
-                calc((100dvh - 80px - 30px - var(--bottom-box-height, 150px)) * 4 / 3)
-            );
-
-            aspect-ratio: 4 / 3;
-            border: 1px solid #aaa;
-        }
-
-        #mandelbrotCanvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
-
-        .info-box {
-            width: 300px;
-            align-self: start;
-
-            padding: 10px;
-            border: 1px solid #aaa;
-            background: #e9e9e9;
-        }
-
-        #info {
-            font-family: Garamond, serif;
-            font-size: 14px;
-            /* font-weight: lighter; */
-        }
-
-        .controls {
-            width: 100%;
-            max-height: 150px;
-            overflow:auto;
-            padding: 10px;
-
-            font-family: Garamond, serif;
-            font-size: 14px;
-            font-weight: lighter;
-
-            background: #e9e9e9;
-            border-top: 1px solid #aaa;
-            border-bottom: 1px solid #aaa;
-        }
-
-        h1 {
-            margin: 0 0 10px 0;
-            /* font-family:  Verdana, Helvetica, Arial, sans-serif; */
-            font-family: Garamond, serif;
-            font-size:x-large;
-            font-weight: lighter;
-        }
-
-    </style>
+  <link rel="stylesheet" href="styles.css" />
 </head>
-
 <body>
 
-    <header class="page-header">
-        <img src="definition.svg" alt="Mathematical formula: z subscript 0 equals 0, z subscript n plus 1 equals z subscript n squared plus c; c is an element of M if and only if the limit superior as n approaches infinity of the absolute value of z subscript n is less than or equal to 2. This formula defines the Mandelbrot set, a fundamental concept in fractal geometry and complex dynamics.">
-        <h1>lightweight Mandelbrot viewer</h1> 
-    </header>
+    <div class="app-layout">
+        <header class="header">
+            <h1>LMV - Lightweight Mandelbrot Viewer</h1>
+            <img src="definition.svg" alt="Mathematical formula for the Mandelbrot set">
+        </header>
 
-    <main class="layout">
-        <div class="canvas-area">
-            <div class="canvas-wrapper">
-                <canvas 
-                    id="mandelbrotCanvas" 
-                    width="1200" 
-                    height="900"
-                    aria-label="Interaktives Mandelbrot-Set. Klicken Sie mit der rechten Maustaste und scrollen Sie, um hinein zu zoomen. Klicken Sie mit der linken Maustaste, um heraus zu zoomen. Scrollen Sie, um die Iterationstiefe zu ändern.">
-                </canvas>
-            </div>
-            <aside id="control-panel" class="info-box">
-                <div id="info" aria-live="polite">Lade...</div>
+        <main class="main-area">
+            
+            <section class="canvas">
+                <div class="canvas-wrapper">
+                    <canvas id="mandelbrotCanvas" width="1800" height="1350"></canvas>
+                </div>
+            </section>
 
-                <label>
-                    Gamma: {{ gamma.toFixed(2) }}
+            <aside id="control-panel" class="controls">
+
+                <h3>Aktuelle Ansicht</h3>
+                <div id="info">Lade...</div>
+
+                <div class="control-group">
+                    <h3>Parameter für die Berechnung<h3>
+                    <label for="maxIterationsInput">Iterationstiefe:&nbsp;</label>
+                    <input
+                        id="maxIterationsInput"
+                        type="number"
+                        min="10"
+                        max="2000"
+                        step="50"
+                        value="100"
+                        v-model.number="maxIterationsInput"
+                        @change="updateMaxIterations">
+>
+
+                    <h3>Image-Korrekturen</h3>
+                    <label>Gamma: {{ gamma.toFixed(2) }}</label><br>
                     <input 
                         type="range" 
                         min="0" 
-                        max="5" 
+                        max="10" 
                         step="0.2" 
                         v-model.number="gamma"
-                        @input="updateGamma"
-                        aria-label="Gamma-Korrektur anpassen">
-                </label>
-                <label>
-                    Farbskalierung: {{ colorscaling_correction.toFixed(2) }}
+                        @input="updateGamma">
+                    <label>Farbskalierung: {{ colorScalingCorrection.toFixed(2) }}</label><br>
                     <input 
                         type="range" 
                         min="0" 
                         max="5" 
-                        step="0.2" 
-                        v-model.number="colorscaling_correction"
-                        @input="updateColorscalingCorrection"
-                        aria-label="Farbskalierung anpassen">
-                </label>
+                        step="0.5" 
+                        v-model.number="colorScalingCorrection"
+                        @input="updateColorscalingCorrection">
+                </div>
             </aside>
-        </div>
 
-        <section class="controls" aria-labelledby="controls-title">
-            <h2 id="controls-title">Steuerung</h2>
-            <ul>
-                <li><strong>Zoom-In:</strong> rechte Maustaste + Mausrad</li>
-                <li><strong>Zoom-Out:</strong> linke Maustaste</li>
-                <li><strong>Iterationstiefe +/-:</strong> Mausrad</li>
-            </ul>
-        </section>
-    </main>
+        </main>
+
+        <footer class="footer">
+            Karl & Dirk Geßner, 2026
+        </footer>
+    </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="script.js"></script>
 
 </body>
-
 </html>
