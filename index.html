@@ -31,7 +31,11 @@
                 <aside id="control-panel" class="controls">
 
                     <h3>Aktuelle Ansicht</h3>
-                    <div id="info">Lade...</div>
+                    <div id="info">
+                        X: {{ viewInfo.minX.toFixed(6) }} bis {{ viewInfo.maxX.toFixed(6) }}<br>
+                        Y: {{ viewInfo.minY.toFixed(6) }} bis {{ viewInfo.maxY.toFixed(6) }}<br>
+                        <strong>Zoom-Level:</strong> {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
+                    </div>
 
                     <div id="calculation-controls" class="control-group">
                         <h3>Parameter für die Berechnung</h3>
@@ -182,7 +186,17 @@
     </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-    <script src="script.js"></script>
+
+    <script src="js/dom.js"></script>
+    <script src="js/settings.js"></script>
+    <script src="js/palettes.js"></script>
+    <script src="js/mandelbrot.js"></script>
+    <script src="js/rendering.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/interactions.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/file.js"></script>
+    <script src="js/main.js"></script>
 
 </body>
 </html>
