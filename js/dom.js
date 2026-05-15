@@ -5,7 +5,7 @@
 // werden können
 // -----------------------------------------------------------------------------
 const canvasWrapper = document.querySelector('.canvas-wrapper');
-const renderOverlay = document.getElementById('render-Overlay');
+const renderOverlay = document.getElementById('render-overlay');
 const canvas = document.getElementById('mandelbrotCanvas');
 const ctx = canvas.getContext('2d');
 
