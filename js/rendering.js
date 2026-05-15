@@ -144,7 +144,7 @@ function renderColorsFromCachedData() {
     const { width, height } = canvas;
     const { maxIterations } = computationSettings;
 
-    data = cachedMandelbrotData;
+    const data = cachedMandelbrotData;
 
     cachedImageData = ctx.createImageData(width, height);
     const pixels = cachedImageData.data;

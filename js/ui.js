@@ -30,7 +30,7 @@ const app = Vue.createApp({
             logScalingEnabled: renderSettings.logScalingEnabled,
             logStrength: renderSettings.logStrength,
             logStrengthTimer: null,
-            
+
             invertedPalette: renderSettings.invertedPalette,
         };
     },
@@ -44,7 +44,7 @@ const app = Vue.createApp({
             this.viewInfo.zoomLevel = ((initialView.maxX - initialView.minX) / (view.maxX - view.minX));
         },
         updateMaxIterations() {
-            computationSettings.maxIterations = Math.max(10, Math.min(Number(this.maxIterationsInput), 2000));
+            computationSettings.maxIterations = Math.max(0, Math.min(Number(this.maxIterationsInput), 2000));
             this.maxIterationsInput = computationSettings.maxIterations;
 
             this.updateInfo();

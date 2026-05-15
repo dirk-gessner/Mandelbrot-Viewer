@@ -106,6 +106,9 @@ function getCanvasCoords(event) {
     };
 }
 
+// Kontextmenü verhindern
+canvas.addEventListener('contextmenu', event => event.preventDefault());
+
 // Mouse-Down: Startet die Auswahl eines neuen Bereichs
 // -----------------------------------------------------------------------------
 canvas.addEventListener('mousedown', (event) => {
@@ -117,9 +120,6 @@ canvas.addEventListener('mousedown', (event) => {
     } 
     // rechte Maustaste: Startet die Auswahl eines neuen Bereichs
     else if (event.button === 2) {
-
-        // Kontextmenü verhindern
-        canvas.addEventListener('contextmenu', event => event.preventDefault());
 
         const pos = getCanvasCoords(event);
         const { width, height } = canvas;
