@@ -72,14 +72,42 @@ body {
     place-items: center;
 
     background: rgba(255, 255, 255, 0.35);
+    pointer-events: none; 
+
     font-size: larger;
     font-weight: 500;
     color: black;
-    pointer-events: none; /* Verhindert Interaktion mit dem Overlay */
 }
 
 .render-overlay.hidden {
     display: none;
+}
+
+.render-status {
+    display: grid;
+    gap: 12px;
+    justify-items: center;
+
+    font-size: larger;
+    font-weight: 500;
+    color: black;
+}
+
+.render-spinner {
+    width: 48px;
+    height: 48px;
+
+    border-radius: 50%;
+    border: 3px solid rgba(0,0,0,0.18);
+    border-top-color: rgba(0,0,0,0.85);
+    
+    animation: render-spinner-spin 0.8s linear infinite;
+}
+
+@keyframes render-spinner-spin {
+    to {
+        transform: rotate(360deg);
+    }    
 }
 
 .canvas {
