@@ -33,7 +33,7 @@
                     <h3>Aktuelle Ansicht</h3>
                     <div id="info">Lade...</div>
 
-                    <div class="control-group">
+                    <div id="calculation-controls" class="control-group">
                         <h3>Parameter für die Berechnung</h3>
                         <!--------------------------------------------------------------------->
                         <div class="control-row">
@@ -63,7 +63,7 @@
                         </div>
                     </div>
 
-                    <div class="control-group">
+                    <div id="coloring-controls" class="control-group">
                         <h3>Image-Korrekturen</h3>
                         <!--------------------------------------------------------------------->
                         <div class="control-row">
@@ -108,6 +108,17 @@
                         </div>
 
                         <div class="control-row">
+                            <label>Log-Skalierung: {{ logStrength.toFixed(2) }}</label><br>
+                            <input 
+                                type="range" 
+                                min="0" 
+                                max="1" 
+                                step="0.05" 
+                                v-model.number="logStrength"
+                                @input="updateLogStrength">
+                        </div>  
+
+                        <div class="control-row">
                             <label>Korrekturwert Farbskalierung: {{ colorScalingCorrection.toFixed(2) }}</label><br>
                             <input 
                                 type="range" 
@@ -117,9 +128,40 @@
                                 v-model.number="colorScalingCorrection"
                                 @input="updateColorscalingCorrection">
                         </div>  
+
+                        <div class="control-row">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    v-model="smoothColoringEnabled"
+                                    @change="updateRenderOptions">
+                                Smooth Coloring
+                            </label>
+                        </div>
+
+                        <div class="control-row">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    v-model="logScalingEnabled"
+                                    @change="updateRenderOptions">
+                                Logarithmische Skalierung
+                            </label>
+                        </div>    
+
+                        <div class="control-row">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    v-model="invertedPalette"
+                                    @change="updateRenderOptions">
+                                Farbpalette invertieren
+                            </label>
+                        </div>
+
                     </div>
 
-                    <div class="control-group">
+                    <div id="misc-controls" class="control-group">
                         <h3>Sonstiges</h3>
                         <!--------------------------------------------------------------------->
                         <div class="control-row">
