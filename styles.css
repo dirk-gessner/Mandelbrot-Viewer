@@ -4,6 +4,7 @@ body {
   height: 100%;
 }
 
+/* -- Main - Layout --------------------------------------------------------- */
 .app-layout {
   height: 100dvh;
   display: grid;
@@ -11,6 +12,7 @@ body {
   overflow: hidden;
 }
 
+/* -- Header & Footer ------------------------------------------------------- */
 .header {
     background: #333;
     color: whitesmoke;
@@ -37,23 +39,15 @@ body {
     border-top: 1px solid #aaa;
 }
 
+/* -- Main Area ------------------------------------------------------------- */
 .main-area {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-
+  position: relative; 
+  display: block;
   min-height: 0;
   overflow: hidden;
 }
 
-.canvas {
-  background: white;
-
-  min-width: 0;
-  min-height: 0;
-
-  overflow: hidden;
-}
-
+/* -- Canvas ---------------------------------------------------------------- */
 .canvas-wrapper {
     box-sizing: border-box;
     width: 100%;
@@ -88,24 +82,85 @@ body {
     display: none;
 }
 
-.canvas canvas {
-  display: block;
+.canvas {
+  background: white;
   width: 100%;
   height: 100%;
 }
 
+.canvas canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* -- Controls -------------------------------------------------------------- */
 .controls {
     background: #aaa;
 
-    min-height: 0;
-    overflow-y: auto;
-    align-self: stretch;
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 300px;
+    height: 100%;
+
+    transform: translateX(100%);
+    transition: transform 180ms ease;
+    animation: reveal-controls 1.5s ease 0.4s;
+    overflow-y: auto; 
 
     align-items: top;
     justify-content: left;
     padding: 20px 20px;
     box-sizing: border-box;
-    border-left: 1px solid #333;
+    border-left: 1px solid #333; 
+}
+
+@keyframes reveal-controls {
+    0% {
+        transform: translateX(100%);
+    }
+    15% {
+        transform: translateX(0);
+    }
+    70% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.controls-drawer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 20px;
+    height: 100%;
+    z-index: 10; 
+}
+
+.controls-drawer::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 4px;
+
+    width: 4px;
+    height: 48px;
+
+    transform: translateY(-50%);
+    border-radius: 2px;
+
+    background: #aaa;
+}
+
+.controls-drawer:hover {
+    width: 300px;
+}
+
+.controls-drawer:hover .controls{
+    transform: translateX(0);
 }
 
 .control-group {
@@ -130,6 +185,7 @@ body {
     font-weight: 100;
 }
 
+/* -- Typography ------------------------------------------------------------ */
 h1 {
     font-size: larger;
 }
