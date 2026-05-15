@@ -141,6 +141,15 @@ const app = Vue.createApp({
             renderColorsFromCachedData();
             renderScene();
         }, 
+
+        saveCanvasAsPng() {
+            saveCanvasAsPng();
+        }, 
+
+        resetView() {
+            resetView();
+        }, 
+
     },
 }).mount('#control-panel');
 
@@ -364,7 +373,7 @@ function zoomOutStep() {
     view.maxX = nextCenterX + nextWidth / 2;
     view.minY = nextCenterY - nextHeight / 2;
     view.maxY = nextCenterY + nextHeight / 2;
-    
+
 }
 
 
@@ -552,6 +561,12 @@ function recomputeWithOverlay() {
 // Funktionen für flexible Zeichenflächen- und View-Größen
 // -----------------------------------------------------------------------------
 
+function resetView() {
+    const { initialView } = computationSettings;
+    computationSettings.view = { ...initialView };
+    recomputeWithOverlay();
+}
+
 // Berechnet den initialen View basierend auf dem Seitenverhältnis der Canvas,
 // um sicherzustellen, dass der relevante Bereich der Mandelbrot-Menge immer 
 // vollständig sichtbar ist, ohne Verzerrung
@@ -668,6 +683,29 @@ window.addEventListener('resize', () => {
     }, 150);
 });
 
+// -----------------------------------------------------------------------------
+// Funktion zum Speichern des aktuellen Canvas als PNG-Bild
+// -----------------------------------------------------------------------------
+function createTimestamp() {
+    const now = new Date();
+
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+
+    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+}
+    
+function saveCanvasAsPng() {
+    const link = document.createElement('a');
+    link.download = `mandelbrot_${createTimestamp()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+}
 
 // -----------------------------------------------------------------------------
 // Initiale Berechnung
