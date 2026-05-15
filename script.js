@@ -342,23 +342,31 @@ function zoomOutStep() {
     const targetWidth = initialView.maxX - initialView.minX;
     const targetHeight = initialView.maxY - initialView.minY;
 
-    if (currentWidth >= targetWidth && currentHeight >= targetHeight) {
-        Object.assign(view, initialView);
-        return;
-    }
+    const currentCenterX = (view.minX + view.maxX) / 2;
+    const currentCenterY = (view.minY + view.maxY) / 2;
 
-    const centerX = (view.minX + view.maxX) / 2;
-    const centerY = (view.minY + view.maxY) / 2;
+    const targetCenterX = (initialView.minX + initialView.maxX) / 2;
+    const targetCenterY = (initialView.minY + initialView.maxY) / 2;
 
-    const newWidth = Math.min(currentWidth * zoomOutFactor, targetWidth);
-    const newHeight = Math.min(currentHeight * zoomOutFactor, targetHeight);
+    const nextWidth = Math.min(currentWidth * zoomOutFactor, targetWidth);
+    const nextHeight = Math.min(currentHeight * zoomOutFactor, targetHeight);
 
-    view.minX = centerX - newWidth / 2;
-    view.maxX = centerX + newWidth / 2;
-    view.minY = centerY - newHeight / 2;
-    view.maxY = centerY + newHeight / 2;
+    const sizeProgress =
+        (nextWidth - currentWidth) / (targetWidth - currentWidth || 1);
 
+    const nextCenterX =
+        currentCenterX + (targetCenterX - currentCenterX) * sizeProgress;
+
+    const nextCenterY =
+        currentCenterY + (targetCenterY - currentCenterY) * sizeProgress;
+
+    view.minX = nextCenterX - nextWidth / 2;
+    view.maxX = nextCenterX + nextWidth / 2;
+    view.minY = nextCenterY - nextHeight / 2;
+    view.maxY = nextCenterY + nextHeight / 2;
+    
 }
+
 
 // -----------------------------------------------------------------------------
 // Berechnet die neuen View-Parameter basierend auf der aktuellen Auswahl
@@ -518,16 +526,27 @@ function hideRenderOverlay() {
     renderOverlay.classList.add('hidden');
 }
 
-function recomputeWithOverlay() {
+function runWithOverlay(work) {
     showRenderOverlay();
 
     requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-        computeAndCacheMandelbrot();
-        renderScene();
-        hideRenderOverlay();
-    })});
+        requestAnimationFrame(() => {
+            try {
+                work()
+                renderScene();
+            } finally {
+                hideRenderOverlay();
+            }
+        });
+    });
 }
+
+function recomputeWithOverlay() {
+    runWithOverlay(() => {
+        computeAndCacheMandelbrot();
+    });
+}
+
 
 // -----------------------------------------------------------------------------
 // Funktionen für flexible Zeichenflächen- und View-Größen
@@ -601,19 +620,24 @@ function expandViewToAspectRatio(view, targetAspectRatio) {
 // um das neue Seitenverhältnis zu erfüllen, um sicherzustellen, dass die Mandelbrot-Menge
 // korrekt dargestellt wird, ohne Verzerrungen oder abgeschnittene Bereiche
 function resizeCanvasAndKeepView() {
-    const oldWidth = canvas.width;
-    const oldHeight = canvas.height;
+    runWithOverlay(() => {
+        const oldWidth = canvas.width;
+        const oldHeight = canvas.height;
 
-    resizeCanvasToDisplaySize();
+        resizeCanvasToDisplaySize();
 
-    if (canvas.width === oldWidth && canvas.height === oldHeight) {
-        return;
-    }
+        if (canvas.width === oldWidth && canvas.height === oldHeight) {
+            return;
+        }
 
-    const newAspectRatio = canvas.width / canvas.height;
-    expandViewToAspectRatio(computationSettings.view, newAspectRatio);
+        const newAspectRatio = canvas.width / canvas.height;
+        const newInitialView = createInitialViewForAspectRatio(newAspectRatio);
+        computationSettings.initialView = newInitialView;
 
-    recomputeWithOverlay();
+        expandViewToAspectRatio(computationSettings.view, newAspectRatio);
+
+        computeAndCacheMandelbrot();
+    });
 }
 
 // Passt die Größe des Canvas an die tatsächliche Anzeigengröße an, 
