@@ -1,11 +1,11 @@
 // -----------------------------------------------------------------------------
-// Mandelbrot-Daten und Bild-Cache
+// Iterations-Matrixund Bild-Cache
 // -----------------------------------------------------------------------------
-let cachedMandelbrotData = null;
+let cachedIterationData = null;
 let cachedImageData = null;
 
 // -----------------------------------------------------------------------------
-// Rendering-Funktionen für die Zahlenmatrix
+// Rendering-Funktionen für die Iterations-Matrix
 // -----------------------------------------------------------------------------
 
 // berechnet den RGB-Farbwert via Cosinus-Palette 
@@ -70,11 +70,15 @@ function applyPaletteInversion(color) {
 }
 
 // Berechnet den RGB-Farbwert für einen Punkt basierend 
-// auf der Anzahl der Iterationen
-function iterationToColor(iterations, 
-                          escapeValue, 
-                          minIterations, 
-                          maxIterations) {
+// auf der Anzahl der Iterationen und dem Escapewert für 
+// diesen Punkt
+function iterationToColor(  iterations, 
+                            escapeValue, 
+                            minIterations, 
+                            maxIterations, 
+                            renderSettings, 
+                            colors, 
+                            colorPalettes) {
 
     const innerSetColor = colors[renderSettings.innerSetColorKey] || [0, 0, 0];                            
     if (iterations === maxIterations) {
@@ -138,19 +142,27 @@ function iterationToColor(iterations,
     return [r, g, b];
 }
 
-// Rendert die Farben basierend auf den gecachten Mandelbrot-Daten
+// Rendert die Farben basierend auf der gecachten Iterations-Matrix 
+// und speichert das gerenderte Image im Cache
 function renderColorsFromCachedData() {
 
-    const { width, height } = canvas;
     const { maxIterations } = computationSettings;
-
-    const data = cachedMandelbrotData;
+    const { width, height, iterations, escapeValues, minIterations } = cachedIterationData; 
 
     cachedImageData = ctx.createImageData(width, height);
     const pixels = cachedImageData.data;
 
-    for (let i = 0; i < data.iterations.length; i++) {
-        const [r, g, b] = iterationToColor(data.iterations[i], data.escapeValues[i], data.minIterations, maxIterations);
+    for (let i = 0; i < iterations.length; i++) {
+        // Farbwert für Punkt mit Index i ermittlen
+        const [r, g, b] = iterationToColor(
+                                iterations[i], 
+                                escapeValues[i], 
+                                minIterations, 
+                                maxIterations, 
+                                renderSettings, 
+                                colors, 
+                                colorPalettes);
+        // Übernahme des Farbwertes in die Pixelmatrix (Image)
         const idx = i * 4;
         pixels[idx] = r;
         pixels[idx + 1] = g;
@@ -165,7 +177,7 @@ function renderColorsFromCachedData() {
 
 // übernimmt die Daten eines Rechtecks in den Ziel-Cache, 
 // z.B. nach einer Verschiebung oder einer Multi-Thread-Berechnung
-function writeMandelbrotRect(targetData, rect, rectData, imageWidth) {
+function writeIterationRectData(targetData, rect, rectData, imageWidth) {
 
     for (let localY = 0; localY < rect.height; localY++) {
         for (let localX = 0; localX < rect.width; localX++) {
@@ -180,7 +192,7 @@ function writeMandelbrotRect(targetData, rect, rectData, imageWidth) {
 
 // übernimmt die den nach einer Verschiebung noch vorhandenen Bereich aus 
 // dem alten Cache und schreibt ihn in den neuen Cache
-function copyShiftedMandelbrotData(oldData, newData, dx, dy, width, height) {
+function copyShiftedIterationData(oldData, newData, dx, dy, width, height) {
     const sourceX = Math.max(0, -dx);
     const sourceY = Math.max(0, -dy);
 
@@ -254,40 +266,45 @@ function getDirtyPanRects(dx, dy, width, height) {
     return rects;
 }
 
-// Verschiebt den Mandelbrot-Cache um eine Pixel-Distanz und berechnet nur die
-// neu sichtbar gewordenen Bildbereiche nach.
-function panCachedMandelbrotData(dx, dy) {
+// Verschiebt den Iteration-Cache um eine Pixel-Distanz und berechnet 
+// nur die neu sichtbar gewordenen Bildbereiche nach.
+function shiftCachedIterationData(dx, dy) {
 
     // Wenn kein Cache vorhanden ist, einfach neu berechnen
-    if (!cachedMandelbrotData) {
-        computeAndCacheMandelbrot();
+    if (!cachedIterationData) {
+        computeAndCacheIterationData();
         return;
     }
 
-    const { width, height } = canvas;
-    const oldData = cachedMandelbrotData;
+    const { width, height } = cachedIterationData;
+    const oldData = cachedIterationData;
     const newData = {
+        width, 
+        height, 
         iterations: new Uint16Array(width * height),
         escapeValues: new Float64Array(width * height),
         minIterations: 0,
     };
 
     // Übernehme die Daten des nach der Verschiebung noch sichtbaren Bereichs
-    copyShiftedMandelbrotData(oldData, newData, dx, dy, width, height);
+    copyShiftedIterationData(oldData, newData, dx, dy, width, height);
 
     // ermittle die neu sichtbar gewordenen Bereiche
     const dirtyRects = getDirtyPanRects(dx, dy, width, height);
 
-    // Berechne die Mandelbrot-Daten für die neu sichtbar gewordenen Bereiche
+    // Berechne die Iterationswerte für die neu sichtbar gewordenen Bereiche
     for (const rect of dirtyRects) {
+        // hier könnte in Zukunft auch eine andere Funktion gerufen werden, 
+        // die z.B. Multi-Threading unterstützt oder eine andere 
+        // Berechnungsmethode (Julia-Menge) verwendet
         const rectData = computeMandelbrotRect(
             rect,
             width,
             height,
             computationSettings
         );
-        // Übernehme die berechneten Daten des Rechtecks in den neuen Cache
-        writeMandelbrotRect(newData, rect, rectData, width);
+        // berechnete Daten des Rechtecks in den neuen Cache übernehmen
+        writeIterationRectData(newData, rect, rectData, width);
     }
 
     // Aktualisiere die minimale Iterationsanzahl im neuen Cache, 
@@ -296,7 +313,7 @@ function panCachedMandelbrotData(dx, dy) {
     newData.minIterations = findMinIterations(newData.iterations);
 
     // Ersetze den alten Cache durch den neuen Cache
-    cachedMandelbrotData = newData;
+    cachedIterationData = newData;
 
     app.updateInfo();
     renderColorsFromCachedData();
@@ -306,9 +323,11 @@ function panCachedMandelbrotData(dx, dy) {
 // Berechnung der Matrix mit den aktuellen View-Parametern 
 // und Caching des Images
 // -----------------------------------------------------------------------------
-function computeAndCacheMandelbrot() {
+function computeAndCacheIterationData(computeFn = computeMandelbrot) {
     const { width, height } = canvas;
-    cachedMandelbrotData = computeMandelbrot(width, height, computationSettings);
+    // hier könnte in Zukunft auch eine andere Berechnungsvorschrift 
+    // gerufen werden, z.B. (Julia-Menge)
+    cachedIterationData = computeFn(width, height, computationSettings);
     app.updateInfo();
     renderColorsFromCachedData();
 }
@@ -343,7 +362,7 @@ function runWithOverlay(work) {
 
 function recomputeWithOverlay() {
     runWithOverlay(() => {
-        computeAndCacheMandelbrot();
+        computeAndCacheIterationData();
     });
 }
 
@@ -351,7 +370,7 @@ function recomputeWithOverlay() {
 // Rendering der Matrix und ggfs. des Auswahlrahmens
 // -----------------------------------------------------------------------------
 function renderScene() {
-    // Zeichne das gecachte Mandelbrot-Bild
+    // Zeichne das gecachte Image
     if (cachedImageData) {
         ctx.putImageData(cachedImageData, 0, 0);
     }

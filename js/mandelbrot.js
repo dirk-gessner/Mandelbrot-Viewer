@@ -102,6 +102,8 @@ function computeMandelbrot(width, height, computationSettings) {
     );
 
     return {
+        width, 
+        height, 
         iterations: data.iterations,
         escapeValues: data.escapeValues,
         minIterations: findMinIterations(data.iterations),
