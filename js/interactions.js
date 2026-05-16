@@ -76,6 +76,17 @@ const selection = {
     height: 0,
 };
 
+const pan = {
+    active: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    dx: 0,
+    dy: 0,
+};
+
+const panDragThreshold = 4;
+
 // Zeichnen des Auswahlrahmens für Zoom-In
 function drawSelectionFrame() {
     ctx.save();
@@ -109,14 +120,34 @@ function getCanvasCoords(event) {
 // Kontextmenü verhindern
 canvas.addEventListener('contextmenu', event => event.preventDefault());
 
+function shiftViewByPixels(pixelDx, pixelDy) {
+    const { view } = computationSettings;
+    const { width, height } = canvas;
+    const viewWidth = view.maxX - view.minX;
+    const viewHeight = view.maxY - view.minY;
+    const shiftX = (pixelDx / width) * viewWidth;
+    const shiftY = (pixelDy / height) * viewHeight;
+
+    view.minX -= shiftX;
+    view.maxX -= shiftX;
+    view.minY -= shiftY;
+    view.maxY -= shiftY;
+}
+
 // Mouse-Down: Startet die Auswahl eines neuen Bereichs
 // -----------------------------------------------------------------------------
 canvas.addEventListener('mousedown', (event) => {
 
       // linke Maustaste: Zoomt schrittweise zurück zum initialen View
     if (event.button === 0) { 
-        zoomOutStep();
-        recomputeWithOverlay();
+        const pos = getCanvasCoords(event);
+
+        pan.active = true;
+        pan.moved = false;
+        pan.startX = pos.x;
+        pan.startY = pos.y;
+        pan.dx = 0;
+        pan.dy = 0;
     } 
     // rechte Maustaste: Startet die Auswahl eines neuen Bereichs
     else if (event.button === 2) {
@@ -136,6 +167,22 @@ canvas.addEventListener('mousedown', (event) => {
 // Mouse-Move: Aktualisiert die Position des Auswahlrahmens
 // -----------------------------------------------------------------------------
 canvas.addEventListener('mousemove', (event) => {
+    if (pan.active) {
+        const pos = getCanvasCoords(event);
+        pan.dx = Math.round(pos.x - pan.startX);
+        pan.dy = Math.round(pos.y - pan.startY);
+
+        if (!pan.moved && Math.hypot(pan.dx, pan.dy) >= panDragThreshold) {
+            pan.moved = true;
+        }
+
+        if (pan.moved) {
+            renderPannedScene(pan.dx, pan.dy);
+        }
+
+        return;
+    }
+
     if (!selection.active) 
         return;
     const pos = getCanvasCoords(event);
@@ -154,6 +201,10 @@ let wheelTimer = null;
 // oder zu verringern
 // -----------------------------------------------------------------------------
 canvas.addEventListener('wheel', (event) => {
+
+    if (pan.active) {
+        return;
+    }
 
     if (selection.active) {
 
@@ -194,7 +245,30 @@ canvas.addEventListener('wheel', (event) => {
 
 // Mouse-Up: Bestätigt die Auswahl und zoomt in den neuen Bereich
 // -----------------------------------------------------------------------------
-canvas.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', () => {
+    if (pan.active) {
+        const dx = pan.dx;
+        const dy = pan.dy;
+        const wasMoved = pan.moved;
+
+        pan.active = false;
+        pan.moved = false;
+        pan.dx = 0;
+        pan.dy = 0;
+
+        if (wasMoved) {
+            runWithOverlay(() => {
+                shiftViewByPixels(dx, dy);
+                panCachedMandelbrotData(dx, dy);
+            });
+        } else {
+            zoomOutStep();
+            recomputeWithOverlay();
+        }
+
+        return;
+    }
+
     if (!selection.active) 
         return;
     commitSelection();
