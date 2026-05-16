@@ -2,11 +2,7 @@
 // Zoom-Out-Schritt: Vergrößert den aktuellen View 
 // schrittweise zurück zum initialen View
 // -----------------------------------------------------------------------------
-function zoomOutStep() {
-
-    const { view, initialView } = computationSettings;
-
-    const zoomOutFactor = 2.0;
+function zoomOutStep(view, initialView, zoomOutFactor = 2.0) {
 
     const currentWidth = view.maxX - view.minX;
     const currentHeight = view.maxY - view.minY;
@@ -31,35 +27,37 @@ function zoomOutStep() {
     const nextCenterY =
         currentCenterY + (targetCenterY - currentCenterY) * sizeProgress;
 
-    view.minX = nextCenterX - nextWidth / 2;
-    view.maxX = nextCenterX + nextWidth / 2;
-    view.minY = nextCenterY - nextHeight / 2;
-    view.maxY = nextCenterY + nextHeight / 2;
+    return {
+        minX : nextCenterX - nextWidth  / 2,
+        maxX : nextCenterX + nextWidth  / 2,
+        minY : nextCenterY - nextHeight / 2,
+        maxY : nextCenterY + nextHeight / 2,
+    }
 
 }
 
 // -----------------------------------------------------------------------------
 // Berechnet die neuen View-Parameter basierend auf der aktuellen Auswahl
 // -----------------------------------------------------------------------------
-function commitSelection() {
-
-    const { view } = computationSettings;
-    const { width, height } = canvas;
-
+function getViewFromSelection(view, selection, imageWidth, imageHeight) {
+    
     const left = selection.centerX - selection.width / 2;
     const top = selection.centerY - selection.height / 2;
     const right = left + selection.width;
     const bottom = top + selection.height;
 
-    const newMinX = view.minX + (left / width) * (view.maxX - view.minX);
-    const newMaxX = view.minX + (right / width) * (view.maxX - view.minX);
-    const newMinY = view.minY + (top / height) * (view.maxY - view.minY);
-    const newMaxY = view.minY + (bottom / height) * (view.maxY - view.minY);
+    const newMinX = view.minX + (left   / imageWidth ) * (view.maxX - view.minX);
+    const newMaxX = view.minX + (right  / imageWidth ) * (view.maxX - view.minX);
+    const newMinY = view.minY + (top    / imageHeight) * (view.maxY - view.minY);
+    const newMaxY = view.minY + (bottom / imageHeight) * (view.maxY - view.minY);
 
-    view.minX = newMinX;
-    view.maxX = newMaxX;
-    view.minY = newMinY;
-    view.maxY = newMaxY;
+
+    return {
+        minX: newMinX,
+        maxX: newMaxX,
+        minY: newMinY,
+        maxY: newMaxY,
+    }; 
 }
 
 // -----------------------------------------------------------------------------
@@ -246,6 +244,7 @@ canvas.addEventListener('wheel', (event) => {
 // Mouse-Up: Bestätigt die Auswahl und zoomt in den neuen Bereich
 // -----------------------------------------------------------------------------
 window.addEventListener('mouseup', () => {
+
     if (pan.active) {
         const dx = pan.dx;
         const dy = pan.dy;
@@ -259,20 +258,29 @@ window.addEventListener('mouseup', () => {
         if (wasMoved) {
             runWithOverlay(() => {
                 shiftViewByPixels(dx, dy);
-                panCachedMandelbrotData(dx, dy);
+                shiftCachedIterationData(dx, dy);
             });
         } else {
-            zoomOutStep();
+            computationSettings.view = zoomOutStep(
+                                            computationSettings.view, 
+                                            computationSettings.initialView, 
+                                            2.0);
             recomputeWithOverlay();
         }
 
         return;
     }
 
-    if (!selection.active) 
-        return;
-    commitSelection();
+    if (!selection.active) {
+            return;
+    }; 
+
+    computationSettings.view = getViewFromSelection( 
+                                    computationSettings.view, 
+                                    selection, 
+                                    canvas.width, canvas.height); 
     selection.active = false;
+    
     // Neu berechnen und cachen
     recomputeWithOverlay();
 });
