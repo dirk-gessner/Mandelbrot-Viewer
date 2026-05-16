@@ -113,7 +113,7 @@ const app = Vue.createApp({
         }, 
 
         saveCanvasAsPng() {
-            saveCanvasAsPng();
+            saveCanvasAsPng( canvas, `mandelbrot_${createTimestamp()}` );
         }, 
 
         resetView() {

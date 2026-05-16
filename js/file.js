@@ -15,9 +15,9 @@ function createTimestamp() {
     return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
 }
     
-function saveCanvasAsPng() {
+function saveCanvasAsPng(canvas, filename) {
     const link = document.createElement('a');
-    link.download = `mandelbrot_${createTimestamp()}.png`;
+    link.download = filename + '.png';
     link.href = canvas.toDataURL('image/png');
     link.click();
 }
