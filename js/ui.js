@@ -64,10 +64,7 @@ const app = Vue.createApp({
             // Verzögerung von 250ms nach der letzten Änderung, 
             // um flüssiges Anpassen zu ermöglichen;
             clearTimeout(this.gammaTimer);
-            this.gammaTimer = setTimeout(() => {
-                rebuildCachedImageData();
-                renderScene();
-            }, 250); 
+            this.gammaTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
         },
 
         updateColorscalingCorrection() {
@@ -75,10 +72,7 @@ const app = Vue.createApp({
             // Verzögerung von 250ms nach der letzten Änderung, 
             // um flüssiges Anpassen zu ermöglichen;
             clearTimeout(this.colorScalingTimer);
-            this.colorScalingTimer = setTimeout(() => {
-                rebuildCachedImageData();
-                renderScene();
-            }, 250);
+            this.colorScalingTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
         },
         
         updateLogStrength() {
@@ -86,30 +80,24 @@ const app = Vue.createApp({
             // Verzögerung von 250ms nach der letzten Änderung, 
             // um flüssiges Anpassen zu ermöglichen;
             clearTimeout(this.logStrengthTimer);
-            this.logStrengthTimer = setTimeout(() => {
-                rebuildCachedImageData();
-                renderScene();
-            }, 250);
+            this.logStrengthTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
         },
 
         updateRenderOptions() {
             renderSettings.smoothColoringEnabled = this.smoothColoringEnabled;
             renderSettings.logScalingEnabled = this.logScalingEnabled;
             renderSettings.invertedPalette = this.invertedPalette;
-            rebuildCachedImageData();
-            renderScene();
+            rerenderFromIterationData(); 
         },
 
         updatePalette() {
             renderSettings.paletteKey = this.selectedPaletteKey;
-            rebuildCachedImageData();
-            renderScene();
+            rerenderFromIterationData(); 
         }, 
 
         updateInnerSetColor() {
             renderSettings.innerSetColorKey = this.selectedInnerSetColorKey;
-            rebuildCachedImageData();
-            renderScene();
+            rerenderFromIterationData(); 
         }, 
 
         saveCanvasAsPng() {

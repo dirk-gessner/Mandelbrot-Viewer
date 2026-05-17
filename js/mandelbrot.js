@@ -74,23 +74,6 @@ function computeMandelbrotRect(rect, imageWidth, imageHeight, computationSetting
     return { iterations, escapeValues };
 }
 
-// ermittelt die minimale Anzahl von Iterationen in einem Datensatz
-function findMinIterations(iterations) {
-    if (iterations.length === 0) {
-        return 0;
-    }
-
-    let minIterations = iterations[0];
-
-    for (let i = 1; i < iterations.length; i++) {
-        if (iterations[i] < minIterations) {
-            minIterations = iterations[i];
-        }
-    }
-
-    return minIterations;
-}
-
 // Berechnet das Mandelbrot-Bild für die gegebenen Parameter
 function computeMandelbrot(width, height, computationSettings) {
 
