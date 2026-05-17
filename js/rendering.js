@@ -253,8 +253,8 @@ function computeAndCacheIterationData(computeFn = computeMandelbrot) {
     // hier könnte in Zukunft auch eine andere Berechnungsvorschrift 
     // gerufen werden, z.B. (Julia-Menge)
     iterationData = computeFn(imageSize.width, 
-                                    imageSize.height, 
-                                    computationSettings);
+                              imageSize.height, 
+                              computationSettings);
     app.updateInfo();
     rebuildImageData();
 }
