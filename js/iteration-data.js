@@ -274,6 +274,18 @@ function viewToPixelRect(view, containingView, imageSize) {
     return { x, y, width, height };
 }
 
+function canCopyIterationDataToRect(sourceData, targetData, targetRect) {
+    return (
+        sourceData &&
+        targetRect.x >= 0 &&
+        targetRect.y >= 0 &&
+        targetRect.width === sourceData.width &&
+        targetRect.height === sourceData.height &&
+        targetRect.x + targetRect.width <= targetData.width &&
+        targetRect.y + targetRect.height <= targetData.height
+    );
+}
+
 function resizeIterationData(
     oldData,
     oldView,
@@ -295,11 +307,21 @@ function resizeIterationData(
 
     const targetRect = viewToPixelRect ( oldView, newView, newSize ); 
 
+    if (!canCopyIterationDataToRect(oldData, newData, targetRect)) {
+        const fullRect = { x: 0, y: 0, width, height };
+        const fullData = computeRect(fullRect, width, height, computationSettings);
+
+        writeIterationRectData(newData, fullRect, fullData, width);
+        newData.minIterations = findMinIterations(newData.iterations);
+
+        return newData;
+    }
+    
     // alten Bereich an passende Position kopieren
     copyIterationDataToRect(oldData, newData, targetRect); 
 
     // neue Randbereiche als Dirty Rects berechnen
-    const dirtyRects = getDirtyResizeRects(targetRect, width, height);
+    const dirtyRects = getDirtyResizeRects(targetRect, newSize);
 
     // Berechne die Iterationswerte für die neu sichtbar gewordenen Bereiche
     for (const rect of dirtyRects) {

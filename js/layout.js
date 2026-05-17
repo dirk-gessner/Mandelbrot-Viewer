@@ -84,7 +84,7 @@ function resizeCanvasAndKeepView() {
     runWithOverlay(() => {
 
         const oldView = {...computationSettings.view};
-        const oldData = iterationData; 
+        const oldIterationData = iterationData; 
 
         const oldSize = {
             width:  canvas.width,
@@ -110,7 +110,7 @@ function resizeCanvasAndKeepView() {
         computationSettings.view = newView ; 
 
         iterationData = resizeIterationData(
-            oldData,
+            oldIterationData,
             oldView,
             newView,
             newSize,
