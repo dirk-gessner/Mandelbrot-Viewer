@@ -64,10 +64,7 @@ const app = Vue.createApp({
             // Verzögerung von 250ms nach der letzten Änderung, 
             // um flüssiges Anpassen zu ermöglichen;
             clearTimeout(this.gammaTimer);
-            this.gammaTimer = setTimeout(() => {
-                renderColorsFromCachedData();
-                renderScene();
-            }, 250); 
+            this.gammaTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
         },
 
         updateColorscalingCorrection() {
@@ -75,10 +72,7 @@ const app = Vue.createApp({
             // Verzögerung von 250ms nach der letzten Änderung, 
             // um flüssiges Anpassen zu ermöglichen;
             clearTimeout(this.colorScalingTimer);
-            this.colorScalingTimer = setTimeout(() => {
-                renderColorsFromCachedData();
-                renderScene();
-            }, 250);
+            this.colorScalingTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
         },
         
         updateLogStrength() {
@@ -86,34 +80,28 @@ const app = Vue.createApp({
             // Verzögerung von 250ms nach der letzten Änderung, 
             // um flüssiges Anpassen zu ermöglichen;
             clearTimeout(this.logStrengthTimer);
-            this.logStrengthTimer = setTimeout(() => {
-                renderColorsFromCachedData();
-                renderScene();
-            }, 250);
+            this.logStrengthTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
         },
 
         updateRenderOptions() {
             renderSettings.smoothColoringEnabled = this.smoothColoringEnabled;
             renderSettings.logScalingEnabled = this.logScalingEnabled;
             renderSettings.invertedPalette = this.invertedPalette;
-            renderColorsFromCachedData();
-            renderScene();
+            rerenderFromIterationData(); 
         },
 
         updatePalette() {
             renderSettings.paletteKey = this.selectedPaletteKey;
-            renderColorsFromCachedData();
-            renderScene();
+            rerenderFromIterationData(); 
         }, 
 
         updateInnerSetColor() {
             renderSettings.innerSetColorKey = this.selectedInnerSetColorKey;
-            renderColorsFromCachedData();
-            renderScene();
+            rerenderFromIterationData(); 
         }, 
 
         saveCanvasAsPng() {
-            saveCanvasAsPng();
+            saveCanvasAsPng( canvas, `mandelbrot_${createTimestamp()}` );
         }, 
 
         resetView() {

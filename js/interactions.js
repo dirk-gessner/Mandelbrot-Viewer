@@ -2,11 +2,7 @@
 // Zoom-Out-Schritt: Vergrößert den aktuellen View 
 // schrittweise zurück zum initialen View
 // -----------------------------------------------------------------------------
-function zoomOutStep() {
-
-    const { view, initialView } = computationSettings;
-
-    const zoomOutFactor = 2.0;
+function zoomOutStep(view, initialView, zoomOutFactor = 2.0) {
 
     const currentWidth = view.maxX - view.minX;
     const currentHeight = view.maxY - view.minY;
@@ -31,35 +27,37 @@ function zoomOutStep() {
     const nextCenterY =
         currentCenterY + (targetCenterY - currentCenterY) * sizeProgress;
 
-    view.minX = nextCenterX - nextWidth / 2;
-    view.maxX = nextCenterX + nextWidth / 2;
-    view.minY = nextCenterY - nextHeight / 2;
-    view.maxY = nextCenterY + nextHeight / 2;
+    return {
+        minX : nextCenterX - nextWidth  / 2,
+        maxX : nextCenterX + nextWidth  / 2,
+        minY : nextCenterY - nextHeight / 2,
+        maxY : nextCenterY + nextHeight / 2,
+    }
 
 }
 
 // -----------------------------------------------------------------------------
 // Berechnet die neuen View-Parameter basierend auf der aktuellen Auswahl
 // -----------------------------------------------------------------------------
-function commitSelection() {
-
-    const { view } = computationSettings;
-    const { width, height } = canvas;
-
+function getViewFromSelection(view, selection, imageWidth, imageHeight) {
+    
     const left = selection.centerX - selection.width / 2;
     const top = selection.centerY - selection.height / 2;
     const right = left + selection.width;
     const bottom = top + selection.height;
 
-    const newMinX = view.minX + (left / width) * (view.maxX - view.minX);
-    const newMaxX = view.minX + (right / width) * (view.maxX - view.minX);
-    const newMinY = view.minY + (top / height) * (view.maxY - view.minY);
-    const newMaxY = view.minY + (bottom / height) * (view.maxY - view.minY);
+    const newMinX = view.minX + (left   / imageWidth ) * (view.maxX - view.minX);
+    const newMaxX = view.minX + (right  / imageWidth ) * (view.maxX - view.minX);
+    const newMinY = view.minY + (top    / imageHeight) * (view.maxY - view.minY);
+    const newMaxY = view.minY + (bottom / imageHeight) * (view.maxY - view.minY);
 
-    view.minX = newMinX;
-    view.maxX = newMaxX;
-    view.minY = newMinY;
-    view.maxY = newMaxY;
+
+    return {
+        minX: newMinX,
+        maxX: newMaxX,
+        minY: newMinY,
+        maxY: newMaxY,
+    }; 
 }
 
 // -----------------------------------------------------------------------------
@@ -76,16 +74,51 @@ const selection = {
     height: 0,
 };
 
+const pan = {
+    active: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    dx: 0,
+    dy: 0,
+};
+
+const panDragThreshold = 4;
+
 // Zeichnen des Auswahlrahmens für Zoom-In
-function drawSelectionFrame() {
-    ctx.save();
-    ctx.strokeStyle = 'yellow';
-    ctx.lineWidth = 1;
+function drawSelectionFrame(ctx, selection) {
 
     const x = selection.centerX - selection.width / 2;
     const y = selection.centerY - selection.height / 2;
+    const centerX = selection.centerX;
+    const centerY = selection.centerY;
 
+    ctx.save();
+
+    // Auswahlrahmen
+    ctx.strokeStyle = 'yellow';
+    ctx.lineWidth = 1;
     ctx.strokeRect(x, y, selection.width, selection.height);
+
+    // Fadenkreuz
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+
+    // vertikale Linie
+    ctx.moveTo(centerX, 0);
+    ctx.lineTo(centerX, canvas.height);
+
+    // horizontale Linie
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(canvas.width, centerY);
+
+    ctx.stroke();
+
+    // kleine Zielmarkierung im Zentrum
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
+    ctx.stroke();
+
     ctx.restore();
 }
 
@@ -109,14 +142,34 @@ function getCanvasCoords(event) {
 // Kontextmenü verhindern
 canvas.addEventListener('contextmenu', event => event.preventDefault());
 
+function shiftViewByPixels(pixelDx, pixelDy) {
+    const { view } = computationSettings;
+    const { width, height } = canvas;
+    const viewWidth = view.maxX - view.minX;
+    const viewHeight = view.maxY - view.minY;
+    const shiftX = (pixelDx / width) * viewWidth;
+    const shiftY = (pixelDy / height) * viewHeight;
+
+    view.minX -= shiftX;
+    view.maxX -= shiftX;
+    view.minY -= shiftY;
+    view.maxY -= shiftY;
+}
+
 // Mouse-Down: Startet die Auswahl eines neuen Bereichs
 // -----------------------------------------------------------------------------
 canvas.addEventListener('mousedown', (event) => {
 
       // linke Maustaste: Zoomt schrittweise zurück zum initialen View
     if (event.button === 0) { 
-        zoomOutStep();
-        recomputeWithOverlay();
+        const pos = getCanvasCoords(event);
+
+        pan.active = true;
+        pan.moved = false;
+        pan.startX = pos.x;
+        pan.startY = pos.y;
+        pan.dx = 0;
+        pan.dy = 0;
     } 
     // rechte Maustaste: Startet die Auswahl eines neuen Bereichs
     else if (event.button === 2) {
@@ -136,6 +189,22 @@ canvas.addEventListener('mousedown', (event) => {
 // Mouse-Move: Aktualisiert die Position des Auswahlrahmens
 // -----------------------------------------------------------------------------
 canvas.addEventListener('mousemove', (event) => {
+    if (pan.active) {
+        const pos = getCanvasCoords(event);
+        pan.dx = Math.round(pos.x - pan.startX);
+        pan.dy = Math.round(pos.y - pan.startY);
+
+        if (!pan.moved && Math.hypot(pan.dx, pan.dy) >= panDragThreshold) {
+            pan.moved = true;
+        }
+
+        if (pan.moved) {
+            renderPannedScene(pan.dx, pan.dy);
+        }
+
+        return;
+    }
+
     if (!selection.active) 
         return;
     const pos = getCanvasCoords(event);
@@ -154,6 +223,10 @@ let wheelTimer = null;
 // oder zu verringern
 // -----------------------------------------------------------------------------
 canvas.addEventListener('wheel', (event) => {
+
+    if (pan.active) {
+        return;
+    }
 
     if (selection.active) {
 
@@ -194,11 +267,44 @@ canvas.addEventListener('wheel', (event) => {
 
 // Mouse-Up: Bestätigt die Auswahl und zoomt in den neuen Bereich
 // -----------------------------------------------------------------------------
-canvas.addEventListener('mouseup', () => {
-    if (!selection.active) 
+window.addEventListener('mouseup', () => {
+
+    if (pan.active) {
+        const dx = pan.dx;
+        const dy = pan.dy;
+        const wasMoved = pan.moved;
+
+        pan.active = false;
+        pan.moved = false;
+        pan.dx = 0;
+        pan.dy = 0;
+
+        if (wasMoved) {
+            runWithOverlay(() => {
+                shiftViewByPixels(dx, dy);
+                shiftIterationData(dx, dy);
+            });
+        } else {
+            computationSettings.view = zoomOutStep(
+                                            computationSettings.view, 
+                                            computationSettings.initialView, 
+                                            2.0);
+            recomputeWithOverlay();
+        }
+
         return;
-    commitSelection();
+    }
+
+    if (!selection.active) {
+            return;
+    }; 
+
+    computationSettings.view = getViewFromSelection( 
+                                    computationSettings.view, 
+                                    selection, 
+                                    canvas.width, canvas.height); 
     selection.active = false;
+    
     // Neu berechnen und cachen
     recomputeWithOverlay();
 });

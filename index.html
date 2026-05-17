@@ -6,21 +6,21 @@
 
   <title>LMV - Lightweight Mandelbrot Viewer</title>
 
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
 
     <div class="app-layout">
         <header class="header">
             <h1>LMV - Lightweight Mandelbrot Viewer</h1>
-            <img src="definition.svg" alt="Mathematical formula for the Mandelbrot set">
+            <img src="img/definition.svg" alt="Mathematical formula for the Mandelbrot set">
         </header>
 
         <main class="main-area">
             
             <section class="canvas">
                 <div class="canvas-wrapper">
-                    <canvas id="mandelbrotCanvas"></canvas>
+                    <canvas id="fractalCanvas"></canvas>
                     <div id="render-overlay" class="render-overlay">
                         <div class="render-spinner"></div>
                     </div>
@@ -190,6 +190,7 @@
     <script src="js/dom.js"></script>
     <script src="js/settings.js"></script>
     <script src="js/palettes.js"></script>
+    <script src="js/iteration-data.js"></script>
     <script src="js/mandelbrot.js"></script>
     <script src="js/rendering.js"></script>
     <script src="js/layout.js"></script>

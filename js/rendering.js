@@ -1,11 +1,45 @@
+// js/renderings.js
 // -----------------------------------------------------------------------------
-// Mandelbrot-Daten und Bild-Cache
+// Funktionssammlung für Rendering der Iterations-Matrix
 // -----------------------------------------------------------------------------
-let cachedMandelbrotData = null;
-let cachedImageData = null;
+
 
 // -----------------------------------------------------------------------------
-// Rendering-Funktionen für die Zahlenmatrix
+// Iterations-Matrix und Bild-Cache
+// -----------------------------------------------------------------------------
+
+// Daten-Cache: je eine Matrix für Iterations- und Escapewerte
+// -----------------------------------------------------------------------------
+// {
+//     width,        - Breite               - integer
+//     height,       - Höhe                 - integer
+//     iterations,   - Iterationsmatrix     - Uint16Array(width * height)
+//     escapeValues, - Escapewertmatrix     - Float64Array(width * height),
+//     minIterations - der niedrigste Iterationswert der Feldes - integer
+// };
+
+let iterationData = null; 
+
+// Imagecache (width * height)
+// -----------------------------------------------------------------------------
+// {
+//      data         - enthält das zuletzt gerenderte Image als RGBA-Pixelmatrix
+// }; 
+
+let imageData = null;
+
+// -----------------------------------------------------------------------------
+// ermittelt die ImageSize aus der Zeichenfläche (canvas) 
+// -----------------------------------------------------------------------------
+function getCanvasImageSize() {
+    return {
+        width:  canvas.width,
+        height: canvas.height
+    };
+}
+
+// -----------------------------------------------------------------------------
+// Rendering-Funktionen für die Iterations-Matrix
 // -----------------------------------------------------------------------------
 
 // berechnet den RGB-Farbwert via Cosinus-Palette 
@@ -69,105 +103,160 @@ function applyPaletteInversion(color) {
     ];
 }
 
-// Berechnet den RGB-Farbwert für einen Punkt basierend 
-// auf der Anzahl der Iterationen
-function iterationToColor(iterations, 
-                          escapeValue, 
-                          minIterations, 
-                          maxIterations) {
+// kapselt die Verwendung von renderContext in 
+// iterationToColor
+function createIterationColorMapper(renderContext) {
 
-    const innerSetColor = colors[renderSettings.innerSetColorKey] || [0, 0, 0];                            
-    if (iterations === maxIterations) {
-        return innerSetColor;
+    // Berechnet den RGB-Farbwert für einen Punkt basierend 
+    // auf der Anzahl der Iterationen und dem Escapewert für 
+    // diesen Punkt
+    return function iterationToColor(  iterations, 
+                                escapeValue, 
+                                minIterations) {
+
+        const { maxIterations, renderSettings, colors, colorPalettes } = renderContext;                                
+        const innerSetColor = colors[renderSettings.innerSetColorKey] || [0, 0, 0];                            
+        if (iterations === maxIterations) {
+            return innerSetColor;
+        }
+
+        let t = iterations; 
+
+        // Smooth Coloring (Farbwert als Fließkommazahl basierend auf der Escape-Rate)
+        if (renderSettings.smoothColoringEnabled) {
+            t = t + 1 - Math.log2(Math.log2(Math.sqrt(escapeValue)));
+        } 
+
+        t = t - minIterations;
+        const range = maxIterations - minIterations;
+        const linearT = t / range;
+
+        // Logarithmische Skalierung für bessere Farbverteilung
+        if (renderSettings.logScalingEnabled) {
+
+            const { logStrength, colorScalingCorrection } = renderSettings;
+            const logT = Math.log(t     + colorScalingCorrection) 
+                    / Math.log(range + colorScalingCorrection);
+
+            // logStrength steuert die Mischung zwischen linearer
+            // und logarithmischer Skalierung
+            t = linearT * (1 - logStrength) + logT * logStrength;
+        } else {
+            t = linearT;
+        }
+
+        // Gamma-Korrektur für bessere Kontraste                  
+        t = Math.pow(t, renderSettings.gamma); 
+
+        // die gewählte Farbpalette entscheidet, wie der Farbwert 
+        // aus dem "smoothie"-Wert berechnet wird
+        const palette = colorPalettes[renderSettings.paletteKey];
+        let r, g, b;
+
+        if (palette.type === 'cosinus') {
+            [r, g, b] = colorFromCosinePalette(t, palette);
+        }
+
+        if (palette.type === 'grayscale') {
+            const value = Math.round(t * 255);
+            [r, g, b] = [value, value, value];
+        }
+
+        if (palette.type === 'hsv') {
+            [r, g, b] = hsvToRgb(t * 360, 1, 1);
+        }
+
+        if (palette.type === 'bands') {
+            [r, g, b] = colorFromCyclicBands(iterations);
+        }
+
+        if (renderSettings.invertedPalette) {
+            [r, g, b] = applyPaletteInversion([r, g, b]);
+        }
+
+        return [r, g, b];
+    } ; 
+}
+// erzeugt die Pixelmatrix ImageData
+// färbt Pixel ein
+// gibt ImageData zurück
+function createImageDataFromIterationData(  ctx,
+                                            iterationData,
+                                            imageSize,
+                                            renderContext ) {
+
+    const imageData = ctx.createImageData(imageSize.width, imageSize.height);
+    const mapIterationToColor = createIterationColorMapper(renderContext); 
+
+    // die Anzahl der Pixel in ImageData entspricht der Anzahl der 
+    // Datenpunkte im Feld  iterations
+    for (let pixelIndex = 0; pixelIndex < iterationData.iterations.length; pixelIndex++) {
+
+        // Farbwert für einen konkreten Datenpunkt (pixelIndex) ermitteln
+        const [r,g,b] = mapIterationToColor(
+                            iterationData.iterations[pixelIndex],
+                            iterationData.escapeValues[pixelIndex],
+                            iterationData.minIterations); 
+
+        // schreiben des Farbwerts nach imageData
+        const dataIndex = pixelIndex * 4;
+        imageData.data[dataIndex]     = r;
+        imageData.data[dataIndex + 1] = g;
+        imageData.data[dataIndex + 2] = b;
+        imageData.data[dataIndex + 3] = 255;
     }
 
-    let t = iterations; 
-
-    // Smooth Coloring (Farbwert als Fließkommazahl basierend auf der Escape-Rate)
-    if (renderSettings.smoothColoringEnabled) {
-        t = t + 1 - Math.log2(Math.log2(Math.sqrt(escapeValue)));
-    } 
-
-    t = t - minIterations;
-    const range = maxIterations - minIterations;
-    const linearT = t / range;
-
-    // Logarithmische Skalierung für bessere Farbverteilung
-    if (renderSettings.logScalingEnabled) {
-
-        const { logStrength, colorScalingCorrection } = renderSettings;
-        const logT = Math.log(t     + colorScalingCorrection) 
-                   / Math.log(range + colorScalingCorrection);
-
-        // logStrength steuert die Mischung zwischen linearer
-        // und logarithmischer Skalierung
-        t = linearT * (1 - logStrength) + logT * logStrength;
-    } else {
-        t = linearT;
-    }
-
-    // Gamma-Korrektur für bessere Kontraste                  
-    t = Math.pow(t, renderSettings.gamma); 
-
-    // die gewählte Farbpalette entscheidet, wie der Farbwert 
-    // aus dem "smoothie"-Wert berechnet wird
-    const palette = colorPalettes[renderSettings.paletteKey];
-    let r, g, b;
-
-    if (palette.type === 'cosinus') {
-        [r, g, b] = colorFromCosinePalette(t, palette);
-    }
-
-    if (palette.type === 'grayscale') {
-        const value = Math.round(t * 255);
-        [r, g, b] = [value, value, value];
-    }
-
-    if (palette.type === 'hsv') {
-        [r, g, b] = hsvToRgb(t * 360, 1, 1);
-    }
-
-    if (palette.type === 'bands') {
-        [r, g, b] = colorFromCyclicBands(iterations);
-    }
-
-    if (renderSettings.invertedPalette) {
-        [r, g, b] = applyPaletteInversion([r, g, b]);
-    }
-
-    return [r, g, b];
+    return imageData;
 }
 
-// Rendert die Farben basierend auf den gecachten Mandelbrot-Daten
-function renderColorsFromCachedData() {
+// Rendert die Farben basierend auf der gecachten Iterations-Matrix 
+// und speichert das gerenderte Image im Cache
+function rebuildImageData() {
 
-    const { width, height } = canvas;
-    const { maxIterations } = computationSettings;
+    // keine Daten -> kein Image
+    if (!iterationData) {
+        imageData = null;
+        return;
+    }   
+    
+    const { width, height } = iterationData;
+    const imageSize = { width, height };  
 
-    const data = cachedMandelbrotData;
+    // Fehler werfen, wenn die Feldgrößen nicht zusammenpassen
+    if (iterationData.iterations.length !== imageSize.width * imageSize.height) {
+        throw new Error('IterationData size does not match width * height.');
+    }    
 
-    cachedImageData = ctx.createImageData(width, height);
-    const pixels = cachedImageData.data;
+    const renderContext = {
+        maxIterations: computationSettings.maxIterations, 
+        renderSettings, 
+        colors, 
+        colorPalettes
+    }; 
 
-    for (let i = 0; i < data.iterations.length; i++) {
-        const [r, g, b] = iterationToColor(data.iterations[i], data.escapeValues[i], data.minIterations, maxIterations);
-        const idx = i * 4;
-        pixels[idx] = r;
-        pixels[idx + 1] = g;
-        pixels[idx + 2] = b;
-        pixels[idx + 3] = 255;
-    }
+    imageData = createImageDataFromIterationData(
+        ctx,
+        iterationData,
+        imageSize,
+        renderContext
+    );
 }
 
 // -----------------------------------------------------------------------------
 // Berechnung der Matrix mit den aktuellen View-Parametern 
 // und Caching des Images
 // -----------------------------------------------------------------------------
-function computeAndCacheMandelbrot() {
-    const { width, height } = canvas;
-    cachedMandelbrotData = computeMandelbrot(width, height, computationSettings);
+function computeAndCacheIterationData(computeFn = computeMandelbrot) {
+
+    const imageSize = getCanvasImageSize() 
+
+    // hier könnte in Zukunft auch eine andere Berechnungsvorschrift 
+    // gerufen werden, z.B. (Julia-Menge)
+    iterationData = computeFn(imageSize.width, 
+                                    imageSize.height, 
+                                    computationSettings);
     app.updateInfo();
-    renderColorsFromCachedData();
+    rebuildImageData();
 }
 
 // -----------------------------------------------------------------------------
@@ -200,7 +289,7 @@ function runWithOverlay(work) {
 
 function recomputeWithOverlay() {
     runWithOverlay(() => {
-        computeAndCacheMandelbrot();
+        computeAndCacheIterationData();
     });
 }
 
@@ -208,13 +297,32 @@ function recomputeWithOverlay() {
 // Rendering der Matrix und ggfs. des Auswahlrahmens
 // -----------------------------------------------------------------------------
 function renderScene() {
-    // Zeichne das gecachte Mandelbrot-Bild
-    if (cachedImageData) {
-        ctx.putImageData(cachedImageData, 0, 0);
+    // Zeichne das gecachte Image
+    if (imageData) {
+        ctx.putImageData(imageData, 0, 0);
     }
 
     if (selection.active) {
-        drawSelectionFrame();
+        drawSelectionFrame(ctx, selection);
     }
 }
 
+function renderPannedScene(pixelDx, pixelDy) {
+
+    if (!imageData) {
+        return;
+    }
+
+    const imageSize = getCanvasImageSize(); 
+
+    ctx.save();
+    ctx.clearRect(0, 0, imageSize.width, imageSize.height);
+    ctx.putImageData(imageData, pixelDx, pixelDy);
+    ctx.restore();
+}
+
+// Sammelfunktion für regelmäßig gemeinsam ausgeführte Schritte
+function rerenderFromIterationData() {
+    rebuildImageData(); 
+    renderScene(); 
+}

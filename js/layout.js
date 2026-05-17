@@ -59,17 +59,21 @@ function expandViewToAspectRatio(view, targetAspectRatio) {
     const centerX = (view.minX + view.maxX) / 2;
     const centerY = (view.minY + view.maxY) / 2;
 
+    let newView = view;
+
     if (targetAspectRatio > currentAspectRatio) {
         const newWidth = currentHeight * targetAspectRatio;
 
-        view.minX = centerX - newWidth / 2;
-        view.maxX = centerX + newWidth / 2;
+        newView.minX = centerX - newWidth / 2;
+        newView.maxX = centerX + newWidth / 2;
     } else {
         const newHeight = currentWidth / targetAspectRatio;
 
-        view.minY = centerY - newHeight / 2;
-        view.maxY = centerY + newHeight / 2;
+        newView.minY = centerY - newHeight / 2;
+        newView.maxY = centerY + newHeight / 2;
     }
+
+    return newView ; 
 }
 
 // Passt die Größe des Canvas an die tatsächliche Anzeigengröße an und erweitert den View,
@@ -90,9 +94,10 @@ function resizeCanvasAndKeepView() {
         const newInitialView = createInitialViewForAspectRatio(newAspectRatio);
         computationSettings.initialView = newInitialView;
 
-        expandViewToAspectRatio(computationSettings.view, newAspectRatio);
+        computationSettings.view = expandViewToAspectRatio( computationSettings.view, 
+                                                            newAspectRatio );
 
-        computeAndCacheMandelbrot();
+        computeAndCacheIterationData();
     });
 }
 

@@ -45,36 +45,51 @@ function mandelbrotIterations(cx, cy, maxIterations, escapeRadius) {
     };
 }
 
-// Berechnet das Mandelbrot-Bild für die gegebenen Parameter
-function computeMandelbrot(width, height, computationSettings) {
-
+// berechnet die Mandelbrot-Menge für ein bestimmtes Rechteck
+function computeMandelbrotRect(rect, imageWidth, imageHeight, computationSettings) {
+    
     const { view, maxIterations, escapeRadius } = computationSettings;
     const { minX, maxX, minY, maxY } = view;
 
-    const iterations = new Uint16Array(width * height);
-    const escapeValues = new Float64Array(width * height);
-    let minIterations = maxIterations; 
+    const iterations = new Uint16Array(rect.width * rect.height);
+    const escapeValues = new Float64Array(rect.width * rect.height);
 
+    for (let localY = 0; localY < rect.height; localY++) {
+        for (let localX = 0; localX < rect.width; localX++) {
+    
+            const px = rect.x + localX;
+            const py = rect.y + localY;
 
-    for (let py = 0; py < height; py++) {
-        for (let px = 0; px < width; px++) {
-            const x = minX + (px / width ) * (maxX - minX);
-            const y = minY + (py / height) * (maxY - minY);
-            const index = py * width + px;
+            const x = minX + (px / imageWidth) * (maxX - minX);
+            const y = minY + (py / imageHeight) * (maxY - minY);
+
             const result = mandelbrotIterations(x, y, maxIterations, escapeRadius);
 
-            if ( result.iterations < minIterations ) {
-                minIterations = result.iterations;
-            }
-
+            const index = localY * rect.width + localX;
             iterations[index] = result.iterations;
             escapeValues[index] = result.escapeValue;
         }
     }
 
+    return { iterations, escapeValues };
+}
+
+// Berechnet das Mandelbrot-Bild für die gegebenen Parameter
+function computeMandelbrot(width, height, computationSettings) {
+
+    const data = computeMandelbrotRect(
+        { x: 0, y: 0, width, height },
+        width,
+        height,
+        computationSettings
+    );
+
     return {
-        iterations,
-        escapeValues,
-        minIterations
+        width, 
+        height, 
+        iterations: data.iterations,
+        escapeValues: data.escapeValues,
+        minIterations: findMinIterations(data.iterations),
     };
 }
+
