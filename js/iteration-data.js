@@ -185,3 +185,140 @@ function shiftIterationData(dx, dy) {
     app.updateInfo();
     rebuildImageData();
 }
+
+// -----------------------------------------------------------------------------
+// Funktionen für Resize und Neuberechnung der aktuellen View
+// -----------------------------------------------------------------------------
+
+function copyIterationDataToRect(sourceData, targetData, targetRect) {
+    for (let y = 0; y < sourceData.height; y++) {
+        for (let x = 0; x < sourceData.width; x++) {
+            const sourceIndex = y * sourceData.width + x;
+            const targetIndex =
+                (targetRect.y + y) * targetData.width + (targetRect.x + x);
+
+            targetData.iterations[targetIndex] = sourceData.iterations[sourceIndex];
+            targetData.escapeValues[targetIndex] = sourceData.escapeValues[sourceIndex];
+        }
+    }
+}
+
+function getDirtyResizeRects(preservedRect, newSize) {
+    const rects = [];
+
+    // oben
+    if (preservedRect.y > 0) {
+        rects.push({
+            x: 0,
+            y: 0,
+            width: newSize.width,
+            height: preservedRect.y,
+        });
+    }
+
+    // unten
+    const bottom = preservedRect.y + preservedRect.height;
+    if (bottom < newSize.height) {
+        rects.push({
+            x: 0,
+            y: bottom,
+            width: newSize.width,
+            height: newSize.height - bottom,
+        });
+    }
+
+    // links
+    if (preservedRect.x > 0) {
+        rects.push({
+            x: 0,
+            y: preservedRect.y,
+            width: preservedRect.x,
+            height: preservedRect.height,
+        });
+    }
+
+    // rechts
+    const right = preservedRect.x + preservedRect.width;
+    if (right < newSize.width) {
+        rects.push({
+            x: right,
+            y: preservedRect.y,
+            width: newSize.width - right,
+            height: preservedRect.height,
+        });
+    }
+
+    return rects;
+}
+
+function viewToPixelRect(view, containingView, imageSize) {
+    const containingWidth = containingView.maxX - containingView.minX;
+    const containingHeight = containingView.maxY - containingView.minY;
+
+    const x = Math.round(
+        ((view.minX - containingView.minX) / containingWidth) * imageSize.width
+    );
+
+    const y = Math.round(
+        ((view.minY - containingView.minY) / containingHeight) * imageSize.height
+    );
+
+    const width = Math.round(
+        ((view.maxX - view.minX) / containingWidth) * imageSize.width
+    );
+
+    const height = Math.round(
+        ((view.maxY - view.minY) / containingHeight) * imageSize.height
+    );
+
+    return { x, y, width, height };
+}
+
+function resizeIterationData(
+    oldData,
+    oldView,
+    newView,
+    newSize,
+    computeRect,
+    computationSettings
+) {
+    const {width, height} = newSize; 
+
+    // neue Iterationsmatrix anlegen
+    const newData = {
+        width,
+        height,
+        iterations: new Uint16Array(width * height),
+        escapeValues: new Float64Array(width * height),
+        minIterations: 0,
+    };
+
+    const targetRect = viewToPixelRect ( oldView, newView, newSize ); 
+
+    // alten Bereich an passende Position kopieren
+    copyIterationDataToRect(oldData, newData, targetRect); 
+
+    // neue Randbereiche als Dirty Rects berechnen
+    const dirtyRects = getDirtyResizeRects(targetRect, width, height);
+
+    // Berechne die Iterationswerte für die neu sichtbar gewordenen Bereiche
+    for (const rect of dirtyRects) {
+
+        // die hier gerufene Funktion ist als Parameter übergeben worden
+        const rectData = computeRect( rect, 
+                                      width, height, 
+                                      computationSettings );
+
+        // berechnete Daten des Rechtecks in den neuen Cache übernehmen
+        writeIterationRectData(newData, rect, rectData, width);
+    }
+
+    // minIterations neu bestimmen
+    // Aktualisiere die minimale Iterationsanzahl im neuen Cache, 
+    // da sich durch die Verschiebung neue Bereiche mit möglicherweise 
+    // niedrigeren Iterationszahlen ergeben können
+    newData.minIterations = findMinIterations(newData.iterations);
+
+    // neue Iterationsdaten zurückgeben
+    return newData;
+}

@@ -52,6 +52,7 @@ function createInitialViewForAspectRatio(aspectRatio) {
 // Erweitert den aktuellen View so, dass er das Ziel-Seitenverhältnis erfüllt,
 // ohne den Mittelpunkt zu verändern, um Verzerrungen zu vermeiden
 function expandViewToAspectRatio(view, targetAspectRatio) {
+
     const currentWidth = view.maxX - view.minX;
     const currentHeight = view.maxY - view.minY;
     const currentAspectRatio = currentWidth / currentHeight;
@@ -59,7 +60,7 @@ function expandViewToAspectRatio(view, targetAspectRatio) {
     const centerX = (view.minX + view.maxX) / 2;
     const centerY = (view.minY + view.maxY) / 2;
 
-    let newView = view;
+    const newView = {...view};
 
     if (targetAspectRatio > currentAspectRatio) {
         const newWidth = currentHeight * targetAspectRatio;
@@ -81,23 +82,44 @@ function expandViewToAspectRatio(view, targetAspectRatio) {
 // korrekt dargestellt wird, ohne Verzerrungen oder abgeschnittene Bereiche
 function resizeCanvasAndKeepView() {
     runWithOverlay(() => {
-        const oldWidth = canvas.width;
-        const oldHeight = canvas.height;
+
+        const oldView = {...computationSettings.view};
+        const oldData = iterationData; 
+
+        const oldSize = {
+            width:  canvas.width,
+            height: canvas.height,
+        }
 
         resizeCanvasToDisplaySize();
 
-        if (canvas.width === oldWidth && canvas.height === oldHeight) {
+        const newSize = {
+            width:  canvas.width,
+            height: canvas.height,
+        }
+
+        if (newSize.width === oldSize.width && newSize.height === oldSize.height) {
             return;
         }
 
-        const newAspectRatio = canvas.width / canvas.height;
+        const newAspectRatio = newSize.width / newSize.height;
         const newInitialView = createInitialViewForAspectRatio(newAspectRatio);
         computationSettings.initialView = newInitialView;
 
-        computationSettings.view = expandViewToAspectRatio( computationSettings.view, 
-                                                            newAspectRatio );
+        const newView = expandViewToAspectRatio( oldView, newAspectRatio );
+        computationSettings.view = newView ; 
 
-        computeAndCacheIterationData();
+        iterationData = resizeIterationData(
+            oldData,
+            oldView,
+            newView,
+            newSize,
+            computeMandelbrotRect,
+            computationSettings
+        );
+
+        app.updateInfo();
+        rebuildImageData();
     });
 }
 
