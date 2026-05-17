@@ -18,7 +18,7 @@
 //     minIterations - der niedrigste Iterationswert der Feldes - integer
 // };
 
-let cachedIterationData = null; 
+let iterationData = null; 
 
 // Imagecache (width * height)
 // -----------------------------------------------------------------------------
@@ -26,7 +26,7 @@ let cachedIterationData = null;
 //      data         - enthält das zuletzt gerenderte Image als RGBA-Pixelmatrix
 // }; 
 
-let cachedImageData = null;
+let imageData = null;
 
 // -----------------------------------------------------------------------------
 // ermittelt die ImageSize aus der Zeichenfläche (canvas) 
@@ -211,19 +211,19 @@ function createImageDataFromIterationData(  ctx,
 
 // Rendert die Farben basierend auf der gecachten Iterations-Matrix 
 // und speichert das gerenderte Image im Cache
-function rebuildCachedImageData() {
+function rebuildImageData() {
 
     // keine Daten -> kein Image
-    if (!cachedIterationData) {
-        cachedImageData = null;
+    if (!iterationData) {
+        imageData = null;
         return;
     }   
     
-    const { width, height } = cachedIterationData;
+    const { width, height } = iterationData;
     const imageSize = { width, height };  
 
     // Fehler werfen, wenn die Feldgrößen nicht zusammenpassen
-    if (cachedIterationData.iterations.length !== imageSize.width * imageSize.height) {
+    if (iterationData.iterations.length !== imageSize.width * imageSize.height) {
         throw new Error('IterationData size does not match width * height.');
     }    
 
@@ -234,9 +234,9 @@ function rebuildCachedImageData() {
         colorPalettes
     }; 
 
-    cachedImageData = createImageDataFromIterationData(
+    imageData = createImageDataFromIterationData(
         ctx,
-        cachedIterationData,
+        iterationData,
         imageSize,
         renderContext
     );
@@ -252,11 +252,11 @@ function computeAndCacheIterationData(computeFn = computeMandelbrot) {
 
     // hier könnte in Zukunft auch eine andere Berechnungsvorschrift 
     // gerufen werden, z.B. (Julia-Menge)
-    cachedIterationData = computeFn(imageSize.width, 
+    iterationData = computeFn(imageSize.width, 
                                     imageSize.height, 
                                     computationSettings);
     app.updateInfo();
-    rebuildCachedImageData();
+    rebuildImageData();
 }
 
 // -----------------------------------------------------------------------------
@@ -298,18 +298,18 @@ function recomputeWithOverlay() {
 // -----------------------------------------------------------------------------
 function renderScene() {
     // Zeichne das gecachte Image
-    if (cachedImageData) {
-        ctx.putImageData(cachedImageData, 0, 0);
+    if (imageData) {
+        ctx.putImageData(imageData, 0, 0);
     }
 
     if (selection.active) {
-        drawSelectionFrame();
+        drawSelectionFrame(ctx, selection);
     }
 }
 
 function renderPannedScene(pixelDx, pixelDy) {
 
-    if (!cachedImageData) {
+    if (!imageData) {
         return;
     }
 
@@ -317,12 +317,12 @@ function renderPannedScene(pixelDx, pixelDy) {
 
     ctx.save();
     ctx.clearRect(0, 0, imageSize.width, imageSize.height);
-    ctx.putImageData(cachedImageData, pixelDx, pixelDy);
+    ctx.putImageData(imageData, pixelDx, pixelDy);
     ctx.restore();
 }
 
 // Sammelfunktion für regelmäßig gemeinsam ausgeführte Schritte
 function rerenderFromIterationData() {
-    rebuildCachedImageData(); 
+    rebuildImageData(); 
     renderScene(); 
 }

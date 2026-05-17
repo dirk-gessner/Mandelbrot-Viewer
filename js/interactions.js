@@ -86,15 +86,39 @@ const pan = {
 const panDragThreshold = 4;
 
 // Zeichnen des Auswahlrahmens für Zoom-In
-function drawSelectionFrame() {
-    ctx.save();
-    ctx.strokeStyle = 'yellow';
-    ctx.lineWidth = 1;
+function drawSelectionFrame(ctx, selection) {
 
     const x = selection.centerX - selection.width / 2;
     const y = selection.centerY - selection.height / 2;
+    const centerX = selection.centerX;
+    const centerY = selection.centerY;
 
+    ctx.save();
+
+    // Auswahlrahmen
+    ctx.strokeStyle = 'yellow';
+    ctx.lineWidth = 1;
     ctx.strokeRect(x, y, selection.width, selection.height);
+
+    // Fadenkreuz
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+
+    // vertikale Linie
+    ctx.moveTo(centerX, 0);
+    ctx.lineTo(centerX, canvas.height);
+
+    // horizontale Linie
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(canvas.width, centerY);
+
+    ctx.stroke();
+
+    // kleine Zielmarkierung im Zentrum
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
+    ctx.stroke();
+
     ctx.restore();
 }
 
@@ -258,7 +282,7 @@ window.addEventListener('mouseup', () => {
         if (wasMoved) {
             runWithOverlay(() => {
                 shiftViewByPixels(dx, dy);
-                shiftCachedIterationData(dx, dy);
+                shiftIterationData(dx, dy);
             });
         } else {
             computationSettings.view = zoomOutStep(

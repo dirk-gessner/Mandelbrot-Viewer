@@ -166,22 +166,22 @@ function createShiftedIterationData(
 }
 
 // Wrapper-Funktion für die Verschiebung der Iteration-Matrix um (dx, dy)
-function shiftCachedIterationData(dx, dy) {
+function shiftIterationData(dx, dy) {
 
     // Wenn kein Cache vorhanden ist, einfach neu berechnen
-    if (!cachedIterationData) {
+    if (!iterationData) {
         computeAndCacheIterationData();
         return;
     }
 
     // Iterationsdaten verschieben
     // computeMandelbrotRect als Parameter austauschbar
-    cachedIterationData = createShiftedIterationData(
-                                cachedIterationData, 
+    iterationData = createShiftedIterationData(
+                                iterationData, 
                                 dx, dy, 
                                 computeMandelbrotRect, 
                                 computationSettings ); 
 
     app.updateInfo();
-    rebuildCachedImageData();
+    rebuildImageData();
 }
