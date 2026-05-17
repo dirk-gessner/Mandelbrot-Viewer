@@ -113,6 +113,7 @@ function resizeCanvasAndKeepView() {
             oldIterationData,
             oldView,
             newView,
+            oldSize,
             newSize,
             computeMandelbrotRect,
             computationSettings
