@@ -65,7 +65,7 @@ const app = Vue.createApp({
             // um flüssiges Anpassen zu ermöglichen;
             clearTimeout(this.gammaTimer);
             this.gammaTimer = setTimeout(() => {
-                renderColorsFromCachedData();
+                rebuildCachedImageData();
                 renderScene();
             }, 250); 
         },
@@ -76,7 +76,7 @@ const app = Vue.createApp({
             // um flüssiges Anpassen zu ermöglichen;
             clearTimeout(this.colorScalingTimer);
             this.colorScalingTimer = setTimeout(() => {
-                renderColorsFromCachedData();
+                rebuildCachedImageData();
                 renderScene();
             }, 250);
         },
@@ -87,7 +87,7 @@ const app = Vue.createApp({
             // um flüssiges Anpassen zu ermöglichen;
             clearTimeout(this.logStrengthTimer);
             this.logStrengthTimer = setTimeout(() => {
-                renderColorsFromCachedData();
+                rebuildCachedImageData();
                 renderScene();
             }, 250);
         },
@@ -96,19 +96,19 @@ const app = Vue.createApp({
             renderSettings.smoothColoringEnabled = this.smoothColoringEnabled;
             renderSettings.logScalingEnabled = this.logScalingEnabled;
             renderSettings.invertedPalette = this.invertedPalette;
-            renderColorsFromCachedData();
+            rebuildCachedImageData();
             renderScene();
         },
 
         updatePalette() {
             renderSettings.paletteKey = this.selectedPaletteKey;
-            renderColorsFromCachedData();
+            rebuildCachedImageData();
             renderScene();
         }, 
 
         updateInnerSetColor() {
             renderSettings.innerSetColorKey = this.selectedInnerSetColorKey;
-            renderColorsFromCachedData();
+            rebuildCachedImageData();
             renderScene();
         }, 
 

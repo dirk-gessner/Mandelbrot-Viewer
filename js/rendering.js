@@ -1,7 +1,25 @@
 // -----------------------------------------------------------------------------
 // Iterations-Matrixund Bild-Cache
 // -----------------------------------------------------------------------------
-let cachedIterationData = null;
+
+// Daten-Cache: je eine Matrix für Iterations- und Escapewerte
+// -----------------------------------------------------------------------------
+// {
+//     width,        - Breite               - integer
+//     height,       - Höhe                 - integer
+//     iterations,   - Iterationsmatrix     - Uint16Array(width * height)
+//     escapeValues, - Escapewertmatrix     - Float64Array(width * height),
+//     minIterations - der niedrigste Iterationswert der Feldes - integer
+// };
+
+let cachedIterationData = null; 
+
+// Imagecache (width * height)
+// -----------------------------------------------------------------------------
+// {
+//      data         - enthält das zuletzt gerenderte Image als RGBA-Pixelmatrix
+// }; 
+
 let cachedImageData = null;
 
 // -----------------------------------------------------------------------------
@@ -69,106 +87,138 @@ function applyPaletteInversion(color) {
     ];
 }
 
-// Berechnet den RGB-Farbwert für einen Punkt basierend 
-// auf der Anzahl der Iterationen und dem Escapewert für 
-// diesen Punkt
-function iterationToColor(  iterations, 
-                            escapeValue, 
-                            minIterations, 
-                            maxIterations, 
-                            renderSettings, 
-                            colors, 
-                            colorPalettes) {
+// kapselt die Verwendung von renderContext in 
+// iterationToColor
+function createIterationColorMapper(renderContext) {
 
-    const innerSetColor = colors[renderSettings.innerSetColorKey] || [0, 0, 0];                            
-    if (iterations === maxIterations) {
-        return innerSetColor;
+    // Berechnet den RGB-Farbwert für einen Punkt basierend 
+    // auf der Anzahl der Iterationen und dem Escapewert für 
+    // diesen Punkt
+    return function iterationToColor(  iterations, 
+                                escapeValue, 
+                                minIterations) {
+
+        const { maxIterations, renderSettings, colors, colorPalettes } = renderContext;                                
+        const innerSetColor = colors[renderSettings.innerSetColorKey] || [0, 0, 0];                            
+        if (iterations === maxIterations) {
+            return innerSetColor;
+        }
+
+        let t = iterations; 
+
+        // Smooth Coloring (Farbwert als Fließkommazahl basierend auf der Escape-Rate)
+        if (renderSettings.smoothColoringEnabled) {
+            t = t + 1 - Math.log2(Math.log2(Math.sqrt(escapeValue)));
+        } 
+
+        t = t - minIterations;
+        const range = maxIterations - minIterations;
+        const linearT = t / range;
+
+        // Logarithmische Skalierung für bessere Farbverteilung
+        if (renderSettings.logScalingEnabled) {
+
+            const { logStrength, colorScalingCorrection } = renderSettings;
+            const logT = Math.log(t     + colorScalingCorrection) 
+                    / Math.log(range + colorScalingCorrection);
+
+            // logStrength steuert die Mischung zwischen linearer
+            // und logarithmischer Skalierung
+            t = linearT * (1 - logStrength) + logT * logStrength;
+        } else {
+            t = linearT;
+        }
+
+        // Gamma-Korrektur für bessere Kontraste                  
+        t = Math.pow(t, renderSettings.gamma); 
+
+        // die gewählte Farbpalette entscheidet, wie der Farbwert 
+        // aus dem "smoothie"-Wert berechnet wird
+        const palette = colorPalettes[renderSettings.paletteKey];
+        let r, g, b;
+
+        if (palette.type === 'cosinus') {
+            [r, g, b] = colorFromCosinePalette(t, palette);
+        }
+
+        if (palette.type === 'grayscale') {
+            const value = Math.round(t * 255);
+            [r, g, b] = [value, value, value];
+        }
+
+        if (palette.type === 'hsv') {
+            [r, g, b] = hsvToRgb(t * 360, 1, 1);
+        }
+
+        if (palette.type === 'bands') {
+            [r, g, b] = colorFromCyclicBands(iterations);
+        }
+
+        if (renderSettings.invertedPalette) {
+            [r, g, b] = applyPaletteInversion([r, g, b]);
+        }
+
+        return [r, g, b];
+    } ; 
+}
+// erzeugt die Pixelmatrix ImageData
+// färbt Pixel ein
+// gibt ImageData zurück
+function createImageDataFromIterationData(  ctx,
+                                            iterationData,
+                                            imageSize,
+                                            renderContext ) {
+
+    const imageData = ctx.createImageData(imageSize.width, imageSize.height);
+    const mapIterationToColor = createIterationColorMapper(renderContext); 
+
+    // die Anzahl der Pixel in ImageData entspricht der Anzahl der 
+    // Datenpunkte im Feld  iterations
+    for (let pixelIndex = 0; pixelIndex < iterationData.iterations.length; pixelIndex++) {
+
+        // Farbwert für einen konkreten Datenpunkt (pixelIndex) ermitteln
+        const [r,g,b] = mapIterationToColor(
+                            iterationData.iterations[pixelIndex],
+                            iterationData.escapeValues[pixelIndex],
+                            iterationData.minIterations); 
+
+        // schreiben des Farbwerts nach imageData
+        const dataIndex = pixelIndex * 4;
+        imageData.data[dataIndex]     = r;
+        imageData.data[dataIndex + 1] = g;
+        imageData.data[dataIndex + 2] = b;
+        imageData.data[dataIndex + 3] = 255;
     }
 
-    let t = iterations; 
-
-    // Smooth Coloring (Farbwert als Fließkommazahl basierend auf der Escape-Rate)
-    if (renderSettings.smoothColoringEnabled) {
-        t = t + 1 - Math.log2(Math.log2(Math.sqrt(escapeValue)));
-    } 
-
-    t = t - minIterations;
-    const range = maxIterations - minIterations;
-    const linearT = t / range;
-
-    // Logarithmische Skalierung für bessere Farbverteilung
-    if (renderSettings.logScalingEnabled) {
-
-        const { logStrength, colorScalingCorrection } = renderSettings;
-        const logT = Math.log(t     + colorScalingCorrection) 
-                   / Math.log(range + colorScalingCorrection);
-
-        // logStrength steuert die Mischung zwischen linearer
-        // und logarithmischer Skalierung
-        t = linearT * (1 - logStrength) + logT * logStrength;
-    } else {
-        t = linearT;
-    }
-
-    // Gamma-Korrektur für bessere Kontraste                  
-    t = Math.pow(t, renderSettings.gamma); 
-
-    // die gewählte Farbpalette entscheidet, wie der Farbwert 
-    // aus dem "smoothie"-Wert berechnet wird
-    const palette = colorPalettes[renderSettings.paletteKey];
-    let r, g, b;
-
-    if (palette.type === 'cosinus') {
-        [r, g, b] = colorFromCosinePalette(t, palette);
-    }
-
-    if (palette.type === 'grayscale') {
-        const value = Math.round(t * 255);
-        [r, g, b] = [value, value, value];
-    }
-
-    if (palette.type === 'hsv') {
-        [r, g, b] = hsvToRgb(t * 360, 1, 1);
-    }
-
-    if (palette.type === 'bands') {
-        [r, g, b] = colorFromCyclicBands(iterations);
-    }
-
-    if (renderSettings.invertedPalette) {
-        [r, g, b] = applyPaletteInversion([r, g, b]);
-    }
-
-    return [r, g, b];
+    return imageData;
 }
 
 // Rendert die Farben basierend auf der gecachten Iterations-Matrix 
 // und speichert das gerenderte Image im Cache
-function renderColorsFromCachedData() {
+function rebuildCachedImageData() {
 
-    const { maxIterations } = computationSettings;
-    const { width, height, iterations, escapeValues, minIterations } = cachedIterationData; 
+    if (!cachedIterationData) {
+        return;
+    }   
+    
+    const imageSize = {
+        width:  canvas.width,
+        height: canvas.height
+    };    
 
-    cachedImageData = ctx.createImageData(width, height);
-    const pixels = cachedImageData.data;
+    const renderContext = {
+        maxIterations: computationSettings.maxIterations, 
+        renderSettings, 
+        colors, 
+        colorPalettes
+    }; 
 
-    for (let i = 0; i < iterations.length; i++) {
-        // Farbwert für Punkt mit Index i ermittlen
-        const [r, g, b] = iterationToColor(
-                                iterations[i], 
-                                escapeValues[i], 
-                                minIterations, 
-                                maxIterations, 
-                                renderSettings, 
-                                colors, 
-                                colorPalettes);
-        // Übernahme des Farbwertes in die Pixelmatrix (Image)
-        const idx = i * 4;
-        pixels[idx] = r;
-        pixels[idx + 1] = g;
-        pixels[idx + 2] = b;
-        pixels[idx + 3] = 255;
-    }
+    cachedImageData = createImageDataFromIterationData(
+        ctx,
+        cachedIterationData,
+        imageSize,
+        renderContext
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -316,7 +366,7 @@ function shiftCachedIterationData(dx, dy) {
     cachedIterationData = newData;
 
     app.updateInfo();
-    renderColorsFromCachedData();
+    rebuildCachedImageData();
 }
 
 // -----------------------------------------------------------------------------
@@ -329,7 +379,7 @@ function computeAndCacheIterationData(computeFn = computeMandelbrot) {
     // gerufen werden, z.B. (Julia-Menge)
     cachedIterationData = computeFn(width, height, computationSettings);
     app.updateInfo();
-    renderColorsFromCachedData();
+    rebuildCachedImageData();
 }
 
 // -----------------------------------------------------------------------------
