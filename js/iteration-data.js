@@ -39,53 +39,29 @@ function createEmptyIterationData(width, height) {
 // Funktionen für Verschiebung und Neuberechnung der aktuellen View
 // -----------------------------------------------------------------------------
 
-// übernimmt die Daten eines Rechtecks in den Ziel-Cache, 
-// z.B. nach einer Verschiebung oder einer Multi-Thread-Berechnung
-// targetData                   - Ziel: iterationData 
-// rect (x,y, width, height)    - Koordinaten und Ausdehnung des Rechtecks, 
-//                                in das RectData zu schreiben sind
-// rectData                     - Quelle: iterationData
-//
-function writeIterationRectData(targetData, rect, rectData) {
+// übernimmt source oder einen Ausschnitt aus source nach target, 
+// z.B. nach einer Verschiebung oder Erweiterung
+// source                       - Quelle: iterationData
+// target                       - Ziel:   iterationData 
+// copyRegion (                 - beschreibt eine verschobene Kopie: 
+//                                  source(sourceX + x, sourceY + y) 
+//                                      -> target(targetX + x, targetY + y)
+//       sourceX, sourceY,      - Sourcekordinaten
+//       targetX, targetY,      - Zielkoordinaten
+//       width, height)         - Ausdehnung des zu kopierenden Rechtecks
+function copyIterationRect(source, target, copyRegion) 
+{
+    for (let y = 0; y < copyRegion.height; y++) {
+        for (let x = 0; x < copyRegion.width; x++) {
+    
+            const sourceIndex =
+                (copyRegion.sourceY + y) * source.width + (copyRegion.sourceX + x);
 
-    const targetWidth = targetData.width ; 
+            const targetIndex =
+                (copyRegion.targetY + y) * target.width + (copyRegion.targetX + x);
 
-    for (let localY = 0; localY < rect.height; localY++) {
-        for (let localX = 0; localX < rect.width; localX++) {
-
-            const sourceIndex = localY * rect.width + localX;
-            const targetIndex = (rect.y + localY) * targetWidth + (rect.x + localX);
-
-            targetData.iterations  [targetIndex] = rectData.iterations  [sourceIndex];
-            targetData.escapeValues[targetIndex] = rectData.escapeValues[sourceIndex];
-        }
-    }
-}
-
-// übernimmt die den nach einer Verschiebung noch vorhandenen Bereich aus 
-// dem alten Cache und schreibt ihn in den neuen Cache
-function copyShiftedIterationData(oldData, newData, dx, dy) {
-
-    const sourceX = Math.max(0, -dx);
-    const sourceY = Math.max(0, -dy);
-
-    const targetX = Math.max(0, dx);
-    const targetY = Math.max(0, dy);
-
-    const copyWidth  = newData.width  - Math.abs(dx);
-    const copyHeight = newData.height - Math.abs(dy);
-
-    if (copyWidth <= 0 || copyHeight <= 0) {
-        return;
-    }
-
-    for (let y = 0; y < copyHeight; y++) {
-        for (let x = 0; x < copyWidth; x++) {
-            const sourceIndex = (sourceY + y) * newData.width + (sourceX + x);
-            const targetIndex = (targetY + y) * newData.width + (targetX + x);
-
-            newData.iterations  [targetIndex] = oldData.iterations  [sourceIndex];
-            newData.escapeValues[targetIndex] = oldData.escapeValues[sourceIndex];
+            target.iterations  [targetIndex] = source.iterations  [sourceIndex];
+            target.escapeValues[targetIndex] = source.escapeValues[sourceIndex];
         }
     }
 }
@@ -149,27 +125,50 @@ function createShiftedIterationData(oldData,
                                     computationSettings ) {
 
     const { width, height } = oldData;
+
     // die neue Matrix ist so groß wie die alte
     const newData = createEmptyIterationData(width, height);
 
+    // Translation oldData -> newData beschreiben
+    let copyRegion = {
+        sourceX: Math.max(0, -dx),
+        sourceY: Math.max(0, -dy),
+        targetX: Math.max(0, +dx),
+        targetY: Math.max(0, +dy),
+        width  : width  - Math.abs(dx),
+        height : height - Math.abs(dy),
+    };    
+
     // Daten des nach der Verschiebung noch sichtbaren Bereichs übernehmen
-    copyShiftedIterationData(oldData, newData, dx, dy);
+    copyIterationRect( oldData, newData, copyRegion) ; 
 
     // ermittle die neu sichtbar gewordenen Bereiche
     // returns: [{x, y, width, height}, {x, y, width, height}, ...]
     const dirtyRects = getDirtyPanRects(dx, dy, width, height);
 
     // Berechne die Iterationswerte für die neu sichtbar gewordenen Bereiche
-    for (const dirtyRect of dirtyRects) {
+    for (const rect of dirtyRects) {
 
-        // die hier gerufene Funktion ist als Parameter übergeben worden
-        // returns: rectData = { iterations, escapeValues }
-        const dirtyRectData = computeRect(dirtyRect, 
-                                          width, height, 
-                                          computationSettings );
+        const rectData = computeRect(
+            rect, 
+            width, 
+            height, 
+            computationSettings 
+        );
 
-        // berechnete Daten des Rechtecks in den neuen Cache übernehmen
-        writeIterationRectData(newData, dirtyRect, dirtyRectData);
+        // Translation rect -> newData beschreiben
+        copyRegion = {
+            sourceX : 0, 
+            sourceY : 0, 
+            targetX : rect.x,
+            targetY : rect.y,
+            width   : rect.width,        
+            height  : rect.height, 
+        };
+
+        // berechnete Daten des Rechtecks in den neuen Cache 
+        // an Stelle (rect.x, rect.y) übernehmen
+        copyIterationRect(rectData, newData, copyRegion);
     }
 
     // Aktualisiere die minimale Iterationsanzahl im neuen Cache, 
@@ -210,26 +209,6 @@ function withView(settings, view) {
         ...settings,
         view
     };
-}
-
-function copyIterationDataRect(sourceData, targetData, rect) {
-    for (let y = 0; y < rect.height; y++) {
-        for (let x = 0; x < rect.width; x++) {
-            const sourceIndex =
-                (rect.sourceY + y) * sourceData.width +
-                (rect.sourceX + x);
-
-            const targetIndex =
-                (rect.targetY + y) * targetData.width +
-                (rect.targetX + x);
-
-            targetData.iterations[targetIndex] =
-                sourceData.iterations[sourceIndex];
-
-            targetData.escapeValues[targetIndex] =
-                sourceData.escapeValues[sourceIndex];
-        }
-    }
 }
 
 function getDirtyResizeRects(preservedRect, newSize) {
@@ -280,74 +259,17 @@ function getDirtyResizeRects(preservedRect, newSize) {
     return rects;
 }
 
-function viewToPixelRect(view, containingView, imageSize) {
-    const containingWidth = containingView.maxX - containingView.minX;
-    const containingHeight = containingView.maxY - containingView.minY;
+function fillDirtyResizeRects(
+    newData, 
+    preservedRect, 
+    newSize, newView, 
+    computeRect, 
+    computationSettings) {
 
-    const x = Math.round(
-        ((view.minX - containingView.minX) / containingWidth) * imageSize.width
-    );
-
-    const y = Math.round(
-        ((view.minY - containingView.minY) / containingHeight) * imageSize.height
-    );
-
-    const width = Math.round(
-        ((view.maxX - view.minX) / containingWidth) * imageSize.width
-    );
-
-    const height = Math.round(
-        ((view.maxY - view.minY) / containingHeight) * imageSize.height
-    );
-
-    return { x, y, width, height };
-}
-
-
-function expandIterationDataHorizontally(   oldData,
-                                            oldView,
-                                            newView,
-                                            newSize,
-                                            computeRect,
-                                            computationSettings ) {
-
-    const newData = createEmptyIterationData(newSize.width, newSize.height);
-
-    const offsetX = Math.round(((oldView.minX - newView.minX) / (newView.maxX - newView.minX)) * newSize.width);
-
-    copyIterationDataRect(oldData, 
-                          newData, 
-                          { sourceX: 0,
-                            sourceY: 0,
-                            targetX: offsetX,
-                            targetY: 0,
-                            width:  oldData.width,
-                            height: oldData.height });
-
-    // hier besser getDirtyResizeRects verwenden                            
-    const dirtyRects = [];
-
-    if (offsetX > 0) {
-        dirtyRects.push({
-            x: 0,
-            y: 0,
-            width:  offsetX,
-            height: newSize.height
-        });
-    }
-
-    const rightX = offsetX + oldData.width;
-
-    if (rightX < newSize.width) {
-        dirtyRects.push({
-            x: rightX,
-            y: 0,
-            width: newSize.width - rightX,
-            height: newSize.height
-        });
-    }
+    const dirtyRects = getDirtyResizeRects(preservedRect, newSize);
 
     for (const rect of dirtyRects) {
+
         const rectData = computeRect(
             rect,
             newSize.width,
@@ -355,70 +277,72 @@ function expandIterationDataHorizontally(   oldData,
             withView(computationSettings, newView)
         );
 
-        writeIterationRectData(newData, rect, rectData);
+        // Translation rect -> newData beschreiben
+        const copyRegion = {
+            sourceX: 0, 
+            sourceY: 0, 
+            targetX: rect.x,
+            targetY: rect.y,
+            width  : rect.width, 
+            height : rect.height, 
+        };
+
+        // berechnete Daten des Rechtecks in den neuen Cache 
+        // an Stelle (rect.x, rect.y) übernehmen
+        copyIterationRect(rectData, newData, copyRegion); 
     }
 
     newData.minIterations = findMinIterations(newData.iterations);
-    return newData;
+    return newData; 
 }
 
-function expandIterationDataVertically( oldData,
-                                        oldView,
-                                        newView,
-                                        newSize,
-                                        computeRect,
-                                        computationSettings ) {
+function expandIterationData(
+    direction, 
+    oldData,
+    oldView,
+    newView,
+    newSize,
+    computeRect,
+    computationSettings ) {
 
     const newData = createEmptyIterationData(newSize.width, newSize.height);
 
-    const offsetY = Math.round(((oldView.minY - newView.minY) / (newView.maxY - newView.minY)) * newSize.height);
+    const offsetX = direction === 'horizontal'
+                  ? Math.round((  (oldView.minX - newView.minX) 
+                                / (newView.maxX - newView.minX)) * newSize.width)
+                  : 0 ;
+    const offsetY = direction === 'vertical'        
+                  ? Math.round((  (oldView.minY - newView.minY) 
+                                / (newView.maxY - newView.minY)) * newSize.height)
+                  : 0 ; 
 
-    copyIterationDataRect(oldData, 
-                          newData, 
-                          { sourceX: 0,
-                            sourceY: 0,
-                            targetX: 0,
-                            targetY: offsetY,
-                            width:  oldData.width,
-                            height: oldData.height });
+    const preservedRect = {
+            x     : offsetX, 
+            y     : offsetY,
+            width : oldData.width, 
+            height: oldData.height, 
+        };                                                 
 
-    // hier besser getDirtyResizeRects verwenden                            
-    const dirtyRects = [];
+    // Translation oldData (preservedRect) -> newData beschreiben
+    const copyRegion = {
+        sourceX: 0,
+        sourceY: 0,
+        targetX: preservedRect.x,
+        targetY: preservedRect.y,
+        width  : preservedRect.width,
+        height : preservedRect.height,
+    }; 
 
-    if (offsetY > 0) {
-        dirtyRects.push({
-            x: 0,
-            y: 0,
-            width:  newSize.width,
-            height: offsetY
-        });
-    }
+    // Daten aus oldData (preservedRect) nach newData kopieren
+    copyIterationRect(oldData, newData, copyRegion);
 
-    const bottomY = offsetY + oldData.height;
-
-    if (bottomY < newSize.height) {
-        dirtyRects.push({
-            x: 0,
-            y: bottomY,
-            width:  newSize.width,
-            height: newSize.height - bottomY
-        });
-    }
-
-    for (const rect of dirtyRects) {
-        const rectData = computeRect(
-            rect,
-            newSize.width,
-            newSize.height,
-            withView(computationSettings, newView)
-        );
-
-        writeIterationRectData(newData, rect, rectData);
-    }
-
-    newData.minIterations = findMinIterations(newData.iterations);
-
-    return newData;
+    return fillDirtyResizeRects( 
+        newData, 
+        preservedRect, 
+        newSize, 
+        newView, 
+        computeRect, 
+        computationSettings );  
 }
 
 function resizeIterationData(   oldData,
@@ -450,10 +374,22 @@ function resizeIterationData(   oldData,
         const {width, height} = newSize; 
         const newData = createEmptyIterationData(width, height); 
         const rect = { x: 0, y: 0, width: width, height: height };
-        // returns { iterations, escapeValues }
         const rectData = computeRect(rect, width, height, computationSettings);
 
-        writeIterationRectData(newData, rect, rectData);
+        // Translation rect -> newData beschreiben
+        const copyRegion = { 
+            sourceX: 0, 
+            sourceY: 0, 
+            targetX: rect.x,
+            targetY: rect.y,
+            width  : rect.width, 
+            height : rect.height, 
+        };
+
+        // berechnete Daten des Rechtecks in den neuen Cache 
+        // an Stelle (rect.x, rect.y) übernehmen
+        copyIterationRect(rectData, newData, copyRegion);
+
         newData.minIterations = findMinIterations(newData.iterations);
 
         return {
@@ -477,12 +413,14 @@ function resizeIterationData(   oldData,
 
         const nextView = expandViewToAspectRatio(currentView, nextSize.width / nextSize.height);
 
-        currentData = expandIterationDataHorizontally(  currentData,
-                                                        currentView,
-                                                        nextView,
-                                                        nextSize,
-                                                        computeRect,
-                                                        computationSettings );
+        currentData = expandIterationData(  
+                        'horizontal',
+                        currentData,
+                        currentView,
+                        nextView,
+                        nextSize,
+                        computeRect,
+                        computationSettings );
         currentView = nextView;
         currentSize = nextSize;
     }
@@ -498,12 +436,14 @@ function resizeIterationData(   oldData,
 
         const nextView = expandViewToAspectRatio(currentView, nextSize.width / nextSize.height);
 
-        currentData = expandIterationDataVertically(    currentData,
-                                                        currentView,
-                                                        nextView,
-                                                        nextSize,
-                                                        computeRect,
-                                                        computationSettings );
+        currentData = expandIterationData(
+                        'vertical',
+                        currentData,
+                        currentView,
+                        nextView,
+                        nextSize,
+                        computeRect,
+                        computationSettings );
         currentView = nextView;
         currentSize = nextSize;
     }
