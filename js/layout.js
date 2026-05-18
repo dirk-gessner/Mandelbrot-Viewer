@@ -109,7 +109,11 @@ function resizeCanvasAndKeepView() {
         const newView = expandViewToAspectRatio( oldView, newAspectRatio );
         computationSettings.view = newView ; 
 
-        iterationData = resizeIterationData(
+        // resizeIterationData verarbeitet kombinierte Größenänderungen schrittweise.
+        // Der zurückgegebene View gehört exakt zu den erzeugten Iterationsdaten und
+        // muss deshalb zusammen mit ihnen übernommen werden.
+        // returns: { iterationData, view }
+        const resizeResult = resizeIterationData(
             oldIterationData,
             oldView,
             newView,
@@ -118,6 +122,8 @@ function resizeCanvasAndKeepView() {
             computeMandelbrotRect,
             computationSettings
         );
+        iterationData = resizeResult.iterationData;
+        computationSettings.view = resizeResult.view; 
 
         app.updateInfo();
         rebuildImageData();

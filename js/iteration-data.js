@@ -461,7 +461,10 @@ function resizeIterationData(   oldData,
 
     // keine Veränderung whatsoever
     if ( dx == 0 && dy == 0 ) {
-        return oldData; 
+        return {
+            iterationData:  oldData, 
+            view:           oldView, 
+        };
     }
 
     // komplette Neuberechnung bei Verkleinerung
@@ -476,7 +479,10 @@ function resizeIterationData(   oldData,
         writeIterationRectData(newData, rect, rectData);
         newData.minIterations = findMinIterations(newData.iterations);
 
-        return newData;
+        return {
+            iterationData:  newData, 
+            view:           newView, 
+        }
     }
 
     let currentData = oldData;
@@ -525,5 +531,8 @@ function resizeIterationData(   oldData,
         currentSize = nextSize;
     }
 
-    return currentData; 
+    return {
+        iterationData:  currentData, 
+        view:           currentView, 
+    }; 
 }
