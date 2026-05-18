@@ -51,7 +51,7 @@ function computeMandelbrotRect(rect, imageWidth, imageHeight, computationSetting
     const { view, maxIterations, escapeRadius } = computationSettings;
     const { minX, maxX, minY, maxY } = view;
 
-    const iterations = new Uint16Array(rect.width * rect.height);
+    const iterations   = new Uint16Array (rect.width * rect.height);
     const escapeValues = new Float64Array(rect.width * rect.height);
 
     for (let localY = 0; localY < rect.height; localY++) {
@@ -60,36 +60,33 @@ function computeMandelbrotRect(rect, imageWidth, imageHeight, computationSetting
             const px = rect.x + localX;
             const py = rect.y + localY;
 
-            const x = minX + (px / imageWidth) * (maxX - minX);
+            const x = minX + (px / imageWidth)  * (maxX - minX);
             const y = minY + (py / imageHeight) * (maxY - minY);
 
             const result = mandelbrotIterations(x, y, maxIterations, escapeRadius);
 
             const index = localY * rect.width + localX;
-            iterations[index] = result.iterations;
+            iterations  [index] = result.iterations;
             escapeValues[index] = result.escapeValue;
         }
     }
 
-    return { iterations, escapeValues };
+    return { 
+        width : rect.width, 
+        height: rect.height, 
+        iterations, 
+        escapeValues, 
+        minIterations: findMinIterations(iterations),
+    };
 }
 
 // Berechnet das Mandelbrot-Bild für die gegebenen Parameter
 function computeMandelbrot(width, height, computationSettings) {
-
-    const data = computeMandelbrotRect(
+    return computeMandelbrotRect(
         { x: 0, y: 0, width, height },
         width,
         height,
         computationSettings
     );
-
-    return {
-        width, 
-        height, 
-        iterations: data.iterations,
-        escapeValues: data.escapeValues,
-        minIterations: findMinIterations(data.iterations),
-    };
 }
 
