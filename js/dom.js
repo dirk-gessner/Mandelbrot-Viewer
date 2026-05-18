@@ -1,4 +1,3 @@
-// js/dom.js
 // -----------------------------------------------------------------------------
 // Holen der DOM-Elemente für die Darstellung und Interaktion
 // diese werden hier zentral definiert, damit sie in allen Modulen verwendet 

@@ -1,3 +1,7 @@
+// -----------------------------------------------------------------------------
+// globale Objekte für die Parameter für Berechnung und Rendering
+// -----------------------------------------------------------------------------
+
 // Einstellungen für die Mandelbrot-Berechnung
 const computationSettings = {
     initialView: null,

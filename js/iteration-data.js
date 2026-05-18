@@ -1,5 +1,3 @@
-
-// js/renderings.js
 // -----------------------------------------------------------------------------
 // Funktionssammlung für Operationen auf der Iterationsmatrix, die unabhängig
 // von der verwendeten Funktionalität (Julia, Mandelbrot, ...) sind 
@@ -215,27 +213,6 @@ function withView(settings, view) {
 }
 
 function copyIterationDataRect(sourceData, targetData, rect) {
-    for (let y = 0; y < rect.height; y++) {
-        for (let x = 0; x < rect.width; x++) {
-            const sourceIndex =
-                (rect.sourceY + y) * sourceData.width +
-                (rect.sourceX + x);
-
-            const targetIndex =
-                (rect.targetY + y) * targetData.width +
-                (rect.targetX + x);
-
-            targetData.iterations[targetIndex] =
-                sourceData.iterations[sourceIndex];
-
-            targetData.escapeValues[targetIndex] =
-                sourceData.escapeValues[sourceIndex];
-        }
-    }
-}
-
-function copyIterationDataRect(sourceData, targetData, rect) {
-
     for (let y = 0; y < rect.height; y++) {
         for (let x = 0; x < rect.width; x++) {
             const sourceIndex =
@@ -471,10 +448,10 @@ function resizeIterationData(   oldData,
     if ( dx < 0 || dy < 0 ) {
 
         const {width, height} = newSize; 
-        newData = createEmptyIterationData(width, height); 
+        const newData = createEmptyIterationData(width, height); 
         const rect = { x: 0, y: 0, width: width, height: height };
         // returns { iterations, escapeValues }
-        rectData = computeRect(rect, width, height, computationSettings);
+        const rectData = computeRect(rect, width, height, computationSettings);
 
         writeIterationRectData(newData, rect, rectData);
         newData.minIterations = findMinIterations(newData.iterations);

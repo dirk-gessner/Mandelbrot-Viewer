@@ -1,4 +1,3 @@
-// js/renderings.js
 // -----------------------------------------------------------------------------
 // Funktionssammlung für Rendering der Iterations-Matrix
 // -----------------------------------------------------------------------------
@@ -138,14 +137,16 @@ function createIterationColorMapper(renderContext) {
 
         t = t - minIterations;
         const range = maxIterations - minIterations;
-        const linearT = t / range;
+        let linearT = ( range > 0) ? t / range : 0;
 
         // Logarithmische Skalierung für bessere Farbverteilung
         if (renderSettings.logScalingEnabled) {
 
+            // abgesichert gegen Division durch 0
             const { logStrength, colorScalingCorrection } = renderSettings;
-            const logT = Math.log(t     + colorScalingCorrection) 
-                    / Math.log(range + colorScalingCorrection);
+            const correction  = Math.max(colorScalingCorrection, 0.000001);
+            const logT        = Math.log(Math.max(t + correction, 0.000001))
+                              / Math.log(Math.max(range + correction, 1.000001));
 
             // logStrength steuert die Mischung zwischen linearer
             // und logarithmischer Skalierung
