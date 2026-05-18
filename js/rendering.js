@@ -57,6 +57,15 @@ function colorFromGrayscale(t) {
     return [value, value, value];
 }
 
+// alternierende Graustufen
+function colorFromAlternatingGrayscale(t, palette) {
+    const value = t % 2 === 0
+        ? palette.even
+        : palette.odd;
+
+    return [value, value, value];
+}
+
 // berechnet zyklische Farbbänder 
 function colorFromCyclicBands(t) {
     const band = t % 128;
@@ -161,6 +170,10 @@ function createIterationColorMapper(renderContext) {
             const value = Math.round(t * 255);
             [r, g, b] = [value, value, value];
         }
+
+        if (palette.type === 'alternatingGrayscale') {
+            [r, g, b] = colorFromAlternatingGrayscale(iterations, palette);
+        }        
 
         if (palette.type === 'hsv') {
             [r, g, b] = hsvToRgb(t * 360, 1, 1);

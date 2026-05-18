@@ -48,6 +48,13 @@ const colorPalettes = {
         type: 'grayscale',
     }, 
 
+    alternatingGrayscale: {
+        name: 'Alternierende Graustufen',
+        type: 'alternatingGrayscale',
+        even: 64,
+        odd: 192,
+    },    
+
     hsv: {
         name: 'HSV-Regenbogen',
         type: 'hsv',
