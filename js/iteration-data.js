@@ -135,8 +135,8 @@ function createShiftedIterationData(oldData,
         sourceY: Math.max(0, -dy),
         targetX: Math.max(0, +dx),
         targetY: Math.max(0, +dy),
-        width  : width  - Math.abs(dx),
-        height : height - Math.abs(dy),
+        width  : width  - Math.abs(dx) > 0 ? width  - Math.abs(dx) : 0,
+        height : height - Math.abs(dy) > 0 ? height - Math.abs(dy) : 0,
     };    
 
     // Daten des nach der Verschiebung noch sichtbaren Bereichs übernehmen
