@@ -33,10 +33,30 @@ body {
     color: whitesmoke;
     display: flex;
     align-items: center;
-    justify-content: right;
+    justify-content: space-between;
     padding: 0px 20px;
     box-sizing: border-box;
     border-top: 1px solid #aaa;
+}
+
+.footer-help-button {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0px;
+    border-radius: 4px;
+    background: transparent;
+    color: whitesmoke;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
+.footer-help-button:hover,
+.footer-help-button:focus-visible {
+    border: 1px solid rgba(245, 245, 245, 0.35);
+    background: rgba(255, 255, 255, 0.12);
+    outline: none;
 }
 
 /* -- Main Area ------------------------------------------------------------- */
@@ -222,4 +242,103 @@ h3 {
     font-size: medium;
     font-weight:500;
     margin-bottom: 5px; 
+}
+
+/* -- Help Modal ------------------------------------------------------------ */
+.help-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.help-modal.hidden {
+    display: none;
+}
+
+.help-dialog {
+    width: min(520px, 100%);
+    max-height: min(720px, 90dvh);
+    overflow-y: auto;
+    background: #aaa;
+    color: #222;
+    border: 1px solid #555;
+    border-radius: 6px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.help-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.help-dialog h3 {
+    margin: 0;
+    font-size: larger;
+    font-weight: 500;
+}
+
+.help-close-button {
+    appearance: none;
+    display: inline-flex;
+    align-items:center;
+    justify-content:center;
+    width: 32px;
+    height: 28px;
+    border: 1px solid #777;
+    border-radius: 4px;
+    background: #333;
+    color: whitesmoke;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight:500;
+    line-height: 1;
+}
+
+.help-close-button:hover,
+.help-close-button:focus-visible {
+    background: #e9e9e9; 
+    color:#333;
+    outline: none;
+}
+
+.help-list {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+}
+
+.help-list div {
+    display: grid;
+    grid-template-columns: minmax(170px, 0.9fr) minmax(0, 1.1fr);
+    gap: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #888;
+}
+
+.help-list dt {
+    font-size:smaller;
+    font-weight: 100;
+}
+
+.help-list dd {
+    font-size:smaller;
+    font-weight: 100;
+    margin: 0;
+}
+
+@media (max-width: 560px) {
+    .help-list div {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
 }
