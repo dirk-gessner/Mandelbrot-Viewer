@@ -1,4 +1,8 @@
 // -----------------------------------------------------------------------------
+// Funktionsammlung für Interaktionen mit der App
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
 // Zoom-Out-Schritt: Vergrößert den aktuellen View 
 // schrittweise zurück zum initialen View
 // -----------------------------------------------------------------------------
@@ -116,7 +120,7 @@ function drawSelectionFrame(ctx, selection) {
 
     // kleine Zielmarkierung im Zentrum
     ctx.beginPath();
-    ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
+    ctx.arc(centerX, centerY, 10, 0, 2 * Math.PI);
     ctx.stroke();
 
     ctx.restore();

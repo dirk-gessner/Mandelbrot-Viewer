@@ -1,4 +1,3 @@
-// js/renderings.js
 // -----------------------------------------------------------------------------
 // Funktionssammlung für Rendering der Iterations-Matrix
 // -----------------------------------------------------------------------------
@@ -54,6 +53,15 @@ function colorFromCosinePalette(t, palette) {
 // berechnet den RGB-Farbwert für eine Graustufen-Palette
 function colorFromGrayscale(t) {
     const value = Math.round(t * 255);
+    return [value, value, value];
+}
+
+// alternierende Graustufen
+function colorFromAlternatingGrayscale(t, palette) {
+    const value = t % 2 === 0
+        ? palette.even
+        : palette.odd;
+
     return [value, value, value];
 }
 
@@ -129,14 +137,16 @@ function createIterationColorMapper(renderContext) {
 
         t = t - minIterations;
         const range = maxIterations - minIterations;
-        const linearT = t / range;
+        let linearT = ( range > 0) ? t / range : 0;
 
         // Logarithmische Skalierung für bessere Farbverteilung
         if (renderSettings.logScalingEnabled) {
 
+            // abgesichert gegen Division durch 0
             const { logStrength, colorScalingCorrection } = renderSettings;
-            const logT = Math.log(t     + colorScalingCorrection) 
-                    / Math.log(range + colorScalingCorrection);
+            const correction  = Math.max(colorScalingCorrection, 0.000001);
+            const logT        = Math.log(Math.max(t + correction, 0.000001))
+                              / Math.log(Math.max(range + correction, 1.000001));
 
             // logStrength steuert die Mischung zwischen linearer
             // und logarithmischer Skalierung
@@ -161,6 +171,10 @@ function createIterationColorMapper(renderContext) {
             const value = Math.round(t * 255);
             [r, g, b] = [value, value, value];
         }
+
+        if (palette.type === 'alternatingGrayscale') {
+            [r, g, b] = colorFromAlternatingGrayscale(iterations, palette);
+        }        
 
         if (palette.type === 'hsv') {
             [r, g, b] = hsvToRgb(t * 360, 1, 1);
@@ -253,8 +267,8 @@ function computeAndCacheIterationData(computeFn = computeMandelbrot) {
     // hier könnte in Zukunft auch eine andere Berechnungsvorschrift 
     // gerufen werden, z.B. (Julia-Menge)
     iterationData = computeFn(imageSize.width, 
-                                    imageSize.height, 
-                                    computationSettings);
+                              imageSize.height, 
+                              computationSettings);
     app.updateInfo();
     rebuildImageData();
 }

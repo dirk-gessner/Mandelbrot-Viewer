@@ -34,6 +34,7 @@ const app = Vue.createApp({
             invertedPalette: renderSettings.invertedPalette,
         };
     },
+    
     methods: {
         updateInfo() {
             const { view, initialView } = computationSettings;

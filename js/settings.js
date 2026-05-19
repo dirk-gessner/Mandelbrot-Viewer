@@ -1,9 +1,13 @@
+// -----------------------------------------------------------------------------
+// globale Objekte für die Parameter für Berechnung und Rendering
+// -----------------------------------------------------------------------------
+
 // Einstellungen für die Mandelbrot-Berechnung
 const computationSettings = {
     initialView: null,
     view: null,
     maxIterations: 100,
-    escapeRadius: 2,
+    escapeRadius: 5,
 };
 
 // Einstellungen für das Rendering (z.B. Gamma-Korrektur)

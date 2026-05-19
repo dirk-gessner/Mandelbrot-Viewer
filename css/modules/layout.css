@@ -1,0 +1,39 @@
+/* -- Header & Footer ------------------------------------------------------- */
+.header {
+    background: #333;
+    color: whitesmoke;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0px 20px;
+    box-sizing: border-box;
+    border-bottom: 1px solid #aaa;
+}
+
+.header img {
+  filter: invert(1);
+}
+
+.footer {
+    background: #333;
+    color: whitesmoke;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0px 20px;
+    box-sizing: border-box;
+    border-top: 1px solid #aaa;
+}
+
+.footer-button {
+    color:whitesmoke;
+}
+
+/* -- Main Area ------------------------------------------------------------- */
+.main-area {
+  position: relative; 
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+}
+

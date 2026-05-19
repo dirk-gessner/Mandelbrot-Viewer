@@ -1,3 +1,7 @@
+// -----------------------------------------------------------------------------
+// Definitionen für Farben und Farbpaletten
+// -----------------------------------------------------------------------------
+
 const colors = {
     white: [255, 255, 255],
     black: [0, 0, 0],
@@ -47,6 +51,13 @@ const colorPalettes = {
         name: 'Graustufen',
         type: 'grayscale',
     }, 
+
+    alternatingGrayscale: {
+        name: 'Alternierende Graustufen',
+        type: 'alternatingGrayscale',
+        even: 64,
+        odd: 192,
+    },    
 
     hsv: {
         name: 'HSV-Regenbogen',

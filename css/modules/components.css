@@ -1,0 +1,21 @@
+.btn {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    padding: 5px 10px 7px 10px;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;  
+}
+
+.btn-outline{
+    border: 1px solid #888;
+    background: transparent;
+}
+
+.btn-outline:hover,
+.btn-outline:focus-visible {
+    background: rgba(255, 255, 255, 0.2);
+    outline: none;
+}
