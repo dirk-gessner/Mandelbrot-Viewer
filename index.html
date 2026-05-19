@@ -30,14 +30,14 @@
             <div class="controls-drawer">
                 <aside id="control-panel" class="controls">
 
-                    <h3>Aktuelle Ansicht</h3>
-                    <div id="info">
+                    <div id="info" class="control-group">
+                        <h3>Aktuelle Ansicht</h3>
                         X: {{ viewInfo.minX.toFixed(6) }} bis {{ viewInfo.maxX.toFixed(6) }}<br>
                         Y: {{ viewInfo.minY.toFixed(6) }} bis {{ viewInfo.maxY.toFixed(6) }}<br>
-                        <strong>Zoom-Level:</strong> {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
+                        Zoom-Level: {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
                     </div>
 
-                    <div id="calculation-controls" class="control-group">
+                    <div id="calculation-controls" class="control-group separation-line">
                         <h3>Parameter für die Berechnung</h3>
                         <!--------------------------------------------------------------------->
                         <div class="control-row">
@@ -61,13 +61,13 @@
                             min="1.1"
                             max="20"
                             step="0.1"
-                            value="2"
+                            value="5"
                             v-model.number="escapeRadiusInput"
                             @change="updateEscapeRadius">
                         </div>
                     </div>
 
-                    <div id="coloring-controls" class="control-group">
+                    <div id="coloring-controls" class="control-group separation-line">
                         <h3>Image-Korrekturen</h3>
                         <!--------------------------------------------------------------------->
                         <div class="control-row">
@@ -165,14 +165,18 @@
 
                     </div>
 
-                    <div id="misc-controls" class="control-group">
+                    <div id="misc-controls" class="control-group separation-line">
                         <h3>Sonstiges</h3>
                         <!--------------------------------------------------------------------->
                         <div class="control-row">
-                            <button @click="saveCanvasAsPng">Als PNG speichern</button>
+                            <button @click="saveCanvasAsPng" class="btn btn-outline control-button">
+                                Als PNG speichern
+                            </button>
                         </div>
                         <div class="control-row">
-                            <button @click="resetView">Ansicht zurücksetzen</button>
+                            <button @click="resetView" class="btn btn-outline control-button">
+                                Ansicht zurücksetzen
+                            </button>
                         </div>
                     </div>
                 </aside>
@@ -181,7 +185,7 @@
         </main>
 
         <footer class="footer">
-            <button id="help-button" class="footer-help-button" type="button">
+            <button id="help-button" class="btn btn-outline footer-button" type="button">
                 Steuerung ?
             </button>
             <span>Karl & Dirk Geßner, 2026</span>
