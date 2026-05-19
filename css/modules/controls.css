@@ -1,0 +1,103 @@
+/* -- Controls -------------------------------------------------------------- */
+.controls {
+    background: #e9e9e9;
+
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 300px;
+    height: 100%;
+
+    transform: translateX(100%);
+    transition: transform 0.1s ease 0.8s;
+
+    animation: reveal-controls 1.5s ease 0.4s;
+    
+    overflow-y: auto; 
+    align-items: top;
+    justify-content: left;
+    padding: 20px 20px;
+    box-sizing: border-box;
+    border-left: 1px solid #333; 
+}
+
+@keyframes reveal-controls {
+    0% {
+        transform: translateX(100%);
+    }
+    15% {
+        transform: translateX(0);
+    }
+    70% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.controls-drawer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 20px;
+    height: 100%;
+    z-index: 10; 
+}
+
+.controls-drawer::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 4px;
+
+    width: 4px;
+    height: 48px;
+
+    transform: translateY(-50%);
+    border-radius: 2px;
+
+    background: #aaa;
+}
+
+.controls-drawer:hover {
+    width: 300px;
+}
+
+.controls-drawer:hover .controls{
+    transform: translateX(0);
+}
+
+.control-group {
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+.separation-line {
+    border-top: 1px solid #888;
+}
+
+.control-group label {
+    font-weight: 100;
+}
+
+.control-group h3 {
+    font-weight:500;
+    margin-bottom: 5px; 
+}
+
+.control-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 5px;
+}
+
+.btn.control-button {
+    background: rgba(0, 0, 0, 0.0);
+}
+
+.btn.control-button:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
