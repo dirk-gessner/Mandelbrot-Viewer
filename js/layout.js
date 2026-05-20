@@ -150,6 +150,15 @@ function initializeCanvasAndView() {
     computationSettings.view = { ...initialView };
 }
 
+function initializeControlsDrawer() {
+    controlsDrawer.addEventListener('mouseenter', () => {
+        controlsDrawer.classList.add('open');
+    });
+
+    controlsCloseButton.addEventListener('click', () => {
+        controlsDrawer.classList.remove('open');
+    });
+}
 // nach einem Resize-Event wird die Canvas-Größe angepasst und der View erweitert, 
 // um das neue Seitenverhältnis zu erfüllen, um Verzerrungen zu vermeiden
 window.addEventListener('resize', () => {
