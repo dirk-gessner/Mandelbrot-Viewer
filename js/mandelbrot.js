@@ -50,43 +50,84 @@ function mergeIterationDataParts(rect, parts) {
         }
     }
 
-    return (
-        rect.width,
-        rect.height,
+    return {
+        width:  rect.width,
+        height: rect.height,
         iterations,
         escapeValues,
         minIterations
-    );
+    };
 }
 
 function computeMandelbrotRectInWorker(
-  rect,
-  imageWidth,
-  imageHeight,
-  computationSettings
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings, 
+    workerId = 0
 ) {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker("./js/mandelbrot-worker.js", {
-      type: "module"
+    return new Promise((resolve, reject) => {
+
+        const worker = new Worker("./js/mandelbrot-worker.js", {
+            type: "module"
+        });
+
+        worker.onmessage = (event) => {
+            worker.terminate();
+            resolve(event.data);
+        };
+
+        worker.onerror = (error) => {
+            console.error("Worker error", workerId, error);
+            worker.terminate();
+            reject(error);
+        };
+
+        worker.postMessage({
+            rect,
+            imageWidth,
+            imageHeight,
+            computationSettings
+        });
     });
+}
 
-    worker.onmessage = (event) => {
-      worker.terminate();
-      resolve(event.data);
-    };
+async function computeTasksWithWorkerPool(
+    tasks,
+    imageWidth,
+    imageHeight,
+    computationSettings,
+    workerCount
+) {
+    const results = new Array(tasks.length);
+    let nextTaskIndex = 0;
 
-    worker.onerror = (error) => {
-      worker.terminate();
-      reject(error);
-    };
+    async function runWorker(workerId) {
+        while (nextTaskIndex < tasks.length) {
+            const taskIndex = nextTaskIndex++;
+            const rect = tasks[taskIndex];
 
-    worker.postMessage({
-      rect,
-      imageWidth,
-      imageHeight,
-      computationSettings
-    });
-  });
+            const result = await computeMandelbrotRectInWorker(
+                rect,
+                imageWidth,
+                imageHeight,
+                computationSettings,
+                workerId
+            );
+
+            results[taskIndex] = result;
+        }
+    }
+
+    const workers = [];
+
+    for (let workerId = 0; workerId < workerCount; workerId++) {
+        workers.push(runWorker(workerId));
+    }
+
+    await Promise.all(workers);
+
+    return results;
 }
 
 async function computeMandelbrotRectParallel(
@@ -96,17 +137,34 @@ async function computeMandelbrotRectParallel(
     computationSettings,
     workerCount
 ) {
-    const subRects = splitRectHorizontally(rect, workerCount);
+    const tasksPerWorker = 10;
+    const taskCount = Math.min(rect.height, workerCount * tasksPerWorker);    
+    
+    const tasks = splitRectHorizontally(rect, taskCount);
 
-    const parts = await Promise.all(
-        subRects.map(subRect =>
-            computeMandelbrotRectInWorker(
-                subRect,
-                imageWidth,
-                imageHeight,
-                computationSettings
-            )
-        )
+    console.log(
+        "computeMandelbrotRectParallel (start)",
+        {
+            requestedWorkers: workerCount,
+            actualParts: tasks.length,
+            rect,
+            tasks
+        }
+    );
+    const startedAt = performance.now();
+
+    const parts = await computeTasksWithWorkerPool(
+        tasks,
+        imageWidth,
+        imageHeight,
+        computationSettings,
+        workerCount
+    );
+
+    const elapsed = performance.now() - startedAt;
+    console.log(
+        "computeMandelbrotRectParallel (done)",
+        {   elapsedMs: Math.round(elapsed) }
     );
 
     return mergeIterationDataParts(rect, parts);
@@ -118,9 +176,9 @@ async function computeMandelbrotRect(
     imageHeight,
     computationSettings
 ) {
-    const workerCount = 4; // später konfigurierbar
+    const workerCount = 8; // später konfigurierbar
 
-    if (workerCount <= 1 || rect.width * rect.height < 10_000) {
+    if (workerCount <= 1 || rect.width * rect.height < 10000) {
         return computeMandelbrotRectInWorker(
             rect,
             imageWidth,

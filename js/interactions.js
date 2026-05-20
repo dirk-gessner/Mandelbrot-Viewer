@@ -255,7 +255,7 @@ canvas.addEventListener('wheel', (event) => {
         const cs = computationSettings;
 
         cs.maxIterations += event.deltaY < 0 ? 50 : -50;
-        cs.maxIterations = Math.max(50, Math.min(cs.maxIterations, 2000));
+        cs.maxIterations = Math.max(50, Math.min(cs.maxIterations, 5000));
 
         // Synchronisiere mit Vue-Inputfeld
         app.maxIterationsInput = cs.maxIterations; 
