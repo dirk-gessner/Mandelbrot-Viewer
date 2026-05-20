@@ -59,12 +59,42 @@
                             <input
                                 id="escapeRadiusInput"
                                 type="number"
-                            min="1.1"
-                            max="20"
-                            step="0.1"
-                            value="5"
-                            v-model.number="escapeRadiusInput"
-                            @change="updateEscapeRadius">
+                                min="1.1"
+                                max="20"
+                                step="0.1"
+                                value="5"
+                                v-model.number="escapeRadiusInput"
+                                @change="updateEscapeRadius">
+                        </div>
+                    </div>
+
+                    <div id="multithreading" class="control-group separation-line"> 
+                        <h3>Parameter für Multithreading</h3>
+                        <!--------------------------------------------------------------------->
+                        <div class="control-row">
+                            <label for="workerCountInput">Anzahl Worker-Threads:&nbsp;</label>
+                            <input
+                                id="workerCountInput"
+                                type="number"
+                                min="1"
+                                max="20"
+                                step="1"
+                                value="8"
+                                v-model.number="workerCountInput"
+                                @change="updateWorkerCount">
+                        </div>
+
+                        <div class="control-row">
+                            <label for="tasksPerWorkerInput">Tasks pro Worker:&nbsp;</label>
+                            <input
+                                id="tasksPerWorkerInput"
+                                type="number"
+                                min="1"
+                                max="20"
+                                step="1"
+                                value="8"
+                                v-model.number="tasksPerWorkerInput"
+                                @change="updateTasksPerWorker">
                         </div>
                     </div>
 

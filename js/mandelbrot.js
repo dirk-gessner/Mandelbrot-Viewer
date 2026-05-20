@@ -68,6 +68,14 @@ function computeMandelbrotRectInWorker(
 ) {
     return new Promise((resolve, reject) => {
 
+        // console.log(
+        //     "computeMandelbrotRectInWorker",
+        //     {
+        //         workerId: workerId,
+        //         rect: rect,
+        //     }
+        // );
+
         const worker = new Worker("./js/mandelbrot-worker.js", {
             type: "module"
         });
@@ -137,21 +145,19 @@ async function computeMandelbrotRectParallel(
     computationSettings,
     workerCount
 ) {
-    const tasksPerWorker = 10;
+    const tasksPerWorker = multiThreadSettings.tasksPerWorker;
     const taskCount = Math.min(rect.height, workerCount * tasksPerWorker);    
-    
     const tasks = splitRectHorizontally(rect, taskCount);
 
+    const startedAt = performance.now();
     console.log(
         "computeMandelbrotRectParallel (start)",
         {
             requestedWorkers: workerCount,
-            actualParts: tasks.length,
-            rect,
-            tasks
+            tasksPerWorker: tasksPerWorker,
+            actualTasks: tasks.length,
         }
     );
-    const startedAt = performance.now();
 
     const parts = await computeTasksWithWorkerPool(
         tasks,
@@ -161,13 +167,17 @@ async function computeMandelbrotRectParallel(
         workerCount
     );
 
+    const iterationData = mergeIterationDataParts(rect, parts);
+
     const elapsed = performance.now() - startedAt;
     console.log(
         "computeMandelbrotRectParallel (done)",
-        {   elapsedMs: Math.round(elapsed) }
+        {
+            elapsedMilleSeconds: elapsed,
+        }
     );
 
-    return mergeIterationDataParts(rect, parts);
+    return iterationData; 
 }
 
 async function computeMandelbrotRect(
@@ -176,7 +186,7 @@ async function computeMandelbrotRect(
     imageHeight,
     computationSettings
 ) {
-    const workerCount = 8; // später konfigurierbar
+    const workerCount = multiThreadSettings.workerCount;
 
     if (workerCount <= 1 || rect.width * rect.height < 10000) {
         return computeMandelbrotRectInWorker(

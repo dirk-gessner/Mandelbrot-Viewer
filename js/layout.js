@@ -150,16 +150,12 @@ function initializeCanvasAndView() {
     computationSettings.view = { ...initialView };
 }
 
-// timer für die Verzögerung der Neuberechnung 
-// bei schnellen Events
-let resizeTimer = null;
-
 // nach einem Resize-Event wird die Canvas-Größe angepasst und der View erweitert, 
 // um das neue Seitenverhältnis zu erfüllen, um Verzerrungen zu vermeiden
 window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
+    clearTimeout(inputTimer);
 
-    resizeTimer = setTimeout(() => {
+    inputTimer = setTimeout(() => {
         resizeCanvasAndKeepView();
     }, 250);
 });

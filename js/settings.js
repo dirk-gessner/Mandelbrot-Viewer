@@ -22,3 +22,8 @@ const renderSettings = {
     invertedPalette: false,
 };
 
+const multiThreadSettings = {
+    workerCount: 8, 
+    tasksPerWorker: 8, 
+};
+
