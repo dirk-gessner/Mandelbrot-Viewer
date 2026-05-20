@@ -180,17 +180,17 @@ function createShiftedIterationData(oldData,
 }
 
 // Wrapper-Funktion für die Verschiebung der Iteration-Matrix um (dx, dy)
-function shiftIterationData(dx, dy) {
+async function shiftIterationData(dx, dy) {
 
     // Wenn kein Cache vorhanden ist, einfach neu berechnen
     if (!iterationData) {
-        computeAndCacheIterationData();
+        await computeAndCacheIterationData();
         return;
     }
 
     // Iterationsdaten verschieben
     // computeMandelbrotRect als Parameter austauschbar
-    iterationData = createShiftedIterationData(
+    iterationData = await createShiftedIterationData(
                                 iterationData, 
                                 dx, dy, 
                                 computeMandelbrotRect, 
@@ -345,13 +345,13 @@ function expandIterationData(
         computationSettings );  
 }
 
-function resizeIterationData(   oldData,
-                                oldView,
-                                newView,
-                                oldSize, 
-                                newSize,
-                                computeRect,
-                                computationSettings ) {
+async function resizeIterationData( oldData,
+                                    oldView,
+                                    newView,
+                                    oldSize, 
+                                    newSize,
+                                    computeRect,
+                                    computationSettings ) {
     
     const dx = newSize.width  - oldSize.width;
     const dy = newSize.height - oldSize.height;
@@ -374,7 +374,7 @@ function resizeIterationData(   oldData,
         const {width, height} = newSize; 
         const newData = createEmptyIterationData(width, height); 
         const rect = { x: 0, y: 0, width: width, height: height };
-        const rectData = computeRect(rect, width, height, computationSettings);
+        const rectData = await computeRect(rect, width, height, computationSettings);
 
         // Translation rect -> newData beschreiben
         const copyRegion = { 

@@ -284,9 +284,9 @@ window.addEventListener('mouseup', () => {
         pan.dy = 0;
 
         if (wasMoved) {
-            runWithOverlay(() => {
+            runWithOverlay(async () => {
                 shiftViewByPixels(dx, dy);
-                shiftIterationData(dx, dy);
+                await shiftIterationData(dx, dy);
             });
         } else {
             computationSettings.view = zoomOutStep(

@@ -81,7 +81,7 @@ function expandViewToAspectRatio(view, targetAspectRatio) {
 // um das neue Seitenverhältnis zu erfüllen, um sicherzustellen, dass die Mandelbrot-Menge
 // korrekt dargestellt wird, ohne Verzerrungen oder abgeschnittene Bereiche
 function resizeCanvasAndKeepView() {
-    runWithOverlay(() => {
+    runWithOverlay(async () => {
 
         const oldView = {...computationSettings.view};
         const oldIterationData = iterationData; 
@@ -113,7 +113,7 @@ function resizeCanvasAndKeepView() {
         // Der zurückgegebene View gehört exakt zu den erzeugten Iterationsdaten und
         // muss deshalb zusammen mit ihnen übernommen werden.
         // returns: { iterationData, view }
-        const resizeResult = resizeIterationData(
+        const resizeResult = await resizeIterationData(
             oldIterationData,
             oldView,
             newView,
