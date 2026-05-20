@@ -118,11 +118,12 @@ function getDirtyPanRects(dx, dy, width, height) {
 // legt einen neuen IterationCache an, in dem der bisherige um eine 
 // Pixel-Distanz (dx, dy) verschoben ist und berechnet 
 // die neu hinzugekommenen Bereiche nach
-function createShiftedIterationData(oldData,
-                                    dx,
-                                    dy,
-                                    computeRect,
-                                    computationSettings ) {
+async function createShiftedIterationData(
+    oldData,
+    dx,
+    dy,
+    computeRect,
+    computationSettings ) {
 
     const { width, height } = oldData;
 
@@ -149,7 +150,7 @@ function createShiftedIterationData(oldData,
     // Berechne die Iterationswerte für die neu sichtbar gewordenen Bereiche
     for (const rect of dirtyRects) {
 
-        const rectData = computeRect(
+        const rectData = await computeRect(
             rect, 
             width, 
             height, 
@@ -259,7 +260,7 @@ function getDirtyResizeRects(preservedRect, newSize) {
     return rects;
 }
 
-function fillDirtyResizeRects(
+async function fillDirtyResizeRects(
     newData, 
     preservedRect, 
     newSize, newView, 
@@ -270,7 +271,7 @@ function fillDirtyResizeRects(
 
     for (const rect of dirtyRects) {
 
-        const rectData = computeRect(
+        const rectData = await computeRect(
             rect,
             newSize.width,
             newSize.height,
@@ -296,7 +297,7 @@ function fillDirtyResizeRects(
     return newData; 
 }
 
-function expandIterationData(
+async function expandIterationData(
     direction, 
     oldData,
     oldView,
@@ -336,7 +337,7 @@ function expandIterationData(
     // Daten aus oldData (preservedRect) nach newData kopieren
     copyIterationRect(oldData, newData, copyRegion);
 
-    return fillDirtyResizeRects( 
+    return await fillDirtyResizeRects( 
         newData, 
         preservedRect, 
         newSize, 
@@ -413,7 +414,7 @@ async function resizeIterationData( oldData,
 
         const nextView = expandViewToAspectRatio(currentView, nextSize.width / nextSize.height);
 
-        currentData = expandIterationData(  
+        currentData = await expandIterationData(  
                         'horizontal',
                         currentData,
                         currentView,
@@ -436,7 +437,7 @@ async function resizeIterationData( oldData,
 
         const nextView = expandViewToAspectRatio(currentView, nextSize.width / nextSize.height);
 
-        currentData = expandIterationData(
+        currentData = await expandIterationData(
                         'vertical',
                         currentData,
                         currentView,

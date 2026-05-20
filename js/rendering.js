@@ -291,9 +291,9 @@ function runWithOverlay(work) {
     showRenderOverlay();
 
     requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
+        requestAnimationFrame(async () => {
             try {
-                work()
+                await work()
                 renderScene();
             } finally {
                 hideRenderOverlay();
