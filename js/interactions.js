@@ -217,10 +217,6 @@ canvas.addEventListener('mousemove', (event) => {
     renderScene();
 });
 
-// Timer für die Verzögerung der Neuberechnung 
-// bei schnellen Events
-let inputTimer = null;
-
 // Mouse-Wheel: Zoomt in oder aus, wenn die Auswahl aktiv ist, 
 // und passt die Größe des Auswahlrahmens an
 // Ansonsten wird das Mausrad verwendet, um maxIterations zu erhöhen 

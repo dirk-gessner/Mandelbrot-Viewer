@@ -27,3 +27,7 @@ const multiThreadSettings = {
     tasksPerWorker: 8, 
 };
 
+// Timer für die Verzögerung der Neuberechnung 
+// bei schnellen Events
+let inputTimer = null;
+

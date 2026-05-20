@@ -157,5 +157,5 @@ window.addEventListener('resize', () => {
 
     inputTimer = setTimeout(() => {
         resizeCanvasAndKeepView();
-    }, 250);
+    }, 500);
 });

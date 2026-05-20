@@ -33,9 +33,12 @@
 
                     <div id="info" class="control-group">
                         <h3>Aktuelle Ansicht</h3>
-                        X: {{ viewInfo.minX.toFixed(6) }} bis {{ viewInfo.maxX.toFixed(6) }}<br>
-                        Y: {{ viewInfo.minY.toFixed(6) }} bis {{ viewInfo.maxY.toFixed(6) }}<br>
-                        Zoom-Level: {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
+                        <!--------------------------------------------------------------------->
+                        <div class="control-row">
+                            X: {{ viewInfo.minX.toFixed(6) }} bis {{ viewInfo.maxX.toFixed(6) }}<br>
+                            Y: {{ viewInfo.minY.toFixed(6) }} bis {{ viewInfo.maxY.toFixed(6) }}<br>
+                            Zoom-Level: {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
+                        </div>
                     </div>
 
                     <div id="calculation-controls" class="control-group separation-line">
@@ -95,6 +98,10 @@
                                 value="8"
                                 v-model.number="tasksPerWorkerInput"
                                 @change="updateTasksPerWorker">
+                        </div>
+
+                        <div class="control-row">
+                            Letzte Berechnung: {{ lastIterationDataUpdateSeconds.toFixed(3) }} s
                         </div>
                     </div>
 
@@ -265,6 +272,7 @@
 
     <script src="js/dom.js"></script>
     <script src="js/settings.js"></script>
+    <script src="js/timing.js"></script>
     <script src="js/palettes.js"></script>
     <script src="js/iteration-data.js"></script>
     <script src="js/mandelbrot.js"></script>

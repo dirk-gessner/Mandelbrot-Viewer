@@ -266,10 +266,12 @@ async function computeAndCacheIterationData(computeFn = computeMandelbrot) {
 
     // hier könnte in Zukunft auch eine andere Berechnungsvorschrift 
     // gerufen werden, z.B. (Julia-Menge)
-    iterationData = await computeFn(
-                            imageSize.width, 
-                            imageSize.height, 
-                            computationSettings);
+    iterationData = await measureIterationDataUpdate(() =>
+                    computeFn(
+                        imageSize.width, 
+                        imageSize.height, 
+                        computationSettings)
+    );
     app.updateInfo();
     rebuildImageData();
 }
