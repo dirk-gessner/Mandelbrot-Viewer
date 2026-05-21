@@ -2,87 +2,213 @@
 // Mandelbrot-Berechnung
 // -----------------------------------------------------------------------------
 
-// Berechnet die Anzahl der Iterationen für einen Bildpunkt, 
-// bis die Divergenz eintritt
-// Optimierungen: Schnelle Überprüfungen für Punkte, die sicher in der 
-// Menge liegen
-function mandelbrotIterations(cx, cy, maxIterations, escapeRadius) {
+function splitRectHorizontally(rect, parts) {
+    const result = [];
 
-    // Schnelle Überprüfung: Periode-2-Glühbirne (Kreis auf der linken Seite)
-    if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) { // 1/16 = 0.0625
-        return {
-            iterations: maxIterations,
-            escapeValue: 0,
-        };
+    const baseHeight = Math.floor(rect.height / parts);
+    const remainder = rect.height % parts;
+
+    let y = rect.y;
+
+    for (let i = 0; i < parts; i++) {
+        const height = baseHeight + (i < remainder ? 1 : 0);
+
+        if (height <= 0) {
+            continue;
+        }
+
+        result.push({
+            x: rect.x,
+            y,
+            width: rect.width,
+            height
+        });
+
+        y += height;
     }
 
-    // Schnelle Überprüfung: Hauptkardiode (Herzform in der Mitte)
-    const q = (cx - 0.25) * (cx - 0.25) + cy * cy;
-    if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) {
-        return {
-            iterations: maxIterations,
-            escapeValue: 0,
-        };
-    }
-
-    // Standard-Iterationen für Punkte, die nicht in den schnellen 
-    // Überprüfungen liegen
-    let zx = 0;
-    let zy = 0;
-    let iteration = 0;
-    const escapeRadiusSquared = escapeRadius * escapeRadius;
-
-    while (zx * zx + zy * zy < escapeRadiusSquared && iteration < maxIterations) {
-        const temp = zx * zx - zy * zy + cx;
-        zy = 2 * zx * zy + cy;
-        zx = temp;
-        iteration++;
-    }
-
-    return {
-        iterations: iteration,
-        escapeValue: zx * zx + zy * zy,
-    };
+    return result;
 }
 
-// berechnet die Mandelbrot-Menge für ein bestimmtes Rechteck
-function computeMandelbrotRect(rect, imageWidth, imageHeight, computationSettings) {
-    
-    const { view, maxIterations, escapeRadius } = computationSettings;
-    const { minX, maxX, minY, maxY } = view;
+function mergeIterationDataParts(rect, parts) {
+    const totalPixels = rect.width * rect.height;
 
-    const iterations   = new Uint16Array (rect.width * rect.height);
-    const escapeValues = new Float64Array(rect.width * rect.height);
+    const iterations = new Uint16Array(totalPixels);
+    const escapeValues = new Float64Array(totalPixels);
 
-    for (let localY = 0; localY < rect.height; localY++) {
-        for (let localX = 0; localX < rect.width; localX++) {
-    
-            const px = rect.x + localX;
-            const py = rect.y + localY;
+    let targetOffset = 0;
+    let minIterations = Number.POSITIVE_INFINITY;
 
-            const x = minX + (px / imageWidth)  * (maxX - minX);
-            const y = minY + (py / imageHeight) * (maxY - minY);
+    for (const part of parts) {
+        iterations.set(part.iterations, targetOffset);
+        escapeValues.set(part.escapeValues, targetOffset);
 
-            const result = mandelbrotIterations(x, y, maxIterations, escapeRadius);
+        targetOffset += part.iterations.length;
 
-            const index = localY * rect.width + localX;
-            iterations  [index] = result.iterations;
-            escapeValues[index] = result.escapeValue;
+        if (part.minIterations < minIterations) {
+            minIterations = part.minIterations;
         }
     }
 
-    return { 
-        width : rect.width, 
-        height: rect.height, 
-        iterations, 
-        escapeValues, 
-        minIterations: findMinIterations(iterations),
+    return {
+        width:  rect.width,
+        height: rect.height,
+        iterations,
+        escapeValues,
+        minIterations
     };
 }
 
+function computeMandelbrotRectInWorker(
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings, 
+    workerId = 0
+) {
+    return new Promise((resolve, reject) => {
+
+        // console.log(
+        //     "computeMandelbrotRectInWorker",
+        //     {
+        //         workerId: workerId,
+        //         rect: rect,
+        //     }
+        // );
+
+        const worker = new Worker("./js/mandelbrot-worker.js", {
+            type: "module"
+        });
+
+        worker.onmessage = (event) => {
+            worker.terminate();
+            resolve(event.data);
+        };
+
+        worker.onerror = (error) => {
+            console.error("Worker error", workerId, error);
+            worker.terminate();
+            reject(error);
+        };
+
+        worker.postMessage({
+            rect,
+            imageWidth,
+            imageHeight,
+            computationSettings
+        });
+    });
+}
+
+async function computeTasksWithWorkerPool(
+    tasks,
+    imageWidth,
+    imageHeight,
+    computationSettings,
+    workerCount
+) {
+    const results = new Array(tasks.length);
+    let nextTaskIndex = 0;
+
+    async function runWorker(workerId) {
+        while (nextTaskIndex < tasks.length) {
+            const taskIndex = nextTaskIndex++;
+            const rect = tasks[taskIndex];
+
+            const result = await computeMandelbrotRectInWorker(
+                rect,
+                imageWidth,
+                imageHeight,
+                computationSettings,
+                workerId
+            );
+
+            results[taskIndex] = result;
+        }
+    }
+
+    const workers = [];
+
+    for (let workerId = 0; workerId < workerCount; workerId++) {
+        workers.push(runWorker(workerId));
+    }
+
+    await Promise.all(workers);
+
+    return results;
+}
+
+async function computeMandelbrotRectParallel(
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings,
+    workerCount
+) {
+    const tasksPerWorker = multiThreadSettings.tasksPerWorker;
+    const taskCount = Math.min(rect.height, workerCount * tasksPerWorker);    
+    const tasks = splitRectHorizontally(rect, taskCount);
+
+    const startedAt = performance.now();
+    console.log(
+        "computeMandelbrotRectParallel (start)",
+        {
+            requestedWorkers: workerCount,
+            tasksPerWorker: tasksPerWorker,
+            actualTasks: tasks.length,
+        }
+    );
+
+    const parts = await computeTasksWithWorkerPool(
+        tasks,
+        imageWidth,
+        imageHeight,
+        computationSettings,
+        workerCount
+    );
+
+    const iterationData = mergeIterationDataParts(rect, parts);
+
+    const elapsed = performance.now() - startedAt;
+    console.log(
+        "computeMandelbrotRectParallel (done)",
+        {
+            elapsedMilleSeconds: elapsed,
+        }
+    );
+
+    return iterationData; 
+}
+
+async function computeMandelbrotRect(
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings
+) {
+    const workerCount = multiThreadSettings.workerCount;
+
+    if (workerCount <= 1 || rect.width * rect.height < 10000) {
+        return computeMandelbrotRectInWorker(
+            rect,
+            imageWidth,
+            imageHeight,
+            computationSettings
+        );
+    }
+
+    return computeMandelbrotRectParallel(
+        rect,
+        imageWidth,
+        imageHeight,
+        computationSettings,
+        workerCount
+    );
+}
+
 // Berechnet das Mandelbrot-Bild für die gegebenen Parameter
-function computeMandelbrot(width, height, computationSettings) {
-    return computeMandelbrotRect(
+async function computeMandelbrot(width, height, computationSettings) {
+    return await computeMandelbrotRect(
         { x: 0, y: 0, width, height },
         width,
         height,

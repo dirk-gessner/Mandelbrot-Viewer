@@ -12,8 +12,14 @@ const app = Vue.createApp({
                 zoomLevel: 1, 
             },
 
+            inputTimer: null,
+
             maxIterationsInput: computationSettings.maxIterations,
             escapeRadiusInput: computationSettings.escapeRadius,
+
+            workerCountInput: multiThreadSettings.workerCount, 
+            tasksPerWorkerInput: multiThreadSettings.tasksPerWorker, 
+            lastIterationDataUpdateSeconds : runtimeStats.lastIterationDataUpdateSeconds,
 
             availablePalettes: colorPalettes,
             selectedPaletteKey: renderSettings.paletteKey,
@@ -21,15 +27,12 @@ const app = Vue.createApp({
             availableColors: colors,
             selectedInnerSetColorKey: renderSettings.innerSetColorKey,
             gamma: renderSettings.gamma,
-            gammaTimer: null,
 
             smoothColoringEnabled: renderSettings.smoothColoringEnabled,
             colorScalingCorrection: renderSettings.colorScalingCorrection,
-            colorScalingTimer: null,
 
             logScalingEnabled: renderSettings.logScalingEnabled,
             logStrength: renderSettings.logStrength,
-            logStrengthTimer: null,
 
             invertedPalette: renderSettings.invertedPalette,
         };
@@ -43,13 +46,16 @@ const app = Vue.createApp({
             this.viewInfo.minY = view.minY;
             this.viewInfo.maxY = view.maxY;
             this.viewInfo.zoomLevel = ((initialView.maxX - initialView.minX) / (view.maxX - view.minX));
+            this.lastIterationDataUpdateSeconds = runtimeStats.lastIterationDataUpdateSeconds;            
         },
+
         updateMaxIterations() {
-            computationSettings.maxIterations = Math.max(0, Math.min(Number(this.maxIterationsInput), 2000));
+            computationSettings.maxIterations = Math.max(0, Math.min(Number(this.maxIterationsInput), 5000));
             this.maxIterationsInput = computationSettings.maxIterations;
 
             this.updateInfo();
-            recomputeWithOverlay();
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {recomputeWithOverlay()}, 250); 
         }, 
 
         updateEscapeRadius() {
@@ -57,31 +63,40 @@ const app = Vue.createApp({
             this.escapeRadiusInput = computationSettings.escapeRadius;
 
             this.updateInfo();
-            recomputeWithOverlay();
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {recomputeWithOverlay()}, 250); 
+        },
+
+        updateWorkerCount() {
+            multiThreadSettings.workerCount = Math.max(1, Math.min(Number(this.workerCountInput), 20));
+            this.workerCountInput = multiThreadSettings.workerCount;
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {recomputeWithOverlay()}, 250); 
+        },
+
+        updateTasksPerWorker() {
+            multiThreadSettings.tasksPerWorker = Math.max(1, Math.min(Number(this.tasksPerWorkerInput), 20));
+            this.tasksPerWorkerInput = multiThreadSettings.tasksPerWorker;
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {recomputeWithOverlay()}, 250); 
         },
 
         updateGamma() {
             renderSettings.gamma = this.gamma;
-            // Verzögerung von 250ms nach der letzten Änderung, 
-            // um flüssiges Anpassen zu ermöglichen;
-            clearTimeout(this.gammaTimer);
-            this.gammaTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
         },
 
         updateColorscalingCorrection() {
             renderSettings.colorScalingCorrection = this.colorScalingCorrection;
-            // Verzögerung von 250ms nach der letzten Änderung, 
-            // um flüssiges Anpassen zu ermöglichen;
-            clearTimeout(this.colorScalingTimer);
-            this.colorScalingTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
         },
         
         updateLogStrength() {
             renderSettings.logStrength = this.logStrength;
-            // Verzögerung von 250ms nach der letzten Änderung, 
-            // um flüssiges Anpassen zu ermöglichen;
-            clearTimeout(this.logStrengthTimer);
-            this.logStrengthTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
         },
 
         updateRenderOptions() {

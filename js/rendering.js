@@ -260,15 +260,18 @@ function rebuildImageData() {
 // Berechnung der Matrix mit den aktuellen View-Parametern 
 // und Caching des Images
 // -----------------------------------------------------------------------------
-function computeAndCacheIterationData(computeFn = computeMandelbrot) {
+async function computeAndCacheIterationData(computeFn = computeMandelbrot) {
 
     const imageSize = getCanvasImageSize() 
 
     // hier könnte in Zukunft auch eine andere Berechnungsvorschrift 
     // gerufen werden, z.B. (Julia-Menge)
-    iterationData = computeFn(imageSize.width, 
-                              imageSize.height, 
-                              computationSettings);
+    iterationData = await measureIterationDataUpdate(() =>
+                    computeFn(
+                        imageSize.width, 
+                        imageSize.height, 
+                        computationSettings)
+    );
     app.updateInfo();
     rebuildImageData();
 }
@@ -290,9 +293,9 @@ function runWithOverlay(work) {
     showRenderOverlay();
 
     requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
+        requestAnimationFrame(async () => {
             try {
-                work()
+                await work()
                 renderScene();
             } finally {
                 hideRenderOverlay();
@@ -302,8 +305,8 @@ function runWithOverlay(work) {
 }
 
 function recomputeWithOverlay() {
-    runWithOverlay(() => {
-        computeAndCacheIterationData();
+    runWithOverlay(async () => {
+        await computeAndCacheIterationData();
     });
 }
 

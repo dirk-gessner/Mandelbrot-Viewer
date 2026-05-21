@@ -217,10 +217,6 @@ canvas.addEventListener('mousemove', (event) => {
     renderScene();
 });
 
-// timer für die Verzögerung der Neuberechnung 
-// bei schnellen Events
-let wheelTimer = null;
-
 // Mouse-Wheel: Zoomt in oder aus, wenn die Auswahl aktiv ist, 
 // und passt die Größe des Auswahlrahmens an
 // Ansonsten wird das Mausrad verwendet, um maxIterations zu erhöhen 
@@ -255,14 +251,14 @@ canvas.addEventListener('wheel', (event) => {
         const cs = computationSettings;
 
         cs.maxIterations += event.deltaY < 0 ? 50 : -50;
-        cs.maxIterations = Math.max(50, Math.min(cs.maxIterations, 2000));
+        cs.maxIterations = Math.max(50, Math.min(cs.maxIterations, 5000));
 
         // Synchronisiere mit Vue-Inputfeld
         app.maxIterationsInput = cs.maxIterations; 
 
         // Verzögerung von 250ms nach dem letzten Mausrad-Event;
-        clearTimeout(wheelTimer);
-        wheelTimer = setTimeout(() => {     
+        clearTimeout(inputTimer);
+        inputTimer = setTimeout(() => {     
             recomputeWithOverlay();
         }, 250); 
     }
@@ -284,9 +280,9 @@ window.addEventListener('mouseup', () => {
         pan.dy = 0;
 
         if (wasMoved) {
-            runWithOverlay(() => {
+            runWithOverlay(async () => {
                 shiftViewByPixels(dx, dy);
-                shiftIterationData(dx, dy);
+                await shiftIterationData(dx, dy);
             });
         } else {
             computationSettings.view = zoomOutStep(

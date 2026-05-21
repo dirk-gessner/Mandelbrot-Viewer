@@ -81,7 +81,7 @@ function expandViewToAspectRatio(view, targetAspectRatio) {
 // um das neue Seitenverhältnis zu erfüllen, um sicherzustellen, dass die Mandelbrot-Menge
 // korrekt dargestellt wird, ohne Verzerrungen oder abgeschnittene Bereiche
 function resizeCanvasAndKeepView() {
-    runWithOverlay(() => {
+    runWithOverlay(async () => {
 
         const oldView = {...computationSettings.view};
         const oldIterationData = iterationData; 
@@ -113,7 +113,7 @@ function resizeCanvasAndKeepView() {
         // Der zurückgegebene View gehört exakt zu den erzeugten Iterationsdaten und
         // muss deshalb zusammen mit ihnen übernommen werden.
         // returns: { iterationData, view }
-        const resizeResult = resizeIterationData(
+        const resizeResult = await resizeIterationData(
             oldIterationData,
             oldView,
             newView,
@@ -150,16 +150,21 @@ function initializeCanvasAndView() {
     computationSettings.view = { ...initialView };
 }
 
-// timer für die Verzögerung der Neuberechnung 
-// bei schnellen Events
-let resizeTimer = null;
+function initializeControlsDrawer() {
+    controlsDrawer.addEventListener('mouseenter', () => {
+        controlsDrawer.classList.add('open');
+    });
 
+    controlsCloseButton.addEventListener('click', () => {
+        controlsDrawer.classList.remove('open');
+    });
+}
 // nach einem Resize-Event wird die Canvas-Größe angepasst und der View erweitert, 
 // um das neue Seitenverhältnis zu erfüllen, um Verzerrungen zu vermeiden
 window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
+    clearTimeout(inputTimer);
 
-    resizeTimer = setTimeout(() => {
+    inputTimer = setTimeout(() => {
         resizeCanvasAndKeepView();
-    }, 250);
+    }, 500);
 });

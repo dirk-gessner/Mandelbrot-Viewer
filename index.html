@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="./img/lmv.png" type="image/png">
 
   <title>LMV - Lightweight Mandelbrot Viewer</title>
 
@@ -27,14 +28,20 @@
                 </div>
             </section>
 
-            <div class="controls-drawer">
+            <div id="controls-drawer" class="controls-drawer">
+
+                <button id="controls-close-button" class="controls-close-button" type="button">X</button>
+
                 <aside id="control-panel" class="controls">
 
                     <div id="info" class="control-group">
                         <h3>Aktuelle Ansicht</h3>
-                        X: {{ viewInfo.minX.toFixed(6) }} bis {{ viewInfo.maxX.toFixed(6) }}<br>
-                        Y: {{ viewInfo.minY.toFixed(6) }} bis {{ viewInfo.maxY.toFixed(6) }}<br>
-                        Zoom-Level: {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
+                        <!--------------------------------------------------------------------->
+                        <div class="control-row">
+                            X: {{ viewInfo.minX.toFixed(6) }} bis {{ viewInfo.maxX.toFixed(6) }}<br>
+                            Y: {{ viewInfo.minY.toFixed(6) }} bis {{ viewInfo.maxY.toFixed(6) }}<br>
+                            Zoom-Level: {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
+                        </div>
                     </div>
 
                     <div id="calculation-controls" class="control-group separation-line">
@@ -46,7 +53,7 @@
                                 id="maxIterationsInput"
                                 type="number"
                                 min="0"
-                                max="2000"
+                                max="5000"
                                 step="50"
                                 value="100"
                                 v-model.number="maxIterationsInput"
@@ -58,12 +65,46 @@
                             <input
                                 id="escapeRadiusInput"
                                 type="number"
-                            min="1.1"
-                            max="20"
-                            step="0.1"
-                            value="5"
-                            v-model.number="escapeRadiusInput"
-                            @change="updateEscapeRadius">
+                                min="1.1"
+                                max="20"
+                                step="0.1"
+                                value="5"
+                                v-model.number="escapeRadiusInput"
+                                @change="updateEscapeRadius">
+                        </div>
+                    </div>
+
+                    <div id="multithreading" class="control-group separation-line"> 
+                        <h3>Parameter für Multithreading</h3>
+                        <!--------------------------------------------------------------------->
+                        <div class="control-row">
+                            <label for="workerCountInput">Anzahl Worker-Threads:&nbsp;</label>
+                            <input
+                                id="workerCountInput"
+                                type="number"
+                                min="1"
+                                max="20"
+                                step="1"
+                                value="8"
+                                v-model.number="workerCountInput"
+                                @change="updateWorkerCount">
+                        </div>
+
+                        <div class="control-row">
+                            <label for="tasksPerWorkerInput">Tasks pro Worker:&nbsp;</label>
+                            <input
+                                id="tasksPerWorkerInput"
+                                type="number"
+                                min="1"
+                                max="20"
+                                step="1"
+                                value="8"
+                                v-model.number="tasksPerWorkerInput"
+                                @change="updateTasksPerWorker">
+                        </div>
+
+                        <div class="control-row">
+                            Letzte Berechnung: {{ lastIterationDataUpdateSeconds.toFixed(3) }} s
                         </div>
                     </div>
 
@@ -234,6 +275,7 @@
 
     <script src="js/dom.js"></script>
     <script src="js/settings.js"></script>
+    <script src="js/timing.js"></script>
     <script src="js/palettes.js"></script>
     <script src="js/iteration-data.js"></script>
     <script src="js/mandelbrot.js"></script>
