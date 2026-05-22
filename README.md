@@ -1,79 +1,73 @@
 # LMV – Lightweight Mandelbrot Viewer
 
-LMV ist ein interaktiver Mandelbrot-Viewer für den Webbrowser. Die Anwendung nutzt HTML5 Canvas für die Darstellung, Plain JavaScript für Berechnung und Rendering sowie eine kleine Vue-3-App für das Control-Panel.
+LMV ist ein interaktiver Mandelbrot-Viewer für den Webbrowser. Die Anwendung stellt die Mandelbrot-Menge auf einem HTML5-Canvas dar und erlaubt es, den Ausschnitt, die Berechnungsparameter und die Farbgebung interaktiv zu verändern.
 
-Das Projekt ist bewusst leichtgewichtig gehalten: Es gibt keine Build-Pipeline, keinen Bundler und kein Framework-Setup. `index.html` kann direkt über einen lokalen Webserver in einem modernen Browser geöffnet werden.
+Das Projekt ist bewusst leichtgewichtig gehalten: Es gibt keine Build-Pipeline, keinen Bundler und kein Framework-Setup. Die Anwendung kann direkt über einen lokalen Webserver in einem modernen Browser gestartet werden.
 
-## Überblick
+---
 
-LMV ist ein Lern- und Experimentierprojekt zur Mandelbrot-Menge.
+## Benutzer-Dokumentation
 
-Der Viewer berechnet Iterationsdaten im Browser und erzeugt daraus ein gerendertes Canvas-Bild. Berechnung, Datenhaltung, Bildaufbau, Darstellung und Interaktion sind voneinander getrennt. Dadurch können reine Rendering-Änderungen aus vorhandenen Iterationsdaten neu aufgebaut werden, ohne die Mandelbrot-Menge erneut vollständig zu berechnen.
+### Worum handelt es sich bei dem Projekt?
 
-Die aktuelle Version lagert die Mandelbrot-Berechnung in Web Worker aus. Für vollständige Neuberechnungen kann das aktuelle Bildrechteck in mehrere horizontale Tasks zerlegt werden. Diese Tasks werden über mehrere Worker abgearbeitet und anschließend wieder zu einer gemeinsamen `IterationData`-Struktur zusammengesetzt.
+LMV ist ein Lern- und Experimentierprojekt zur Mandelbrot-Menge. Der Viewer berechnet die Mandelbrot-Daten im Browser und erzeugt daraus ein farbig gerendertes Canvas-Bild.
 
-## Aktuelle Features
+Die Anwendung eignet sich zum Erkunden der Mandelbrot-Menge, zum Experimentieren mit Zoomstufen, Iterationstiefe und Farbpaletten sowie zum Speichern interessanter Ansichten als PNG-Datei.
 
-### Darstellung und Layout
+### Hauptfunktionen
 
-- Flexible Canvas-Fläche, die den verfügbaren Raum im Hauptbereich nutzt.
-- Initialer Bildausschnitt wird passend zum Canvas-Seitenverhältnis berechnet, sodass der relevante Mandelbrot-Bereich vollständig sichtbar ist.
-- Fenstergrößenänderungen werden erkannt; der aktuelle Ausschnitt wird so erweitert, dass das vorherige Bild weiterhin enthalten bleibt.
-- Render-Overlay während teurer Neuberechnungen:
-  - Canvas wird visuell abgedunkelt beziehungsweise verwischt.
-  - Spinner zeigt laufende Berechnung an.
-- Rechtes Control-Panel als Overlay-Drawer:
-  - fährt beim Start kurz sichtbar ein,
-  - öffnet sich über eine Hot Zone am rechten Fensterrand,
-  - bleibt geöffnet, bis der Close-Button geklickt wird,
-  - besitzt einen Close-Button links neben dem Panel,
-  - verdeckt den Canvas nur temporär,
-  - nimmt dem Canvas keinen Layoutplatz weg.
+- Interaktive Darstellung der Mandelbrot-Menge im Browser.
+- Zoom in frei wählbare Bildbereiche.
+- Verschieben des sichtbaren Ausschnitts per Maus.
+- Änderung der Iterationstiefe direkt über das Mausrad.
+- Anpassung der Darstellung über ein Control-Panel.
+- Auswahl verschiedener Farbpaletten.
+- Steuerung von Gamma-Korrektur, logarithmischer Skalierung, Smooth Coloring und Paletteninvertierung.
+- Anzeige der aktuellen X- und Y-Bereiche sowie des Zoom-Levels.
+- Speichern der aktuellen Ansicht als PNG.
+- Zurücksetzen auf den initialen Bildausschnitt.
 
-### Interaktion
+### Inbetriebnahme
 
-- Interaktiver Zoom per Maus:
-  - rechte Maustaste startet einen Auswahlrahmen,
-  - der Auswahlrahmen besitzt ein Fadenkreuz über das gesamte Bild und eine kleine Zielmarkierung im Zentrum,
-  - Mausrad bei aktiver Auswahl verändert die Größe des Auswahlrahmens,
-  - Loslassen der rechten Maustaste zoomt in den gewählten Bereich,
-  - Linksklick ohne Ziehen zoomt schrittweise heraus.
-- Verschieben der aktuellen Ansicht:
-  - linke Maustaste gedrückt halten und ziehen,
-  - während des Ziehens wird das vorhandene Bild direkt verschoben dargestellt,
-  - beim Loslassen wird der View aktualisiert,
-  - bereits vorhandene Iterationsdaten werden wiederverwendet,
-  - nur neu sichtbar gewordene Bildbereiche werden nachberechnet.
-- Mausrad ohne aktive Zoom-Auswahl verändert die Iterationstiefe.
+1. Repository klonen oder als ZIP-Datei herunterladen.
+2. Projektverzeichnis öffnen.
+3. Einen lokalen Webserver im Projektverzeichnis starten, zum Beispiel über die Live-Server-Erweiterung des Editors oder einen einfachen lokalen HTTP-Server.
+4. `index.html` im Browser öffnen.
 
-### Web Worker und Multithreading
+Ein lokaler Webserver ist erforderlich, weil Web Worker und Modul-Worker in modernen Browsern nicht zuverlässig direkt aus `file://`-URLs geladen werden.
 
-Die Mandelbrot-Berechnung läuft nicht mehr direkt im Hauptthread, sondern über Web Worker.
+Der Viewer lädt Vue 3 über CDN:
 
-Die zentrale Einstiegstelle ist weiterhin die Rechteckberechnung:
-
-```text
-computeMandelbrotRect(rect, imageWidth, imageHeight, computationSettings)
+```html
+https://unpkg.com/vue@3/dist/vue.global.prod.js
 ```
 
-Für kleine Rechtecke oder eine Worker-Anzahl von `1` wird ein einzelner Worker verwendet. Für größere Rechtecke wird das Rechteck horizontal in mehrere Tasks geteilt. Diese Tasks werden mit einem einfachen Worker-Pool abgearbeitet.
+Eine lokale Installation oder ein Build-Schritt ist aktuell nicht nötig.
 
-Konfigurierbar sind:
+### Verwendung der Benutzeroberfläche
 
-- Anzahl der Worker-Threads,
-- Anzahl der Tasks pro Worker.
+#### Canvas
 
-Die Aufteilung folgt dem Prinzip:
+Der große zentrale Bereich zeigt die Mandelbrot-Menge. Dort finden die wichtigsten Interaktionen statt: Zoomen, Verschieben und Ändern der Iterationstiefe.
 
-```text
-taskCount = min(rect.height, workerCount * tasksPerWorker)
-```
+| Aktion | Bedienung |
+|---|---|
+| Ansicht verschieben | Linke Maustaste auf dem Canvas gedrückt halten und ziehen |
+| Zoom-Out | Linke Maustaste klicken, ohne zu ziehen |
+| Zoom-In | Rechte Maustaste drücken, Auswahlrahmen positionieren, optional mit Mausrad skalieren, dann loslassen |
+| Auswahlrahmen positionieren | Rechte Maustaste gedrückt halten und Maus bewegen |
+| Iterationstiefe ändern | Mausrad über dem Canvas verwenden, solange keine Zoom-Auswahl aktiv ist |
 
-Dadurch entstehen in der Regel mehr Tasks als Worker. Das verbessert die Lastverteilung, weil die Rechenzeit innerhalb der Mandelbrot-Menge stark vom Bildbereich abhängt. Streifen in der Nähe der interessanten Grenzbereiche können deutlich länger dauern als andere Bereiche.
+#### Control-Panel
 
-Die Ergebnisse der Tasks werden anschließend wieder in ein gemeinsames `IterationData`-Objekt gemerged.
+Das Control-Panel befindet sich als Overlay-Drawer am rechten Fensterrand.
 
-### Control-Panel
+| Aktion | Bedienung |
+|---|---|
+| Control-Panel öffnen | Maus an den rechten Fensterrand bewegen |
+| Control-Panel schließen | Close-Button links neben dem geöffneten Control-Panel klicken |
+| PNG speichern | Im Control-Panel unter „Sonstiges“ den Button „Als PNG speichern“ verwenden |
+| Ansicht zurücksetzen | Im Control-Panel unter „Sonstiges“ den Button „Ansicht zurücksetzen“ verwenden |
 
 Das Control-Panel zeigt die aktuelle Ansicht und erlaubt die direkte Änderung von Berechnungs-, Multithreading- und Darstellungsparametern.
 
@@ -92,7 +86,7 @@ Multithreading-Parameter:
 
 - Anzahl Worker-Threads,
 - Tasks pro Worker,
-- Rechenzeit der letzten vollständigen `IterationData`-Aktualisierung in Sekunden mit drei Nachkommastellen.
+- Rechenzeit der letzten vollständigen `IterationData`-Aktualisierung in Sekunden.
 
 Darstellungsparameter:
 
@@ -110,21 +104,26 @@ Sonstige Funktionen:
 - aktuelle Ansicht als PNG speichern,
 - Ansicht auf den initialen Ausschnitt zurücksetzen.
 
-## Farbpaletten
+### Farbpaletten
 
 Aktuell sind mehrere Palettentypen vorhanden:
 
-- Cosinus-Paletten:
-  - `Gold-Blau`,
-  - `Feuer`,
-  - `Eis`,
-  - `Party`.
-- Graustufen-Paletten:
-  - `Graustufen`,
-  - `Alternierende Graustufen`.
-- Weitere Paletten:
-  - `HSV-Regenbogen`,
-  - `Zyklische Farbbänder`.
+Cosinus-Paletten:
+
+- `Gold-Blau`,
+- `Feuer`,
+- `Eis`,
+- `Party`.
+
+Graustufen-Paletten:
+
+- `Graustufen`,
+- `Alternierende Graustufen`.
+
+Weitere Paletten:
+
+- `HSV-Regenbogen`,
+- `Zyklische Farbbänder`.
 
 Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 
@@ -134,21 +133,36 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 - Cyan,
 - Gelb.
 
-## Steuerung
+### Screenshots
 
-| Aktion | Bedienung |
-|---|---|
-| Ansicht verschieben | Linke Maustaste auf dem Canvas gedrückt halten und ziehen |
-| Zoom-Out | Linke Maustaste klicken, ohne zu ziehen |
-| Zoom-In | Rechte Maustaste drücken, Auswahlrahmen positionieren, optional mit Mausrad skalieren, dann loslassen |
-| Auswahlrahmen positionieren | Rechte Maustaste gedrückt halten und Maus bewegen |
-| Iterationstiefe ändern | Mausrad über dem Canvas verwenden, solange keine Zoom-Auswahl aktiv ist |
-| Control-Panel öffnen | Maus an den rechten Fensterrand bewegen |
-| Control-Panel schließen | Close-Button links neben dem geöffneten Control-Panel klicken |
-| PNG speichern | Im Control-Panel unter „Sonstiges“ den Button „Als PNG speichern“ verwenden |
-| Ansicht zurücksetzen | Im Control-Panel unter „Sonstiges“ den Button „Ansicht zurücksetzen“ verwenden |
+![LMV Startansicht](img/screenshots/lmv-general-view.png)
 
-## Projektstruktur
+![LMV Control-Panel](img/screenshots/lmv-control-panel.png)
+
+![LMV Zoom-Auswahl](img/screenshots/lmv-help-modal.png)
+
+![LMV Zoom-Auswahl](img/screenshots/lmv-color-modes-01.png)
+
+![LMV Zoom-Auswahl](img/screenshots/lmv-color-modes-02.png)
+
+![LMV Zoom-Auswahl](img/screenshots/lmv-color-modes-03.png)
+
+![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-01.png)
+
+![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-02.png)
+
+![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-03.png)
+
+![LMV Zoom-Auswahl](img/screenshots/lmv-detail-view.png)
+
+
+
+
+---
+
+## Entwickler-Dokumentation
+
+### Projektstruktur
 
 ```text
 .
@@ -161,7 +175,9 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 │       └── ...
 ├── img/
 │   ├── lmv.png
-│   └── definition.svg
+│   ├── definition.svg
+│   └── screenshots/
+│       └── ...
 └── js/
     ├── dom.js
     ├── settings.js
@@ -199,9 +215,9 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 - `js/file.js` enthält den PNG-Export des aktuellen Canvas.
 - `js/main.js` initialisiert Canvas, View, Control-Drawer, UI-Info und startet die erste Berechnung.
 
-## Technische Details
+### Technische Details
 
-### Trennung von Berechnung, Iterationsdaten und Rendering
+#### Trennung von Berechnung, Iterationsdaten und Rendering
 
 Die Anwendung trennt drei Ebenen:
 
@@ -222,17 +238,17 @@ Die Anwendung trennt drei Ebenen:
 
 Diese Trennung erlaubt schnelle Aktualisierungen bei reinen Darstellungsänderungen: Farb- und Rendering-Parameter bauen nur das Bild aus den vorhandenen Iterationsdaten neu auf. Eine vollständige Neuberechnung ist nur nötig, wenn sich Berechnungsparameter oder der sichtbare mathematische Ausschnitt ändern.
 
-### IterationData
+#### IterationData
 
 Die zentrale Datenstruktur enthält:
 
 ```js
 {
-    width,         // Breite der Matrix in Pixeln
-    height,        // Höhe der Matrix in Pixeln
-    iterations,    // Uint16Array(width * height)
-    escapeValues,  // Float64Array(width * height)
-    minIterations  // kleinster Iterationswert im Datensatz
+  width,          // Breite der Matrix in Pixeln
+  height,         // Höhe der Matrix in Pixeln
+  iterations,     // Uint16Array(width * height)
+  escapeValues,   // Float64Array(width * height)
+  minIterations   // kleinster Iterationswert im Datensatz
 }
 ```
 
@@ -244,9 +260,28 @@ Der Index eines Pixels ergibt sich aus:
 index = y * width + x
 ```
 
-### Worker-basierte Berechnung
+#### Worker-basierte Berechnung
 
-Die öffentliche Berechnungsfunktion `computeMandelbrotRect()` entscheidet anhand der Multithreading-Einstellungen, ob ein Rechteck mit einem einzelnen Worker oder als parallelisierte Task-Liste berechnet wird.
+Die Mandelbrot-Berechnung läuft nicht direkt im Hauptthread, sondern über Web Worker. Die zentrale Einstiegstelle ist die Rechteckberechnung:
+
+```text
+computeMandelbrotRect(rect, imageWidth, imageHeight, computationSettings)
+```
+
+Für kleine Rechtecke oder eine Worker-Anzahl von `1` wird ein einzelner Worker verwendet. Für größere Rechtecke wird das Rechteck horizontal in mehrere Tasks geteilt. Diese Tasks werden mit einem einfachen Worker-Pool abgearbeitet.
+
+Konfigurierbar sind:
+
+- Anzahl der Worker-Threads,
+- Anzahl der Tasks pro Worker.
+
+Die Aufteilung folgt dem Prinzip:
+
+```text
+taskCount = min(rect.height, workerCount * tasksPerWorker)
+```
+
+Dadurch entstehen in der Regel mehr Tasks als Worker. Das verbessert die Lastverteilung, weil die Rechenzeit innerhalb der Mandelbrot-Menge stark vom Bildbereich abhängt.
 
 Der Ablauf für eine parallele vollständige Neuberechnung ist:
 
@@ -262,7 +297,7 @@ Der Ablauf für eine parallele vollständige Neuberechnung ist:
 
 Die Worker selbst kennen keine Parallelisierungslogik. Sie berechnen nur ein einzelnes übergebenes Rechteck und liefern dessen Iterations- und Escape-Werte zurück.
 
-### Laufzeitmessung
+#### Laufzeitmessung
 
 Für vollständige Neuberechnungen wird die letzte `IterationData`-Aktualisierung gemessen. Die Messung umfasst die Berechnung der neuen Iterationsdaten inklusive Worker-Verteilung und Zusammenführung der Teilergebnisse.
 
@@ -270,7 +305,7 @@ Nicht gemessen werden reine Render-Änderungen wie Farbpalette, Gamma oder Log-S
 
 Der zuletzt gemessene Wert wird im Control-Panel im Bereich „Parameter für Multithreading“ in Sekunden mit drei Nachkommastellen angezeigt.
 
-### Panning mit Dirty Rects
+#### Panning mit Dirty Rects
 
 Beim Verschieben der Ansicht wird während der Mausbewegung zunächst nur das bereits gerenderte Bild verschoben dargestellt. Dadurch fühlt sich das Panning unmittelbar an.
 
@@ -285,7 +320,7 @@ Beim Loslassen der Maustaste passiert Folgendes:
 
 Bei einer kleinen horizontalen Verschiebung wird zum Beispiel nur ein vertikaler Randstreifen neu berechnet. Bei einer kombinierten horizontalen und vertikalen Verschiebung entstehen ein Randstreifen und ein zusätzlicher oberer oder unterer Streifen. Wenn die Verschiebung größer oder gleich der Bildgröße ist, wird das gesamte Bild neu berechnet.
 
-### Resize mit Dirty Rects
+#### Resize mit Dirty Rects
 
 Bei Größenänderungen des Fensters wird das Canvas an die tatsächliche Anzeigengröße angepasst. Der mathematische View wird so erweitert, dass das neue Seitenverhältnis ohne Verzerrung erfüllt wird.
 
@@ -299,7 +334,7 @@ Canvas-Vergrößerungen werden schrittweise behandelt:
 
 Bei Canvas-Verkleinerungen wird aktuell vollständig neu berechnet. Das ist einfacher und vermeidet komplizierte Ausschnitts- und Resampling-Fälle.
 
-### Smooth Coloring und Farbskalierung
+#### Smooth Coloring und Farbskalierung
 
 Für Punkte außerhalb der Mandelbrot-Menge kann Smooth Coloring aktiviert werden. Dabei wird der Farbwert nicht nur aus der ganzzahligen Iterationszahl gebildet, sondern mit dem Escape-Wert geglättet.
 
@@ -318,7 +353,7 @@ Für Cosinus-Paletten wird folgende Funktion verwendet:
 color = a + b * cos(2π * (c * t + d))
 ```
 
-### Mandelbrot-Optimierungen
+#### Mandelbrot-Optimierungen
 
 Für sicher innenliegende Punkte werden schnelle Vorabtests genutzt:
 
@@ -327,37 +362,21 @@ Für sicher innenliegende Punkte werden schnelle Vorabtests genutzt:
 
 Punkte, die durch diese Tests sicher innerhalb der Menge liegen, müssen nicht vollständig iteriert werden.
 
-## Ausführen
+### Entwicklungsnotizen
 
-1. Repository klonen oder Projektordner öffnen.
-2. Einen lokalen Webserver im Projektverzeichnis starten, zum Beispiel über die Live-Server-Erweiterung des Editors oder einen einfachen lokalen HTTP-Server.
-3. `index.html` im Browser öffnen.
-
-Der lokale Webserver ist wichtig, weil Web Worker und Modul-Worker in modernen Browsern nicht zuverlässig direkt aus `file://`-URLs geladen werden.
-
-Der Viewer lädt Vue 3 über CDN:
-
-```html
-https://unpkg.com/vue@3/dist/vue.global.prod.js
-```
-
-Eine lokale Installation oder ein Build-Schritt ist aktuell nicht nötig.
-
-## Entwicklungsnotizen
-
-### Warum Web Worker?
+#### Warum Web Worker?
 
 Die Mandelbrot-Berechnung ist rechenintensiv. Durch Web Worker kann sie aus dem Hauptthread ausgelagert und parallelisiert werden. In der aktuellen Version steht nicht primär die UI-Reaktionsfähigkeit im Vordergrund, sondern der Speedup durch parallele Berechnung.
 
 Die Architektur ist darauf ausgelegt, dass die aufrufenden Schichten weiterhin mit einer vollständigen `IterationData`-Struktur arbeiten, während die Zerlegung in Tasks und die Verteilung auf Worker innerhalb der Berechnungsschicht gekapselt bleiben.
 
-### Warum mehr Tasks als Worker?
+#### Warum mehr Tasks als Worker?
 
 Die Rechenzeit ist über das Bild ungleich verteilt. Bereiche nahe der Grenze der Mandelbrot-Menge benötigen häufig deutlich mehr Iterationen als andere Bereiche.
 
 Wenn das Bild nur in so viele Teile zerlegt wird, wie Worker vorhanden sind, kann ein einzelner langsamer Teilbereich die Gesamtdauer dominieren. Mehr kleinere Tasks verbessern die Lastverteilung: Worker, die mit einem schnellen Task fertig sind, können weitere Tasks übernehmen.
 
-### Warum Dirty Rects?
+#### Warum Dirty Rects?
 
 Ohne Dirty Rects müsste bei jeder Verschiebung oder Vergrößerung des Canvas das gesamte Bild neu berechnet werden. Das ist besonders bei hoher Iterationstiefe teuer.
 
@@ -367,7 +386,7 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Vergrößerung des Browserfensters,
 - Layoutänderungen, bei denen bereits sichtbare Bereiche erhalten bleiben.
 
-## Grenzen der aktuellen Lösung
+### Grenzen der aktuellen Lösung
 
 - Die Worker werden aktuell pro Task über die bestehende Worker-Aufruffunktion erzeugt und nach Abschluss beendet; ein dauerhaft wiederverwendeter Worker-Pool wäre ein möglicher nächster Optimierungsschritt.
 - Die Teilergebnisse werden beim Transfer noch nicht konsequent mit Transferables optimiert.
@@ -376,7 +395,7 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Es gibt noch keine Persistenz für Bookmarks, Presets oder Zoom-Historie.
 - Die Multithreading-Parameter sind manuell einstellbar; eine automatische Wahl anhand von `navigator.hardwareConcurrency` wäre denkbar.
 
-## Lernziele
+### Lernziele
 
 - Grundlagen von HTML5 Canvas und Pixel-Rendering.
 - Mathematische Struktur der Mandelbrot-Menge.
@@ -392,7 +411,7 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Experimentieren mit Farbpaletten, Smooth Coloring und logarithmischer Skalierung.
 - Vorbereitung einer generischeren Fraktal-Pipeline, zum Beispiel für spätere Julia-Mengen.
 
-## Mögliche nächste Schritte
+### Mögliche nächste Schritte
 
 - Worker wiederverwenden statt für jeden Task neu erzeugen.
 - Typed-Array-Buffer mit Transferables übertragen, um Kopieraufwand zu reduzieren.
