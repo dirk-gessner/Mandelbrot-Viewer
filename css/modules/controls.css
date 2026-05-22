@@ -119,7 +119,7 @@
     border-right: none;
     border-radius: 6px 0 0 6px;
 
-    background: #333;
+    background: crimson;
     color: whitesmoke;
 
     cursor: pointer;
@@ -139,8 +139,7 @@
 
 .controls-close-button:hover,
 .controls-close-button:focus-visible {
-    background: #e9e9e9;
-    color: #333;
+    background: #333;
     outline: none;
 }
 
