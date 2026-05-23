@@ -1,9 +1,38 @@
 // -----------------------------------------------------------------------------
-// Mandelbrot-Berechnung
+// Mandelbrot-Orchestrierung im Hauptthread
+// -----------------------------------------------------------------------------
+//
+// Diese Datei koordiniert die Mandelbrot-Berechnung aus Sicht des Hauptthreads.
+// Sie berechnet Pixel nicht selbst, sondern zerlegt Rechtecke in Teilaufgaben,
+// startet Web-Worker, sammelt deren IterationData-Ergebnisse ein und führt sie
+// wieder zu einer zusammenhängenden Matrix zusammen.
+//
+// Die eigentliche synchrone Punkt- und Rechteckberechnung liegt in
+// `mandelbrot-worker.js`.
 // -----------------------------------------------------------------------------
 
-function splitRectHorizontally(rect, parts) {
+/**
+ * Teilt ein Pixelrechteck horizontal in mehrere Teilrechtecke.
+ *
+ * Die Teilrechtecke behalten `x` und `width` des Ausgangsrechtecks.
+ * Die Höhe wird möglichst gleichmäßig aufgeteilt; Restzeilen werden auf die
+ * ersten Teilrechtecke verteilt.
+ *
+ * @param {PixelRect}       rect    - Zu teilendes Pixelrechteck.
+ * @param {number}          parts   - (integer) Gewünschte Anzahl von Teilrechtecken.
+ * @returns {PixelRect[]}           - Horizontale Teilrechtecke mit positiver Höhe.
+ */
+function splitRectHorizontally(
+    rect, 
+    parts
+) {
     const result = [];
+    
+    // Notausgang, um Division durch Null zu vermeiden
+    if (parts < 1) {
+        result.push(rect); 
+        return result; 
+    }
 
     const baseHeight = Math.floor(rect.height / parts);
     const remainder = rect.height % parts;
@@ -30,13 +59,27 @@ function splitRectHorizontally(rect, parts) {
     return result;
 }
 
-function mergeIterationDataParts(rect, parts) {
+/**
+ * Fügt horizontal berechnete Iterationsdaten-Teile wieder zu einer Matrix zusammen.
+ *
+ * Die Reihenfolge der Teile muss der Reihenfolge aus `splitRectHorizontally`
+ * entsprechen. Die Datenarrays werden linear hintereinander in neue Arrays
+ * kopiert.
+ *
+ * @param {PixelRect}       rect    - Gesamtbereich, den die Teile zusammen abdecken.
+ * @param {IterationData[]} parts   - Berechnete Teilmatrizen in vertikaler Reihenfolge.
+ * @returns {IterationData}         - Zusammengeführte Iterationsdaten für `rect`.
+ */
+function mergeIterationDataParts(
+    rect, 
+    parts
+) {
     const totalPixels = rect.width * rect.height;
 
-    const iterations = new Uint16Array(totalPixels);
+    const iterations   = new Uint16Array(totalPixels);
     const escapeValues = new Float64Array(totalPixels);
 
-    let targetOffset = 0;
+    let targetOffset  = 0;
     let minIterations = Number.POSITIVE_INFINITY;
 
     for (const part of parts) {
@@ -59,6 +102,19 @@ function mergeIterationDataParts(rect, parts) {
     };
 }
 
+/**
+ * Startet einen Web-Worker zur Berechnung eines Mandelbrot-Rechtecks.
+ *
+ * Für jeden Aufruf wird ein neuer Worker erzeugt und nach der Antwort wieder
+ * beendet.
+ *
+ * @param {PixelRect}           rect                - Zu berechnender Pixelbereich.
+ * @param {number}              imageWidth          - (integer) Breite der vollständigen Zielmatrix.
+ * @param {number}              imageHeight         - (integer) Höhe der vollständigen Zielmatrix.
+ * @param {ComputationSettings} computationSettings - Einstellungen für die Berechnung.
+ * @param {number}              [workerId=0]        - (integer) Diagnose-ID für Fehlermeldungen.
+ * @returns {Promise<IterationData>}                - Vom Worker berechnete Iterationsdaten.
+ */
 function computeMandelbrotRectInWorker(
     rect,
     imageWidth,
@@ -67,14 +123,6 @@ function computeMandelbrotRectInWorker(
     workerId = 0
 ) {
     return new Promise((resolve, reject) => {
-
-        // console.log(
-        //     "computeMandelbrotRectInWorker",
-        //     {
-        //         workerId: workerId,
-        //         rect: rect,
-        //     }
-        // );
 
         const worker = new Worker("./js/mandelbrot-worker.js", {
             type: "module"
@@ -100,7 +148,23 @@ function computeMandelbrotRectInWorker(
     });
 }
 
-async function computeTasksWithWorkerPool(
+/**
+ * Berechnet mehrere Mandelbrot-Teilrechtecke mit begrenzter Worker-Parallelität.
+ *
+ * Dies ist kein echter Worker-Pool: Für jeden Task wird über
+ * `computeMandelbrotRectInWorker` ein eigener Worker erzeugt. Die Funktion
+ * begrenzt nur, wie viele dieser Worker-Aufträge gleichzeitig laufen.
+ *
+ * Die Ergebnisreihenfolge entspricht der Reihenfolge der übergebenen Tasks.
+ *
+ * @param {PixelRect[]}         tasks                - Zu berechnende Teilrechtecke.
+ * @param {number}              imageWidth           - (integer) Breite der vollständigen Zielmatrix.
+ * @param {number}              imageHeight          - (integer) Höhe der vollständigen Zielmatrix.
+ * @param {ComputationSettings} computationSettings  - Einstellungen für die Berechnung.
+ * @param {number}              workerCount          - (integer) Maximale Anzahl gleichzeitig laufender Worker-Aufträge.
+ * @returns {Promise<IterationData[]>}               - Berechnete Iterationsdaten je Task.
+ */
+async function computeTasksWithWorkerConcurrency(
     tasks,
     imageWidth,
     imageHeight,
@@ -138,6 +202,20 @@ async function computeTasksWithWorkerPool(
     return results;
 }
 
+/**
+ * Berechnet ein Mandelbrot-Rechteck parallel über mehrere Worker-Aufträge.
+ *
+ * Das Rechteck wird horizontal in Teilaufgaben zerlegt. Die Teilaufgaben werden
+ * mit begrenzter Worker-Parallelität berechnet und anschließend wieder zu einem
+ * zusammenhängenden `IterationData`-Objekt zusammengeführt.
+ *
+ * @param {PixelRect}           rect                 - Zu berechnender Pixelbereich.
+ * @param {number}              imageWidth           - (integer) Breite der vollständigen Zielmatrix.
+ * @param {number}              imageHeight          - (integer) Höhe der vollständigen Zielmatrix.
+ * @param {ComputationSettings} computationSettings  - Einstellungen für die Berechnung.
+ * @param {number}              workerCount          - (integer) Maximale Anzahl gleichzeitig laufender Worker-Aufträge.
+ * @returns {Promise<IterationData>}                 - Berechnete Iterationsdaten für `rect`.
+ */
 async function computeMandelbrotRectParallel(
     rect,
     imageWidth,
@@ -159,7 +237,7 @@ async function computeMandelbrotRectParallel(
         }
     );
 
-    const parts = await computeTasksWithWorkerPool(
+    const parts = await computeTasksWithWorkerConcurrency(
         tasks,
         imageWidth,
         imageHeight,
@@ -180,6 +258,22 @@ async function computeMandelbrotRectParallel(
     return iterationData; 
 }
 
+/**
+ * Berechnet ein Mandelbrot-Rechteck mit der aktuell konfigurierten CPU-Worker-Strategie.
+ *
+ * Kleine Rechtecke oder eine Worker-Anzahl <= 1 werden als einzelner Worker-Auftrag
+ * berechnet. Größere Rechtecke werden in mehrere Teilrechtecke zerlegt und parallel
+ * über Worker-Aufträge berechnet.
+ *
+ * Diese Funktion bildet die zentrale Rechteck-Schnittstelle für CPU-basierte
+ * Mandelbrot-Berechnungen.
+ *
+ * @param {PixelRect}           rect                 - Zu berechnender Pixelbereich.
+ * @param {number}              imageWidth           - (integer) Breite der vollständigen Zielmatrix.
+ * @param {number}              imageHeight          - (integer) Höhe der vollständigen Zielmatrix.
+ * @param {ComputationSettings} computationSettings  - Einstellungen für die Berechnung.
+ * @returns {Promise<IterationData>}                 - Berechnete Iterationsdaten für `rect`.
+ */
 async function computeMandelbrotRect(
     rect,
     imageWidth,
@@ -206,8 +300,22 @@ async function computeMandelbrotRect(
     );
 }
 
-// Berechnet das Mandelbrot-Bild für die gegebenen Parameter
-async function computeMandelbrot(width, height, computationSettings) {
+/**
+ * Berechnet die Mandelbrot-Iterationsdaten für eine vollständige Bildfläche.
+ *
+ * Die Funktion ist ein Convenience-Wrapper um `computeMandelbrotRect` und erzeugt
+ * dafür ein Rechteck über die gesamte Zielmatrix.
+ *
+ * @param {number}              width                - (integer) Breite der Zielmatrix.
+ * @param {number}              height               - (integer) Höhe der Zielmatrix.
+ * @param {ComputationSettings} computationSettings  - Einstellungen für die Berechnung.
+ * @returns {Promise<IterationData>}                 - Berechnete Iterationsdaten für die vollständige Bildfläche.
+ */
+async function computeMandelbrot(
+    width, 
+    height, 
+    computationSettings
+) {
     return await computeMandelbrotRect(
         { x: 0, y: 0, width, height },
         width,

@@ -3,33 +3,67 @@
 // -----------------------------------------------------------------------------
 
 
+/**
+ * Größe einer Pixelmatrix oder Canvas-Fläche.
+ *
+ * @typedef {Object} ImageSize
+ * @property {number} width  - (integer) Breite in Pixeln.
+ * @property {number} height - (integer) Höhe in Pixeln.
+ */
+
+/**
+ * Kontextdaten, die für die Umrechnung von Iterationswerten in Farben benötigt werden.
+ *
+ * @typedef {Object} RenderContext
+ * @property {number}                        maxIterations  - (integer) Maximale Iterationstiefe.
+ * @property {RenderSettings}                renderSettings - Aktuelle Rendering-Einstellungen.
+ * @property {Object.<string, RgbColor>}     colors         - Benannte RGB-Farben.
+ * @property {Object.<string, ColorPalette>} colorPalettes  - Verfügbare Farbpaletten.
+ */
+
+/**
+ * Erzeugt ein Objekt vom Typ Rendercontext aus
+ * globalen Einstellungen und Konstanten.
+ * 
+ * @returns {RenderContext}
+ */
+function createRenderContext (){
+    return {
+        maxIterations: computationSettings.maxIterations, 
+        renderSettings, 
+        colors, 
+        colorPalettes
+    }; 
+}
+
 // -----------------------------------------------------------------------------
-// Iterations-Matrix und Bild-Cache
+// Bild-Cache
 // -----------------------------------------------------------------------------
 
-// Daten-Cache: je eine Matrix für Iterations- und Escapewerte
-// -----------------------------------------------------------------------------
-// {
-//     width,        - Breite               - integer
-//     height,       - Höhe                 - integer
-//     iterations,   - Iterationsmatrix     - Uint16Array(width * height)
-//     escapeValues, - Escapewertmatrix     - Float64Array(width * height),
-//     minIterations - der niedrigste Iterationswert der Feldes - integer
-// };
-
-let iterationData = null; 
-
-// Imagecache (width * height)
-// -----------------------------------------------------------------------------
-// {
-//      data         - enthält das zuletzt gerenderte Image als RGBA-Pixelmatrix
-// }; 
-
+/**
+ * Zuletzt gerendertes Canvas-Bild aus den aktuellen Iterationsdaten.
+ * 
+ * Standard DOM-Datentyp
+ * 
+ * ImageData {
+ *     width:  number,
+ *     height: number,
+ *     data:   Uint8ClampedArray  - flaches Array [r, g, b, a, r, g, b, a, ...]
+ * } 
+ * 
+ * @type {?ImageData}
+ */
 let imageData = null;
 
-// -----------------------------------------------------------------------------
-// ermittelt die ImageSize aus der Zeichenfläche (canvas) 
-// -----------------------------------------------------------------------------
+
+/**
+ * Ermittelt die aktuelle interne Pixelgröße des Canvas.
+ *
+ * Gemeint ist die Zeichenpuffergröße (`canvas.width`/`canvas.height`),
+ * nicht zwingend die CSS-Anzeigegröße.
+ *
+ * @returns {ImageSize}     Aktuelle Canvas-Größe in Pixeln.
+ */
 function getCanvasImageSize() {
     return {
         width:  canvas.width,
@@ -41,7 +75,13 @@ function getCanvasImageSize() {
 // Rendering-Funktionen für die Iterations-Matrix
 // -----------------------------------------------------------------------------
 
-// berechnet den RGB-Farbwert via Cosinus-Palette 
+/**
+ * Berechnet einen RGB-Farbwert aus einer Cosinus-Palette.
+ *
+ * @param {number}        t         - (decimal) Normierter Farbwert.
+ * @param {CosinePalette} palette   - Cosinus-Palette.
+ * @returns {RgbColor}
+ */
 function colorFromCosinePalette(t, palette) {
     const r = 255 * (palette.a[0] + palette.b[0] * Math.cos(2 * Math.PI * (palette.c[0] * t + palette.d[0])));
     const g = 255 * (palette.a[1] + palette.b[1] * Math.cos(2 * Math.PI * (palette.c[1] * t + palette.d[1])));
@@ -50,22 +90,28 @@ function colorFromCosinePalette(t, palette) {
     return [r, g, b];
 }
 
-// berechnet den RGB-Farbwert für eine Graustufen-Palette
-function colorFromGrayscale(t) {
-    const value = Math.round(t * 255);
-    return [value, value, value];
-}
-
-// alternierende Graustufen
-function colorFromAlternatingGrayscale(t, palette) {
-    const value = t % 2 === 0
+/**
+ * Wählt abwechselnd zwischen zwei RGB-Farben.
+ *
+ * @param {number}                   t          - (integer) Iterationswert.
+ * @param {AlternatingColorsPalette} palette    - Palette mit zwei alternierenden Farben.
+ * @returns {RgbColor}
+ */
+function colorFromAlternatingColors(t, palette) {
+    const [r, g, b] = Math.ceil(t/2) % 2 === 0
         ? palette.even
         : palette.odd;
 
-    return [value, value, value];
+    return [r, g, b];
 }
 
-// berechnet zyklische Farbbänder 
+
+/**
+ * Berechnet zyklische Farbbänder. 
+ *
+ * @param {number} t    - (integer) Iterationswert.
+ * @returns {RgbColor}
+ */
 function colorFromCyclicBands(t) {
     const band = t % 128;
     const hue = (band / 128) * 360;
@@ -73,7 +119,14 @@ function colorFromCyclicBands(t) {
     return hsvToRgb(hue, 1, 1);
 }
 
-// Konvertiert HSV-Farbraum zu RGB
+/**
+ * Konvertiert einen HSV-Farbwert in einen RGB-Farbwert.
+ *
+ * @param {number} h - (decimal) Hue        - Farbwinkel in Grad, typischerweise 0 bis 360.
+ * @param {number} s - (decimal) Saturation - Sättigung, typischerweise 0 bis 1.
+ * @param {number} v - (decimal) Value      - Helligkeit, typischerweise 0 bis 1.
+ * @returns {RgbColor} RGB-Farbwert mit Kanälen von 0 bis 255.
+ */
 function hsvToRgb(h, s, v) {
   const c = v * s;
   const x = c * (1 - Math.abs((h / 60) % 2 - 1));
@@ -102,7 +155,12 @@ function hsvToRgb(h, s, v) {
   ];
 }
 
-// invertiert den RGB-Wert eines Pixles, falls aktiviert,
+/**
+ * Invertiert den RGB-Wert eines Pixles,
+ * 
+ * @param {RgbColor} color
+ * @returns {RgbColor}
+ */
 function applyPaletteInversion(color) {
     return [
         255 - color[0],
@@ -111,16 +169,34 @@ function applyPaletteInversion(color) {
     ];
 }
 
-// kapselt die Verwendung von renderContext in 
-// iterationToColor
+/**
+ * Wandelt Iterationsdaten eines einzelnen Pixels in einen RGB-Farbwert um.
+ *
+ * @callback IterationColorMapper
+ * @param {number} iterations       - (integer) Iterationswert des Pixels.
+ * @param {number} escapeValue      - (decimal) Escape-Wert des Pixels für Smooth Coloring.
+ * @param {number} minIterations    - (integer) Niedrigster Iterationswert im aktuellen Datensatz.
+ * @returns {RgbColor}              - RGB-Farbwert für das Pixel.
+ */
+
+/**
+ * Erstellt eine Mapping-Funktion für die aktuellen Rendering-Einstellungen.
+ *
+ * Die zurückgegebene Funktion kapselt den Render-Kontext, damit beim Einfärben
+ * jedes Pixels nicht alle Rendering-Daten einzeln übergeben werden müssen.
+ *
+ * @param {RenderContext} renderContext - Kontextdaten für die Farbabbildung.
+ * @returns {IterationColorMapper}      - Funktion zur Umrechnung einzelner Iterationswerte in RGB.
+ */
 function createIterationColorMapper(renderContext) {
 
-    // Berechnet den RGB-Farbwert für einen Punkt basierend 
-    // auf der Anzahl der Iterationen und dem Escapewert für 
-    // diesen Punkt
-    return function iterationToColor(  iterations, 
-                                escapeValue, 
-                                minIterations) {
+    /**
+     * @type {IterationColorMapper}
+     */
+    return function iterationToColor(  
+        iterations, 
+        escapeValue, 
+        minIterations) {
 
         const { maxIterations, renderSettings, colors, colorPalettes } = renderContext;                                
         const innerSetColor = colors[renderSettings.innerSetColorKey] || [0, 0, 0];                            
@@ -167,13 +243,8 @@ function createIterationColorMapper(renderContext) {
             [r, g, b] = colorFromCosinePalette(t, palette);
         }
 
-        if (palette.type === 'grayscale') {
-            const value = Math.round(t * 255);
-            [r, g, b] = [value, value, value];
-        }
-
-        if (palette.type === 'alternatingGrayscale') {
-            [r, g, b] = colorFromAlternatingGrayscale(iterations, palette);
+        if (palette.type === 'alternatingColors') {
+            [r, g, b] = colorFromAlternatingColors(iterations, palette);
         }        
 
         if (palette.type === 'hsv') {
@@ -191,15 +262,28 @@ function createIterationColorMapper(renderContext) {
         return [r, g, b];
     } ; 
 }
-// erzeugt die Pixelmatrix ImageData
-// färbt Pixel ein
-// gibt ImageData zurück
-function createImageDataFromIterationData(  ctx,
-                                            iterationData,
-                                            imageSize,
-                                            renderContext ) {
 
-    const imageData = ctx.createImageData(imageSize.width, imageSize.height);
+/**
+ * Erzeugt eine ImageData-Pixelmatrix aus berechneten Iterationsdaten.
+ *
+ * Die Pixeldaten werden im RGBA-Format in ein flaches Uint8ClampedArray
+ * geschrieben: [r, g, b, a, r, g, b, a, ...].
+ * 
+ * @param {CanvasRenderingContext2D} ctx            - Zeichenkontext des Fraktal-Canvas.
+ * @param {IterationData}            iterationData  - Berechnete Iterationsdaten.
+ * @param {RenderContext}            renderContext  - Kontextdaten für die Farbabbildung.
+ * @returns {ImageData}                             - Gerenderte Pixeldaten für den Canvas.
+ */
+function renderImageData(  
+    ctx,
+    iterationData,
+    renderContext 
+) {
+
+    const imageData = ctx.createImageData(
+        iterationData.width, 
+        iterationData.height 
+    );
     const mapIterationToColor = createIterationColorMapper(renderContext); 
 
     // die Anzahl der Pixel in ImageData entspricht der Anzahl der 
@@ -223,59 +307,6 @@ function createImageDataFromIterationData(  ctx,
     return imageData;
 }
 
-// Rendert die Farben basierend auf der gecachten Iterations-Matrix 
-// und speichert das gerenderte Image im Cache
-function rebuildImageData() {
-
-    // keine Daten -> kein Image
-    if (!iterationData) {
-        imageData = null;
-        return;
-    }   
-    
-    const { width, height } = iterationData;
-    const imageSize = { width, height };  
-
-    // Fehler werfen, wenn die Feldgrößen nicht zusammenpassen
-    if (iterationData.iterations.length !== imageSize.width * imageSize.height) {
-        throw new Error('IterationData size does not match width * height.');
-    }    
-
-    const renderContext = {
-        maxIterations: computationSettings.maxIterations, 
-        renderSettings, 
-        colors, 
-        colorPalettes
-    }; 
-
-    imageData = createImageDataFromIterationData(
-        ctx,
-        iterationData,
-        imageSize,
-        renderContext
-    );
-}
-
-// -----------------------------------------------------------------------------
-// Berechnung der Matrix mit den aktuellen View-Parametern 
-// und Caching des Images
-// -----------------------------------------------------------------------------
-async function computeAndCacheIterationData(computeFn = computeMandelbrot) {
-
-    const imageSize = getCanvasImageSize() 
-
-    // hier könnte in Zukunft auch eine andere Berechnungsvorschrift 
-    // gerufen werden, z.B. (Julia-Menge)
-    iterationData = await measureIterationDataUpdate(() =>
-                    computeFn(
-                        imageSize.width, 
-                        imageSize.height, 
-                        computationSettings)
-    );
-    app.updateInfo();
-    rebuildImageData();
-}
-
 // -----------------------------------------------------------------------------
 // Funktionen für das Render-Overlay
 // -----------------------------------------------------------------------------
@@ -289,45 +320,124 @@ function hideRenderOverlay() {
     renderOverlay.classList.add('hidden');
 }
 
+/**
+ * Führt eine Rendering-bezogene Arbeit mit sichtbarem Overlay 
+ * und Animation aus.
+ *
+ * @param {function(): (Promise<void>|void)} work - Auszuführende Arbeit.
+ * @returns {void}
+ */
 function runWithOverlay(work) {
+    // Overlay an
     showRenderOverlay();
-
     requestAnimationFrame(() => {
         requestAnimationFrame(async () => {
             try {
+                // was auch immer hier zu tun ist, wird hier getan
                 await work()
-                renderScene();
             } finally {
+                // Overlay aus
                 hideRenderOverlay();
             }
         });
     });
 }
 
-function recomputeWithOverlay() {
-    runWithOverlay(async () => {
-        await computeAndCacheIterationData();
-    });
+// -----------------------------------------------------------------------------
+// Zoom-In-Selektionsfenster: Ermöglicht es dem Benutzer, einen Bereich auszuwählen,
+// in den gezoomt werden soll, indem er mit der rechten Maustaste klickt und zieht
+// -----------------------------------------------------------------------------
+
+/**
+ * Zustand des Zoom-Auswahlrahmens auf dem Canvas.
+ *
+ * @typedef {Object} SelectionState
+ * @property {boolean} active   - Gibt an, ob aktuell ein Auswahlrahmen angezeigt wird.
+ * @property {number} centerX   - (decimal) X-Koordinate des Mittelpunkts in Canvas-Pixeln.
+ * @property {number} centerY   - (decimal) Y-Koordinate des Mittelpunkts in Canvas-Pixeln.
+ * @property {number} width     - (decimal) Breite des Auswahlrahmens in Pixeln.
+ * @property {number} height    - (decimal) Höhe des Auswahlrahmens in Pixeln.
+ */
+
+/**
+ * Aktueller Zustand des Zoom-Auswahlrahmens.
+ *
+ * @type {SelectionState}
+ */
+const selection = {
+    active: false,
+    centerX: 0,
+    centerY: 0,
+    width: 0,
+    height: 0,
+};
+
+/**
+ * Zeichnet den Zoom-Auswahlrahmen inklusive Fadenkreuz auf den Canvas.
+ *
+ * Die Funktion zeichnet nur die Overlay-Markierung. Sie verändert weder View
+ * noch Iterationsdaten.
+ *
+ * @param {CanvasRenderingContext2D} ctx        - Zeichenkontext des Fraktal-Canvas.
+ * @param {SelectionState}           selection  - Zustand und Position des Auswahlrahmens.
+ * @returns {void}
+ */
+function drawSelectionFrame(
+    ctx, 
+    selection
+) {
+
+    const x = selection.centerX - selection.width / 2;
+    const y = selection.centerY - selection.height / 2;
+    const centerX = selection.centerX;
+    const centerY = selection.centerY;
+
+    ctx.save();
+
+    // Auswahlrahmen
+    ctx.strokeStyle = 'yellow';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, selection.width, selection.height);
+
+    // Fadenkreuz
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+
+    // vertikale Linie
+    ctx.moveTo(centerX, 0);
+    ctx.lineTo(centerX, canvas.height);
+
+    // horizontale Linie
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(canvas.width, centerY);
+
+    ctx.stroke();
+
+    // kleine Zielmarkierung im Zentrum
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 10, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    ctx.restore();
 }
 
-// -----------------------------------------------------------------------------
-// Rendering der Matrix und ggfs. des Auswahlrahmens
-// -----------------------------------------------------------------------------
-function renderScene() {
-    // Zeichne das gecachte Image
-    if (imageData) {
-        ctx.putImageData(imageData, 0, 0);
-    }
+/**
+ * Zeichnet die aktuellen ImageData auf den Canvas 
+ * und ergänzt ggfs. den aktiven selectionFrame.
+ *
+ * Optional kann das Bild um `pixelDx` und `pixelDy` verschoben gezeichnet werden,
+ * z.B. als direktes Feedback während einer Pan-Bewegung.
+ *
+ * @param {number} [pixelDx=0] - (integer) Horizontale Verschiebung in Pixeln.
+ * @param {number} [pixelDy=0] - (integer) Vertikale Verschiebung in Pixeln.
+ * @throws {Error} Wenn keine ImageData zum Zeichnen vorhanden ist.
+ * @returns {void}
+ */
+function drawScene(pixelDx = 0, pixelDy = 0) {
 
-    if (selection.active) {
-        drawSelectionFrame(ctx, selection);
-    }
-}
-
-function renderPannedScene(pixelDx, pixelDy) {
-
+    // falls Interaktionen stattfinden, bevor ImageData existiert
     if (!imageData) {
-        return;
+        return; 
     }
 
     const imageSize = getCanvasImageSize(); 
@@ -336,10 +446,59 @@ function renderPannedScene(pixelDx, pixelDy) {
     ctx.clearRect(0, 0, imageSize.width, imageSize.height);
     ctx.putImageData(imageData, pixelDx, pixelDy);
     ctx.restore();
+
+    if (selection.active) {
+        drawSelectionFrame(ctx, selection);
+    }
+
+    app.updateInfo();
 }
 
-// Sammelfunktion für regelmäßig gemeinsam ausgeführte Schritte
-function rerenderFromIterationData() {
-    rebuildImageData(); 
-    renderScene(); 
+/**
+ * Rendert aus den vorhandenen Iterationsdaten neue ImageData 
+ * und zeichnet sie auf den Canvas.
+ *
+ * Diese Funktion berechnet keine neuen Iterationsdaten. Sie eignet sich für
+ * Änderungen an Farben, Paletten, Gamma oder anderen Render-Einstellungen.
+ *
+ * @throws {Error} Wenn keine Iterationsdaten vorhanden sind.
+ * @returns {void}
+ */
+function renderAndDrawScene() {
+
+    if (!iterationData) {
+        throw new Error ('Try to render image without iteration data!')
+    }
+
+    imageData = renderImageData(
+        ctx, 
+        iterationData, 
+        createRenderContext());
+
+    drawScene(); 
 }
+
+/**
+ * Berechnet oder verschiebt Iterationsdaten, 
+ * rendert daraus ImageData 
+ * und zeichnet sie auf den Canvas.
+ *
+ * Ohne Verschiebung werden die Iterationsdaten vollständig neu berechnet.
+ * Mit `dx`/`dy` werden vorhandene Daten verschoben und fehlende Bereiche ergänzt.
+ *
+ * @param {number} [dx=0] - (integer) Horizontale Verschiebung in Pixeln.
+ * @param {number} [dy=0] - (integer) Vertikale Verschiebung in Pixeln.
+ * @returns {void}
+ */
+function computeRenderAndDrawScene(dx = 0, dy = 0)
+{
+    runWithOverlay(async () => { 
+            if (dx === 0 && dy === 0 ) {
+                await computeIterationData();
+            } else {
+                await updateIterationDataByShift(dx, dy);
+            }; 
+        renderAndDrawScene();
+    });
+}    
+

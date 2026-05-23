@@ -4,6 +4,9 @@
 const app = Vue.createApp({
     data() {
         return {
+
+            inputConstraints, 
+
             viewInfo: {
                 minX: 0,
                 maxX: 0,
@@ -50,70 +53,82 @@ const app = Vue.createApp({
         },
 
         updateMaxIterations() {
-            computationSettings.maxIterations = Math.max(0, Math.min(Number(this.maxIterationsInput), 5000));
+            const limits = inputConstraints.maxIterations;
+            computationSettings.maxIterations = Math.max(
+                limits.min,
+                Math.min(Number(this.maxIterationsInput), limits.max)
+            );
             this.maxIterationsInput = computationSettings.maxIterations;
-
             this.updateInfo();
             clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {recomputeWithOverlay()}, 250); 
+            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
         }, 
 
         updateEscapeRadius() {
-            computationSettings.escapeRadius = Math.max(1.1, Math.min(Number(this.escapeRadiusInput), 20));
+            const limits = inputConstraints.escapeRadius;
+            computationSettings.escapeRadius = Math.max(
+                limits.min, 
+                Math.min(Number(this.escapeRadiusInput), limits.max));
             this.escapeRadiusInput = computationSettings.escapeRadius;
 
             this.updateInfo();
             clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {recomputeWithOverlay()}, 250); 
+            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
         },
 
         updateWorkerCount() {
-            multiThreadSettings.workerCount = Math.max(1, Math.min(Number(this.workerCountInput), 20));
+            const limits = inputConstraints.workerCount;
+            multiThreadSettings.workerCount = Math.max(
+                limits.min, 
+                Math.min(Number(this.workerCountInput), limits.max));
             this.workerCountInput = multiThreadSettings.workerCount;
             clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {recomputeWithOverlay()}, 250); 
+            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
         },
 
         updateTasksPerWorker() {
-            multiThreadSettings.tasksPerWorker = Math.max(1, Math.min(Number(this.tasksPerWorkerInput), 20));
+            const limits = inputConstraints.tasksPerWorker;
+            multiThreadSettings.tasksPerWorker = Math.max(
+                limits.min, 
+                Math.min(Number(this.tasksPerWorkerInput), limits.max));
             this.tasksPerWorkerInput = multiThreadSettings.tasksPerWorker;
             clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {recomputeWithOverlay()}, 250); 
+            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
         },
 
         updateGamma() {
             renderSettings.gamma = this.gamma;
             clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
+            this.inputTimer = setTimeout(() => {renderAndDrawScene()}, 250); 
         },
 
         updateColorscalingCorrection() {
             renderSettings.colorScalingCorrection = this.colorScalingCorrection;
             clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
+            this.inputTimer = setTimeout(() => {renderAndDrawScene()}, 250); 
         },
         
         updateLogStrength() {
             renderSettings.logStrength = this.logStrength;
             clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {rerenderFromIterationData()}, 250); 
+            this.inputTimer = setTimeout(() => {renderAndDrawScene()}, 250); 
         },
 
         updateRenderOptions() {
             renderSettings.smoothColoringEnabled = this.smoothColoringEnabled;
             renderSettings.logScalingEnabled = this.logScalingEnabled;
             renderSettings.invertedPalette = this.invertedPalette;
-            rerenderFromIterationData(); 
+            renderAndDrawScene(); 
         },
 
         updatePalette() {
             renderSettings.paletteKey = this.selectedPaletteKey;
-            rerenderFromIterationData(); 
+            renderAndDrawScene(); 
         }, 
 
         updateInnerSetColor() {
             renderSettings.innerSetColorKey = this.selectedInnerSetColorKey;
-            rerenderFromIterationData(); 
+            renderAndDrawScene(); 
         }, 
 
         saveCanvasAsPng() {

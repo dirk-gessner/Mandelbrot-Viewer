@@ -4,9 +4,83 @@
 // -----------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------
-// ermittelt die minimale Anzahl von Iterationen in einem Datensatz
+// Iterations-Matrix
 // -----------------------------------------------------------------------------
-function findMinIterations(iterations) {
+
+/**
+ * Lineares Feld mit einem Iterationswert je Pixel.
+ *
+ * @typedef {Uint16Array} IterationArray
+ */
+
+/**
+ * Lineares Feld mit einem Escape-Wert je Pixel.
+ *
+ * @typedef {Float64Array} EscapeValueArray
+ */
+
+/**
+ * Iterationsdaten für eine vollständig oder teilweise berechnete Fraktalfläche.
+ *
+ * Die Arrays sind linear gespeichert. Der Wert für Pixel (x, y) liegt an Index:
+ * y * width + x.
+ *
+ * @typedef {Object} IterationData
+ * @property {number}           width           - (integer) Breite der Datenmatrix in Pixeln.
+ * @property {number}           height          - (integer) Höhe der Datenmatrix in Pixeln.
+ * @property {IterationArray}   iterations      - (integer) Iterationswert je Pixel.
+ * @property {EscapeValueArray} escapeValues    - (decimal) Escape-Wert je Pixel.
+ * @property {number}           minIterations   - (integer) Niedrigster Iterationswert aus iterations.
+ */
+
+/**
+ * Aktuell gecachte Iterationsdaten der dargestellten Fraktalfläche.
+ *
+ * Der Wert ist null, solange noch keine Berechnung durchgeführt wurde.
+ *
+ * @type {?IterationData}
+ */
+let iterationData = null;
+
+
+// -----------------------------------------------------------------------------
+// Objekte für Verschiebe- und Kopieropreationen
+// -----------------------------------------------------------------------------
+
+/**
+ * Rechteckiger Pixelbereich innerhalb einer Iterationsmatrix.
+ *
+ * @typedef {Object} PixelRect
+ * @property {number} x         - (integer) Linke Position in Pixeln.
+ * @property {number} y         - (integer) Obere Position in Pixeln.
+ * @property {number} width     - (integer) Breite in Pixeln.
+ * @property {number} height    - (integer) Höhe in Pixeln.
+ */
+
+/**
+ * Beschreibung einer rechteckigen Kopieroperation zwischen zwei Iterationsdaten.
+ *
+ * @typedef {Object} CopyRegion
+ * @property {number} sourceX   - (integer) X-Startposition in der Quelle.
+ * @property {number} sourceY   - (integer) Y-Startposition in der Quelle.
+ * @property {number} targetX   - (integer) X-Zielposition im Ziel.
+ * @property {number} targetY   - (integer) Y-Zielposition im Ziel.
+ * @property {number} width     - (integer) Breite des Kopierbereichs.
+ * @property {number} height    - (integer) Höhe des Kopierbereichs.
+ */
+
+// -----------------------------------------------------------------------------
+// 
+// -----------------------------------------------------------------------------
+/**
+ * Ermittelt die minimale Anzahl von Iterationen in einem Datensatz. 
+ * 
+ * @param {IterationArray} iterations - (integer) Iterationswerte je Pixel
+ * @returns {number}                  - (integer) minimaler Iterationswert des Feldes
+ */
+function findMinIterations(
+    iterations
+) {
     if (iterations.length === 0) {
         return 0;
     }
@@ -22,10 +96,17 @@ function findMinIterations(iterations) {
     return minIterations;
 }
 
-// -----------------------------------------------------------------------------
-// erzeugt ein leeres IterationData-Objekt
-// -----------------------------------------------------------------------------
-function createEmptyIterationData(width, height) {
+/**
+ * Erzeugt ein leeres IterationData-Objekt.
+ * 
+ * @param {number} width        - (integer) Breite der Matrix
+ * @param {number} height       - (integer) Höhe der Matrix
+ * @returns {IterationData}     - ein leeres IterationData-Objekt
+ */
+function createEmptyIterationData(
+    width, 
+    height
+) {
     return {
         width,
         height,
@@ -39,18 +120,27 @@ function createEmptyIterationData(width, height) {
 // Funktionen für Verschiebung und Neuberechnung der aktuellen View
 // -----------------------------------------------------------------------------
 
-// übernimmt source oder einen Ausschnitt aus source nach target, 
-// z.B. nach einer Verschiebung oder Erweiterung
-// source                       - Quelle: iterationData
-// target                       - Ziel:   iterationData 
-// copyRegion (                 - beschreibt eine verschobene Kopie: 
-//                                  source(sourceX + x, sourceY + y) 
-//                                      -> target(targetX + x, targetY + y)
-//       sourceX, sourceY,      - Sourcekordinaten
-//       targetX, targetY,      - Zielkoordinaten
-//       width, height)         - Ausdehnung des zu kopierenden Rechtecks
-function copyIterationRect(source, target, copyRegion) 
-{
+/**
+ * Kopiert ein IterationData-Objekt (source) oder einen Ausschnitt daraus 
+ * in ein anderes IterationData-Objekt (target) - 
+ * z.B. nach einer Verschiebung oder Erweiterung. 
+ * 
+ * copyRegion (                 - beschreibt eine verschobene Kopie: 
+ *                                  source(sourceX + x, sourceY + y) 
+ *                                      -> target(targetX + x, targetY + y)
+ *       sourceX, sourceY,      - Sourcekordinaten
+ *       targetX, targetY,      - Zielkoordinaten
+ *       width, height)         - Ausdehnung des zu kopierenden Rechtecks
+ * 
+ * @param {IterationData} source        - Quelldaten der Kopieroperation
+ * @param {IterationData} target        - Zieldaten der Kopieroperation
+ * @param {CopyRegion}    copyRegion    - Parameter für die Verschiebung
+ */
+function copyIterationRect(
+    source, 
+    target, 
+    copyRegion
+) {
     for (let y = 0; y < copyRegion.height; y++) {
         for (let x = 0; x < copyRegion.width; x++) {
     
@@ -66,9 +156,20 @@ function copyIterationRect(source, target, copyRegion)
     }
 }
 
-// ermittelt die Bereiche (Rechtecke), die nach der Verschiebung 
-// neu berechnet werden müssen
-function getDirtyPanRects(dx, dy, width, height) {
+/**
+ * Ermittelt die Pixelbereiche (Rechtecke), 
+ * die nach einer Verschiebung (dx, dy) neu berechnet werden müssen.
+ * 
+ * @param {number} dx       - (integer) Horizontale Verschiebung in Pixeln.
+ * @param {number} dy       - (integer) Vertikale Verschiebung in Pixeln.
+ * @param {number} width    - (integer) Breite der Datenmatrix in Pixeln.
+ * @param {number} height   - (integer) Höhe der Datenmatrix in Pixeln.
+ * @returns {PixelRect[]}   - Neu zu berechnende Rechtecke.
+ */
+function getDirtyPanRects(
+    dx, dy, 
+    width, height
+) {
     const rects = [];
 
     const absDx = Math.abs(dx);
@@ -115,15 +216,40 @@ function getDirtyPanRects(dx, dy, width, height) {
     return rects;
 }
 
-// legt einen neuen IterationCache an, in dem der bisherige um eine 
-// Pixel-Distanz (dx, dy) verschoben ist und berechnet 
-// die neu hinzugekommenen Bereiche nach
-async function createShiftedIterationData(
+/**
+ * Berechnet Iterationsdaten für einen rechteckigen Pixelbereich.
+ *
+ * @callback ComputeIterationRect
+ * @param {PixelRect} rect - Zu berechnender Pixelbereich.
+ * @param {number} imageWidth - (integer) Breite der vollständigen Zielmatrix.
+ * @param {number} imageHeight - (integer) Höhe der vollständigen Zielmatrix.
+ * @param {ComputationSettings} computationSettings - Einstellungen für die Fraktalberechnung.
+ * @returns {Promise<IterationData>} Berechnete Iterationsdaten für `rect`.
+ */
+
+/**
+ * Erzeugt neue Iterationsdaten durch Verschieben vorhandener Daten.
+ *
+ * Die nach dem Shift (dx, dy) weiterhin sichtbaren Daten werden aus `oldData` kopiert.
+ * Neu sichtbar gewordene Bereiche werden über `computeFn` berechnet und in die
+ * neue Matrix eingefügt.
+ * 
+ * oldData + dx/dy + computeFn -> newData
+ *
+ * @param {IterationData}        oldData             - Bisherige Iterationsdaten.
+ * @param {number}               dx                  - (integer) Horizontale Verschiebung in Pixeln.
+ * @param {number}               dy                  - (integer) Vertikale Verschiebung in Pixeln.
+ * @param {ComputeIterationRect} computeFn           - Funktion zur Berechnung neu sichtbarer Rechtecke.
+ * @param {ComputationSettings}  computationSettings - Einstellungen für die Fraktalberechnung.
+ * @returns {Promise<IterationData>}                 - Verschobene und ergänzte Iterationsdaten.
+ */
+async function computeShiftedIterationData(
     oldData,
     dx,
     dy,
-    computeRect,
-    computationSettings ) {
+    computeFn,
+    computationSettings 
+) {
 
     const { width, height } = oldData;
 
@@ -150,7 +276,7 @@ async function createShiftedIterationData(
     // Berechne die Iterationswerte für die neu sichtbar gewordenen Bereiche
     for (const rect of dirtyRects) {
 
-        const rectData = await computeRect(
+        const rectData = await computeFn(
             rect, 
             width, 
             height, 
@@ -180,39 +306,91 @@ async function createShiftedIterationData(
     return newData;
 }
 
-// Wrapper-Funktion für die Verschiebung der Iteration-Matrix um (dx, dy)
-async function shiftIterationData(dx, dy) {
+/**
+ * Aktualisiert den globalen Iterationsdaten-Cache nach einem Shift (dx, dy).
+ *
+ * Die Funktion setzt voraus, dass bereits `iterationData` vorhanden ist.
+ * Sie verschiebt den vorhandenen Cache und berechnet nur neu sichtbar gewordene
+ * Bereiche nach.
+ *
+ * @param {number}               dx - (integer) Horizontale Verschiebung in Pixeln.
+ * @param {number}               dy - (integer) Vertikale Verschiebung in Pixeln.
+ * @param {ComputeIterationRect} [computeFn=computeMandelbrotRect] - Funktion zur Berechnung neu sichtbarer Rechtecke.
+ * @throws {Error}                  - Wenn kein Iterationsdaten-Cache vorhanden ist.
+ * @returns {Promise<void>}
+ */
+async function updateIterationDataByShift(
+    dx, dy, 
+    computeFn = computeMandelbrotRect
+) {
 
     // Wenn kein Cache vorhanden ist, einfach neu berechnen
     if (!iterationData) {
-        await computeAndCacheIterationData();
-        return;
+        throw new Error ('Shift without iteration data!');
     }
 
     // Iterationsdaten verschieben
     // computeMandelbrotRect als Parameter austauschbar
-    iterationData = await createShiftedIterationData(
+    iterationData = await computeShiftedIterationData(
                                 iterationData, 
                                 dx, dy, 
-                                computeMandelbrotRect, 
+                                computeFn, 
                                 computationSettings ); 
-
-    app.updateInfo();
-    rebuildImageData();
 }
 
 // -----------------------------------------------------------------------------
 // Funktionen für Resize und Neuberechnung der aktuellen View
 // -----------------------------------------------------------------------------
 
-function withView(settings, view) {
+/**
+ * Ergebnis einer Resize-Operation auf Iterationsdaten.
+ *
+ * @typedef {Object} ResizeIterationDataResult
+ * @property {IterationData} iterationData  - Angepasste Iterationsdaten.
+ * @property {View} view                    - Zur angepassten Matrix passende View.
+ */
+
+/**
+ * Richtung, in der eine Iterationsmatrix erweitert wird.
+ *
+ * @typedef {'horizontal'|'vertical'} ResizeDirection
+ */
+
+/**
+ * Erstellt eine Kopie der Berechnungseinstellungen mit ersetzter View.
+ *
+ * Die ursprünglichen Einstellungen werden nicht verändert. Das ist nützlich,
+ * wenn eine Berechnung mit einer abweichenden View ausgeführt werden soll,
+ * ohne den globalen Zustand vorzeitig umzuschalten.
+ *
+ * @param {ComputationSettings} settings - Ausgangseinstellungen.
+ * @param {View}                view     - View, die in der Kopie verwendet werden soll.
+ * @returns {ComputationSettings}        - Kopie der Einstellungen mit ersetzter View.
+ */
+function copySettingsWithView(
+    settings, 
+    view
+) {
     return {
         ...settings,
         view
     };
 }
 
-function getDirtyResizeRects(preservedRect, newSize) {
+/**
+ * Ermittelt die nach einer Erweiterung der View neu zu berechnenden Bildbereiche.
+ *
+ * Die Rechtecke liegen rund um den beizubehaltenden Pixelbereich und decken
+ * genau die Bereiche ab, die in der vergrößerten Matrix noch keine Daten haben.
+ *
+ * @param {PixelRect} preservedRect - Bereich, dessen alte Iterationsdaten erhalten bleiben.
+ * @param {ImageSize} newSize       - (integer) Zielgröße der neuen Iterationsmatrix.
+ * @returns {PixelRect[]}           - Neu zu berechnende Rechtecke.
+ */
+function getDirtyResizeRects(
+    preservedRect, 
+    newSize
+) {
     const rects = [];
 
     // oben
@@ -260,22 +438,38 @@ function getDirtyResizeRects(preservedRect, newSize) {
     return rects;
 }
 
+/**
+ * Berechnet die fehlenden Bereiche einer nach Resize erweiterten Iterationsmatrix.
+ *
+ * Die Funktion ermittelt aus `preservedRect` und `newSize` alle neu sichtbaren
+ * Rechtecke, berechnet sie mit `computeFn` für `newView` und kopiert die
+ * Ergebnisse in `newData`.
+ *
+ * @param {IterationData}        newData        - Zielmatrix, in die die neu berechneten Daten geschrieben werden.
+ * @param {PixelRect}            preservedRect  - Bereich in `newData`, der bereits alte Daten enthält.
+ * @param {ImageSize}            newSize        - (integer) Zielgröße der neuen Iterationsmatrix.
+ * @param {View}                 newView        - View, die zur neuen Zielgröße gehört.
+ * @param {ComputeIterationRect} computeFn      - Funktion zur Berechnung einzelner Rechtecke.
+ * @param {ComputationSettings}  computationSettings - Berechnungseinstellungen als Grundlage.
+ * @returns {Promise<IterationData>}            - Zielmatrix mit ergänzten Dirty-Rects.
+ */
 async function fillDirtyResizeRects(
     newData, 
     preservedRect, 
     newSize, newView, 
-    computeRect, 
-    computationSettings) {
+    computeFn, 
+    computationSettings
+) {
 
     const dirtyRects = getDirtyResizeRects(preservedRect, newSize);
 
     for (const rect of dirtyRects) {
 
-        const rectData = await computeRect(
+        const rectData = await computeFn(
             rect,
             newSize.width,
             newSize.height,
-            withView(computationSettings, newView)
+            copySettingsWithView(computationSettings, newView)
         );
 
         // Translation rect -> newData beschreiben
@@ -297,14 +491,31 @@ async function fillDirtyResizeRects(
     return newData; 
 }
 
+/**
+ * Erweitert Iterationsdaten in horizontaler _oder_ vertikaler Richtung.
+ *
+ * Die vorhandenen Daten aus `oldData` werden positionsgetreu in eine
+ * neue Matrix kopiert. 
+ * Anschließend werden die neu entstandenen Bereiche mit `computeFn` berechnet.
+ *
+ * @param {ResizeDirection}      direction           - Richtung der Erweiterung.
+ * @param {IterationData}        oldData             - Bisherige Iterationsdaten.
+ * @param {View}                 oldView             - View, die zu `oldData` gehört.
+ * @param {View}                 newView             - View, die zur erweiterten Zielmatrix gehört.
+ * @param {ImageSize}            newSize             - (integer) Zielgröße der erweiterten Iterationsmatrix.
+ * @param {ComputeIterationRect} computeFn           - Funktion zur Berechnung neu entstandener Rechtecke.
+ * @param {ComputationSettings}  computationSettings - Berechnungseinstellungen als Grundlage.
+ * @returns {Promise<IterationData>}                 - Erweiterte Iterationsdaten mit nachberechneten Randbereichen.
+ */
 async function expandIterationData(
     direction, 
     oldData,
     oldView,
     newView,
     newSize,
-    computeRect,
-    computationSettings ) {
+    computeFn,
+    computationSettings 
+) {
 
     const newData = createEmptyIterationData(newSize.width, newSize.height);
 
@@ -342,23 +553,44 @@ async function expandIterationData(
         preservedRect, 
         newSize, 
         newView, 
-        computeRect, 
+        computeFn, 
         computationSettings );  
 }
 
-async function resizeIterationData( oldData,
-                                    oldView,
-                                    newView,
-                                    oldSize, 
-                                    newSize,
-                                    computeRect,
-                                    computationSettings ) {
+/**
+ * Passt Iterationsdaten an eine neue Canvas-Größe an.
+ *
+ * Die Funktion koordiniert die Resize-Strategie:
+ * - keine Größenänderung: vorhandene Daten und View werden unverändert zurückgegeben
+ * - Verkleinerung: die Matrix wird vollständig neu berechnet
+ * - Vergrößerung: die Matrix wird horizontal und/oder vertikal erweitert,
+ *   wobei vorhandene Daten übernommen und nur neue Bereiche berechnet werden
+ *
+ * @param {IterationData}        oldData             - Bisherige Iterationsdaten.
+ * @param {View}                 oldView             - View, die zu `oldData` gehört.
+ * @param {View}                 newView             - Gewünschte View für die neue Canvas-Größe.
+ * @param {ImageSize}            oldSize             - (integer) Bisherige Canvas-Größe.
+ * @param {ImageSize}            newSize             - (integer) Neue Canvas-Größe.
+ * @param {ComputeIterationRect} computeFn           - Funktion zur Berechnung einzelner Rechtecke.
+ * @param {ComputationSettings}  computationSettings - Berechnungseinstellungen.
+ * @throws {Error}                                   - Wenn keine alten Iterationsdaten übergeben werden.
+ * @returns {Promise<ResizeIterationDataResult>}     - Angepasste Iterationsdaten und die dazu passende View.
+ */
+async function resizeIterationData( 
+    oldData,
+    oldView,
+    newView,
+    oldSize, 
+    newSize,
+    computeFn = computeMandelbrotRect,
+    computationSettings 
+) {
     
     const dx = newSize.width  - oldSize.width;
     const dy = newSize.height - oldSize.height;
 
     if (!oldData) {
-        throw new Error('Resize without oldIterationData!');
+        throw new Error('Resize without iteration data!');
     }
 
     // keine Veränderung whatsoever
@@ -375,7 +607,7 @@ async function resizeIterationData( oldData,
         const {width, height} = newSize; 
         const newData = createEmptyIterationData(width, height); 
         const rect = { x: 0, y: 0, width: width, height: height };
-        const rectData = await computeRect(rect, width, height, computationSettings);
+        const rectData = await computeFn(rect, width, height, computationSettings);
 
         // Translation rect -> newData beschreiben
         const copyRegion = { 
@@ -420,7 +652,7 @@ async function resizeIterationData( oldData,
                         currentView,
                         nextView,
                         nextSize,
-                        computeRect,
+                        computeFn,
                         computationSettings );
         currentView = nextView;
         currentSize = nextSize;
@@ -443,7 +675,7 @@ async function resizeIterationData( oldData,
                         currentView,
                         nextView,
                         nextSize,
-                        computeRect,
+                        computeFn,
                         computationSettings );
         currentView = nextView;
         currentSize = nextSize;
@@ -454,3 +686,46 @@ async function resizeIterationData( oldData,
         view:           currentView, 
     }; 
 }
+
+// -----------------------------------------------------------------------------
+// Berechnung der Matrix mit den aktuellen View-Parametern 
+// und Caching des Images
+// -----------------------------------------------------------------------------
+
+/**
+ * Berechnet Iterationsdaten für eine vollständige Bildfläche.
+ *
+ * @callback ComputeIterationData
+ * @param {number}              width               - (integer) Breite der Zielmatrix.
+ * @param {number}              height              - (integer) Höhe der Zielmatrix.
+ * @param {ComputationSettings} computationSettings - Einstellungen für die Fraktalberechnung.
+ * @returns {Promise<IterationData>}                - Berechnete Iterationsdaten.
+ */
+
+/**
+ * Berechnet die Iterationsdaten für die aktuelle Canvas-Größe neu.
+ *
+ * Die Funktion verwendet die aktuelle interne Canvas-Größe sowie die globalen
+ * `computationSettings` und schreibt das Ergebnis in den globalen Cache
+ * `iterationData`.
+ *
+ * @param {ComputeIterationData} [computeFn=computeMandelbrot] - Funktion zur vollständigen Berechnung.
+ * @returns {Promise<void>}
+ */
+async function computeIterationData(
+    computeFn = computeMandelbrot
+) {
+
+    const imageSize = getCanvasImageSize() 
+
+    // hier könnte in Zukunft auch eine andere Berechnungsvorschrift 
+    // gerufen werden, z.B. (Julia-Menge)
+    iterationData = await measureIterationDataUpdate(() =>
+                    computeFn(
+                        imageSize.width, 
+                        imageSize.height, 
+                        computationSettings)
+    );
+}
+
+
