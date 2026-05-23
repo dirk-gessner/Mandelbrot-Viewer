@@ -301,8 +301,11 @@ async function computeMandelbrotRectCpu(
 }
 
 /**
- * Wrapper-Fumktion für die Berechnung eines Mandelbrot-Rechtecks mit der aktuell 
- * konfigurierten Web-Worker-Strategie.
+ * Berechnet die Mandelbrot-Iterationsdaten für ein Rechteck.
+ *
+ * Diese Funktion ist die zentrale Fassade für die Rechteckberechnung. Sie
+ * entscheidet später zwischen CPU- und WebGPU-Backend. Aktuell kann der
+ * WebGPU-Pfad testweise aktiviert werden und fällt bei Fehlern auf CPU zurück.
  *
  * @param {PixelRect}           rect                 - Zu berechnender Pixelbereich.
  * @param {number}              imageWidth           - (integer) Breite der vollständigen Zielmatrix.
@@ -311,17 +314,33 @@ async function computeMandelbrotRectCpu(
  * @returns {Promise<IterationData>}                 - Berechnete Iterationsdaten für `rect`.
  */
 async function computeMandelbrotRect(
-    rect,
-    imageWidth,
-    imageHeight,
-    computationSettings
+  rect,
+  imageWidth,
+  imageHeight,
+  computationSettings
 ) {
-    return computeMandelbrotRectCpu(
+  if (useWebGpuDummyBackend) {
+    try {
+      return await computeMandelbrotRectWebGpu(
         rect,
         imageWidth,
         imageHeight,
         computationSettings
-    );
+      );
+    } catch (error) {
+      console.warn(
+        "WebGPU Mandelbrot backend failed. Falling back to CPU backend.",
+        error
+      );
+    }
+  }
+
+  return computeMandelbrotRectCpu(
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings
+  );
 }
 
 /**

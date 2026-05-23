@@ -1,3 +1,5 @@
+const useWebGpuDummyBackend = true ; 
+
 /**
  * @file Main-thread proxy for WebGPU-based Mandelbrot rectangle computation.
  *

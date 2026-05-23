@@ -44,30 +44,50 @@
 /**
  * Erzeugt Dummy-Iterationsdaten für ein Rechteck.
  *
- * Die Funktion berechnet noch kein Mandelbrot-Fraktal. Sie erzeugt lediglich
- * Daten im korrekten Format, damit die Worker-Kommunikation und spätere
- * Integration unabhängig von WebGPU getestet werden können.
+ * Die erzeugten Werte sind bewusst renderbar:
+ * - Iterationswerte bleiben unterhalb von maxIterations, damit sie nicht als
+ *   Punkte innerhalb der Mandelbrot-Menge interpretiert werden.
+ * - Escape-Werte sind > 1, damit Smooth Coloring keine NaN-Werte erzeugt.
  *
  * @param {PixelRect} rect - Zu berechnender Pixelbereich.
+ * @param {ComputationSettings} computationSettings - Einstellungen für die Berechnung.
  * @returns {IterationData} Dummy-Iterationsdaten für das Rechteck.
  */
-function createDummyIterationData(rect) {
-  const pixelCount = rect.width * rect.height;
-  const iterations = new Uint16Array(pixelCount);
-  const escapeValues = new Float32Array(pixelCount);
+function createDummyIterationData(rect, computationSettings) {
+    const pixelCount = rect.width * rect.height;
+    const iterations = new Uint16Array(pixelCount);
+    const escapeValues = new Float32Array(pixelCount);
 
-  for (let index = 0; index < pixelCount; index++) {
-    iterations[index] = index % 256;
-    escapeValues[index] = 0;
-  }
+    const maxIterations = Math.max(2, computationSettings.maxIterations);
+    const visibleIterationRange = maxIterations - 1;
 
-  return {
-    width: rect.width,
-    height: rect.height,
-    iterations,
-    escapeValues,
-    minIterations: 0,
-  };
+    let minIterations = Number.POSITIVE_INFINITY;
+
+    for (let y = 0; y < rect.height; y++) {
+        for (let x = 0; x < rect.width; x++) {
+            const index = y * rect.width + x;
+
+            const iteration =
+                1 + ((x + y + rect.x + rect.y) % visibleIterationRange);
+
+            iterations[index] = iteration;
+
+            // Wert deutlich > 1, damit Smooth Coloring stabil bleibt.
+            escapeValues[index] = 16.0 + iteration;
+
+            if (iteration < minIterations) {
+                minIterations = iteration;
+            }
+        }
+    }
+
+    return {
+        width: rect.width,
+        height: rect.height,
+        iterations,
+        escapeValues,
+        minIterations,
+    };
 }
 
 /**
@@ -77,17 +97,19 @@ function createDummyIterationData(rect) {
  * @returns {void}
  */
 function handleComputeMandelbrotRectMessage(message) {
-  const result = createDummyIterationData(message.rect);
+    const result = createDummyIterationData(
+        message.rect,
+        message.computationSettings
+    );
+    /** @type {WebGpuComputeSuccessMessage} */
+    const response = {
+        type: "compute-mandelbrot-rect-result",
+        requestId: message.requestId,
+        ok: true,
+        result,
+    };
 
-  /** @type {WebGpuComputeSuccessMessage} */
-  const response = {
-    type: "compute-mandelbrot-rect-result",
-    requestId: message.requestId,
-    ok: true,
-    result,
-  };
-
-  self.postMessage(response);
+    self.postMessage(response);
 }
 
 /**
@@ -98,15 +120,15 @@ function handleComputeMandelbrotRectMessage(message) {
  * @returns {void}
  */
 function postErrorResponse(requestId, error) {
-  /** @type {WebGpuComputeErrorMessage} */
-  const response = {
-    type: "compute-mandelbrot-rect-result",
-    requestId,
-    ok: false,
-    error: error instanceof Error ? error.message : String(error),
-  };
+    /** @type {WebGpuComputeErrorMessage} */
+    const response = {
+        type: "compute-mandelbrot-rect-result",
+        requestId,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+    };
 
-  self.postMessage(response);
+    self.postMessage(response);
 }
 
 /**
@@ -116,15 +138,15 @@ function postErrorResponse(requestId, error) {
  * @returns {void}
  */
 self.onmessage = (event) => {
-  const message = event.data;
+    const message = event.data;
 
-  try {
-    if (message.type !== "compute-mandelbrot-rect") {
-      throw new Error(`Unsupported WebGPU worker message type: ${message.type}`);
+    try {
+        if (message.type !== "compute-mandelbrot-rect") {
+            throw new Error(`Unsupported WebGPU worker message type: ${message.type}`);
+        }
+
+        handleComputeMandelbrotRectMessage(message);
+    } catch (error) {
+        postErrorResponse(message?.requestId ?? -1, error);
     }
-
-    handleComputeMandelbrotRectMessage(message);
-  } catch (error) {
-    postErrorResponse(message?.requestId ?? -1, error);
-  }
 };
