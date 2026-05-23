@@ -77,7 +77,7 @@ function mergeIterationDataParts(
     const totalPixels = rect.width * rect.height;
 
     const iterations   = new Uint16Array(totalPixels);
-    const escapeValues = new Float64Array(totalPixels);
+    const escapeValues = new Float32Array(totalPixels);
 
     let targetOffset  = 0;
     let minIterations = Number.POSITIVE_INFINITY;

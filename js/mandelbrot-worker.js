@@ -122,7 +122,7 @@ function workerComputeMandelbrotRect(
     const { minX, maxX, minY, maxY } = view;
 
     const iterations   = new Uint16Array (rect.width * rect.height);
-    const escapeValues = new Float64Array(rect.width * rect.height);
+    const escapeValues = new Float32Array(rect.width * rect.height);
 
     for (let localY = 0; localY < rect.height; localY++) {
         for (let localX = 0; localX < rect.width; localX++) {

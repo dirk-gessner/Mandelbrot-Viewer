@@ -247,7 +247,7 @@ Die zentrale Datenstruktur enthält:
   width,          // Breite der Matrix in Pixeln
   height,         // Höhe der Matrix in Pixeln
   iterations,     // Uint16Array(width * height)
-  escapeValues,   // Float64Array(width * height)
+  escapeValues,   // Float32Array(width * height)
   minIterations   // kleinster Iterationswert im Datensatz
 }
 ```
