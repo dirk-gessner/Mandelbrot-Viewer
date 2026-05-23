@@ -195,3 +195,32 @@ function computeMandelbrotRectWebGpu(
     getMandelbrotWebGpuWorker().postMessage(message);
   });
 }
+
+/**
+ * Führt einen einfachen manuellen Test des WebGPU-Worker-Proxys aus.
+ *
+ * Diese Funktion ist nur für die Entwicklungsphase gedacht und sollte nicht
+ * dauerhaft Teil der öffentlichen App-Logik bleiben.
+ *
+ * @returns {Promise<void>}
+ */
+async function testMandelbrotWebGpuWorkerProxy() {
+  const result = await computeMandelbrotRectWebGpu(
+    { x: 0, y: 0, width: 8, height: 4 },
+    8,
+    4,
+    {
+      initialView: null,
+      view: {
+        minX: -2,
+        maxX: 1,
+        minY: -1,
+        maxY: 1,
+      },
+      maxIterations: 100,
+      escapeRadius: 5,
+    }
+  );
+
+  console.log("WebGPU worker proxy test result", result);
+}
