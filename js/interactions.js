@@ -3,10 +3,17 @@
 // -----------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------
+// Änderungen der View
+// -----------------------------------------------------------------------------
+
 // Zoom-Out-Schritt: Vergrößert den aktuellen View 
 // schrittweise zurück zum initialen View
 // -----------------------------------------------------------------------------
-function zoomOutStep(view, initialView, zoomOutFactor = 2.0) {
+function zoomOutView(
+    view, 
+    initialView, 
+    zoomOutFactor = 2.0
+) {
 
     const currentWidth = view.maxX - view.minX;
     const currentHeight = view.maxY - view.minY;
@@ -40,10 +47,14 @@ function zoomOutStep(view, initialView, zoomOutFactor = 2.0) {
 
 }
 
-// -----------------------------------------------------------------------------
 // Berechnet die neuen View-Parameter basierend auf der aktuellen Auswahl
 // -----------------------------------------------------------------------------
-function getViewFromSelection(view, selection, imageWidth, imageHeight) {
+function getViewFromSelection(
+    view, 
+    selection, 
+    imageWidth, 
+    imageHeight
+) {
     
     const left = selection.centerX - selection.width / 2;
     const top = selection.centerY - selection.height / 2;
@@ -55,7 +66,6 @@ function getViewFromSelection(view, selection, imageWidth, imageHeight) {
     const newMinY = view.minY + (top    / imageHeight) * (view.maxY - view.minY);
     const newMaxY = view.minY + (bottom / imageHeight) * (view.maxY - view.minY);
 
-
     return {
         minX: newMinX,
         maxX: newMaxX,
@@ -64,20 +74,28 @@ function getViewFromSelection(view, selection, imageWidth, imageHeight) {
     }; 
 }
 
+// Verschiebt die aktuelle View um den Vektor (pixelDx, pixelDy) 
 // -----------------------------------------------------------------------------
-// Zoom-In-Selektionsfenster: Ermöglicht es dem Benutzer, einen Bereich auszuwählen,
-// in den gezoomt werden soll, indem er mit der rechten Maustaste klickt und zieht
+function shiftViewByPixels(
+    view, 
+    pixelDx, pixelDy, 
+    imageWidth, imageHeight
+) {
+    const viewWidth  = view.maxX - view.minX;
+    const viewHeight = view.maxY - view.minY;
+    const shiftX = (pixelDx / imageWidth ) * viewWidth;
+    const shiftY = (pixelDy / imageHeight) * viewHeight;
+
+    view.minX -= shiftX;
+    view.maxX -= shiftX;
+    view.minY -= shiftY;
+    view.maxY -= shiftY;
+
+    return view; 
+}
+
+// Startwerte für den Verschiebe-Vektor
 // -----------------------------------------------------------------------------
-
-// Startwerte für das Zoom-In-Selektionsfenster
-const selection = {
-    active: false,
-    centerX: 0,
-    centerY: 0,
-    width: 0,
-    height: 0,
-};
-
 const pan = {
     active: false,
     moved: false,
@@ -88,43 +106,6 @@ const pan = {
 };
 
 const panDragThreshold = 4;
-
-// Zeichnen des Auswahlrahmens für Zoom-In
-function drawSelectionFrame(ctx, selection) {
-
-    const x = selection.centerX - selection.width / 2;
-    const y = selection.centerY - selection.height / 2;
-    const centerX = selection.centerX;
-    const centerY = selection.centerY;
-
-    ctx.save();
-
-    // Auswahlrahmen
-    ctx.strokeStyle = 'yellow';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, selection.width, selection.height);
-
-    // Fadenkreuz
-    ctx.globalAlpha = 0.8;
-    ctx.beginPath();
-
-    // vertikale Linie
-    ctx.moveTo(centerX, 0);
-    ctx.lineTo(centerX, canvas.height);
-
-    // horizontale Linie
-    ctx.moveTo(0, centerY);
-    ctx.lineTo(canvas.width, centerY);
-
-    ctx.stroke();
-
-    // kleine Zielmarkierung im Zentrum
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, 10, 0, 2 * Math.PI);
-    ctx.stroke();
-
-    ctx.restore();
-}
 
 // -----------------------------------------------------------------------------
 // Event-Listener für Mausinteraktionen
@@ -145,20 +126,6 @@ function getCanvasCoords(event) {
 
 // Kontextmenü verhindern
 canvas.addEventListener('contextmenu', event => event.preventDefault());
-
-function shiftViewByPixels(pixelDx, pixelDy) {
-    const { view } = computationSettings;
-    const { width, height } = canvas;
-    const viewWidth = view.maxX - view.minX;
-    const viewHeight = view.maxY - view.minY;
-    const shiftX = (pixelDx / width) * viewWidth;
-    const shiftY = (pixelDy / height) * viewHeight;
-
-    view.minX -= shiftX;
-    view.maxX -= shiftX;
-    view.minY -= shiftY;
-    view.maxY -= shiftY;
-}
 
 // Mouse-Down: Startet die Auswahl eines neuen Bereichs
 // -----------------------------------------------------------------------------
@@ -181,13 +148,13 @@ canvas.addEventListener('mousedown', (event) => {
         const pos = getCanvasCoords(event);
         const { width, height } = canvas;
 
-        selection.active = true;
+        selection.active  = true;
         selection.centerX = pos.x;
         selection.centerY = pos.y;
-        selection.width = width * 0.25;
-        selection.height = height * 0.25;
+        selection.width   = width * 0.25;
+        selection.height  = height * 0.25;
     }
-    renderScene();
+    drawScene();
 });
 
 // Mouse-Move: Aktualisiert die Position des Auswahlrahmens
@@ -203,18 +170,19 @@ canvas.addEventListener('mousemove', (event) => {
         }
 
         if (pan.moved) {
-            renderPannedScene(pan.dx, pan.dy);
+            drawScene(pan.dx, pan.dy);
         }
 
         return;
     }
 
-    if (!selection.active) 
-        return;
-    const pos = getCanvasCoords(event);
-    selection.centerX = pos.x;
-    selection.centerY = pos.y;
-    renderScene();
+    if (selection.active) {
+        const pos = getCanvasCoords(event);
+        selection.centerX = pos.x;
+        selection.centerY = pos.y;
+        drawScene();
+        return; 
+    }
 });
 
 // Mouse-Wheel: Zoomt in oder aus, wenn die Auswahl aktiv ist, 
@@ -249,62 +217,78 @@ canvas.addEventListener('wheel', (event) => {
 
         // Alias für einfacheren Zugriff
         const cs = computationSettings;
+        const limits = inputConstraints.maxIterations;
 
         cs.maxIterations += event.deltaY < 0 ? 50 : -50;
-        cs.maxIterations = Math.max(50, Math.min(cs.maxIterations, 5000));
+        cs.maxIterations = Math.max(limits.min, Math.min(cs.maxIterations, limits.max));
 
         // Synchronisiere mit Vue-Inputfeld
         app.maxIterationsInput = cs.maxIterations; 
 
         // Verzögerung von 250ms nach dem letzten Mausrad-Event;
         clearTimeout(inputTimer);
-        inputTimer = setTimeout(() => {     
-            recomputeWithOverlay();
-        }, 250); 
+        inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
     }
-    renderScene();
+    drawScene();
 }, { passive: false });
 
 // Mouse-Up: Bestätigt die Auswahl und zoomt in den neuen Bereich
 // -----------------------------------------------------------------------------
 window.addEventListener('mouseup', () => {
 
+    if (! ( pan.active || selection.active )) {
+        return ; 
+    }
+
+    let dx = 0; 
+    let dy = 0; 
+
     if (pan.active) {
-        const dx = pan.dx;
-        const dy = pan.dy;
-        const wasMoved = pan.moved;
+
+        if (pan.moved) {
+
+            dx = pan.dx;
+            dy = pan.dy;
+
+            computationSettings.view = shiftViewByPixels(
+                computationSettings.view, 
+                dx, dy, 
+                canvas.width, canvas.height
+            );
+
+        } else {
+
+            computationSettings.view = zoomOutView(
+                computationSettings.view, 
+                computationSettings.initialView, 
+                2.0
+            );
+        }
 
         pan.active = false;
-        pan.moved = false;
+        pan.moved  = false;
         pan.dx = 0;
         pan.dy = 0;
 
-        if (wasMoved) {
-            runWithOverlay(async () => {
-                shiftViewByPixels(dx, dy);
-                await shiftIterationData(dx, dy);
-            });
-        } else {
-            computationSettings.view = zoomOutStep(
-                                            computationSettings.view, 
-                                            computationSettings.initialView, 
-                                            2.0);
-            recomputeWithOverlay();
-        }
-
-        return;
+    } else if (selection.active) {
+        computationSettings.view = getViewFromSelection( 
+            computationSettings.view, 
+            selection, 
+            canvas.width, canvas.height); 
+        selection.active = false;
     }
 
-    if (!selection.active) {
-            return;
-    }; 
+    // Neuberechnung, REndering und Ausgabe der neuen View
+    computeRenderAndDrawScene(dx, dy);
+});
 
-    computationSettings.view = getViewFromSelection( 
-                                    computationSettings.view, 
-                                    selection, 
-                                    canvas.width, canvas.height); 
-    selection.active = false;
-    
-    // Neu berechnen und cachen
-    recomputeWithOverlay();
+// nach einem Resize-Event wird die Canvas-Größe angepasst und der View erweitert, 
+// um das neue Seitenverhältnis zu erfüllen, um Verzerrungen zu vermeiden
+// -----------------------------------------------------------------------------
+window.addEventListener('resize', () => {
+    clearTimeout(inputTimer);
+
+    inputTimer = setTimeout(() => {
+        resizeCanvasAndKeepView();
+    }, 500);
 });

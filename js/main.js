@@ -4,5 +4,4 @@
 // -----------------------------------------------------------------------------
 initializeCanvasAndView();
 initializeControlsDrawer();
-app.updateInfo();
-recomputeWithOverlay();
+computeRenderAndDrawScene();

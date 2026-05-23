@@ -5,7 +5,7 @@
 function resetView() {
     const { initialView } = computationSettings;
     computationSettings.view = { ...initialView };
-    recomputeWithOverlay();
+    computeRenderAndDrawScene();
 }
 
 // Berechnet den initialen View basierend auf dem Seitenverhältnis der Canvas,
@@ -81,34 +81,38 @@ function expandViewToAspectRatio(view, targetAspectRatio) {
 // um das neue Seitenverhältnis zu erfüllen, um sicherzustellen, dass die Mandelbrot-Menge
 // korrekt dargestellt wird, ohne Verzerrungen oder abgeschnittene Bereiche
 function resizeCanvasAndKeepView() {
+
+    // wenn es noch keine Iteration-Daten gibt, ist hier nichts zu tun
+    if (!iterationData) {
+        return; 
+    }
+
+    const oldView = {...computationSettings.view};
+    const oldIterationData = iterationData; 
+
+    const oldSize = {
+        width:  canvas.width,
+        height: canvas.height,
+    }
+
+    // wenn kein Resize stattgefunden hat, ist hier nichts zu tun
+    if (!resizeCanvasToDisplaySize()){
+        return; 
+    };
+
+    const newSize = {
+        width:  canvas.width,
+        height: canvas.height,
+    }
+
+    const newAspectRatio = newSize.width / newSize.height;
+    const newInitialView = createInitialViewForAspectRatio(newAspectRatio);
+    computationSettings.initialView = newInitialView;
+
+    const newView = expandViewToAspectRatio( oldView, newAspectRatio );
+    computationSettings.view = newView ; 
+
     runWithOverlay(async () => {
-
-        const oldView = {...computationSettings.view};
-        const oldIterationData = iterationData; 
-
-        const oldSize = {
-            width:  canvas.width,
-            height: canvas.height,
-        }
-
-        resizeCanvasToDisplaySize();
-
-        const newSize = {
-            width:  canvas.width,
-            height: canvas.height,
-        }
-
-        if (newSize.width === oldSize.width && newSize.height === oldSize.height) {
-            return;
-        }
-
-        const newAspectRatio = newSize.width / newSize.height;
-        const newInitialView = createInitialViewForAspectRatio(newAspectRatio);
-        computationSettings.initialView = newInitialView;
-
-        const newView = expandViewToAspectRatio( oldView, newAspectRatio );
-        computationSettings.view = newView ; 
-
         // resizeIterationData verarbeitet kombinierte Größenänderungen schrittweise.
         // Der zurückgegebene View gehört exakt zu den erzeugten Iterationsdaten und
         // muss deshalb zusammen mit ihnen übernommen werden.
@@ -125,18 +129,26 @@ function resizeCanvasAndKeepView() {
         iterationData = resizeResult.iterationData;
         computationSettings.view = resizeResult.view; 
 
-        app.updateInfo();
-        rebuildImageData();
-    });
+        renderAndDrawScene();
+        }
+    );
 }
 
 // Passt die Größe des Canvas an die tatsächliche Anzeigengröße an, 
 // um eine scharfe Darstellung zu gewährleisten
 function resizeCanvasToDisplaySize() {
     const rect = canvas.getBoundingClientRect();
+    const width = Math.floor(rect.width);
+    const height = Math.floor(rect.height);
 
-    canvas.width = Math.floor(rect.width);
-    canvas.height = Math.floor(rect.height);
+    if (canvas.width === width && canvas.height === height) {
+        return false;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+
+    return true;
 }
 
 // Initialisiert die Canvas-Größe und den View basierend auf dem Seitenverhältnis,
@@ -159,12 +171,4 @@ function initializeControlsDrawer() {
         controlsDrawer.classList.remove('open');
     });
 }
-// nach einem Resize-Event wird die Canvas-Größe angepasst und der View erweitert, 
-// um das neue Seitenverhältnis zu erfüllen, um Verzerrungen zu vermeiden
-window.addEventListener('resize', () => {
-    clearTimeout(inputTimer);
 
-    inputTimer = setTimeout(() => {
-        resizeCanvasAndKeepView();
-    }, 500);
-});
