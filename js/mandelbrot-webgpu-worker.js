@@ -271,14 +271,11 @@ function getWebGpuWorkerContext() {
  * @param {WebGpuComputeRequestMessage} message - Eingehende Berechnungsanfrage.
  * @returns {void}
  */
-function handleComputeMandelbrotRectMessage(
+async function handleComputeMandelbrotRectMessage(
     message
 ) {
-    /* this line causes Error */
-    // await getWebGpuWorkerContext(); 
-    /* this line works */
-    getWebGpuWorkerContext();
-
+    await getWebGpuWorkerContext(); 
+   
     const result = gpuWorkerComputeMandelbrotRect(
         message.rect,
         message.imageWidth,
@@ -322,7 +319,7 @@ function postErrorResponse(requestId, error) {
  * @param {MessageEvent<WebGpuComputeRequestMessage>} event - Worker-Nachricht.
  * @returns {void}
  */
-self.onmessage = (event) => {
+self.onmessage = async (event) => {
     const message = event.data;
 
     try {
@@ -332,10 +329,7 @@ self.onmessage = (event) => {
             throw new Error(`Unsupported WebGPU worker message type: ${message.type}`);
         }
 
-        /* this line causes Error */
-        // await handleComputeMandelbrotRectMessage(message); 
-        /* this line works */
-        handleComputeMandelbrotRectMessage(message);
+        await handleComputeMandelbrotRectMessage(message); 
 
     } catch (error) {
         console.error("Mandelbrot WebGPU worker request failed", error);
