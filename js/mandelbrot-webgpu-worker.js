@@ -193,6 +193,7 @@ let webGpuWorkerContextPromise = null;
  *
  * @type {Promise<WebGpuComputePipelineContext>|null}
  */
+let webGpuComputeTestPipelinePromise = null;
 let webGpuComputePipelinePromise = null;
 
 /**
@@ -203,7 +204,7 @@ let webGpuComputePipelinePromise = null;
  *
  * @type {string}
  */
-const WEBGPU_COMPUTE_SHADER_SOURCE = `
+const WEBGPU_PIPELINE_TEST_SHADER_SOURCE = `
 @group(0) @binding(0)
 var<storage, read_write> output: array<u32>;
 
@@ -219,6 +220,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 }
 `;
 
+const MANDELBROT_ITERATIONS_SHADER_SOURCE = `...`;
+
 /**
  * Initialisiert die WebGPU-Compute-Pipeline für die Mandelbrot-Berechnung.
  *
@@ -227,6 +230,36 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
  *
  * @returns {Promise<WebGpuComputePipelineContext>} Initialisierte Pipeline-Ressourcen.
  */
+async function initializeWebGpuComputeTestPipeline() {
+    const { device } = await getWebGpuWorkerContext();
+
+    console.log("Initializing WebGPU Mandelbrot compute pipeline");
+
+    const shaderModule = device.createShaderModule({
+        label: "Mandelbrot pipeline test shader",
+        code: WEBGPU_PIPELINE_TEST_SHADER_SOURCE,
+    });
+
+    const computePipeline = await device.createComputePipelineAsync({
+        label: "Mandelbrot pipeline test compute pipeline",
+        layout: "auto",
+        compute: {
+            module: shaderModule,
+            entryPoint: "main",
+        },
+    });
+
+    console.log("WebGPU Mandelbrot compute pipeline initialized", {
+        shaderModule,
+        computePipeline,
+    });
+
+    return {
+        shaderModule,
+        computePipeline,
+    };
+}
+
 async function initializeWebGpuComputePipeline() {
     const { device } = await getWebGpuWorkerContext();
 
@@ -234,7 +267,7 @@ async function initializeWebGpuComputePipeline() {
 
     const shaderModule = device.createShaderModule({
         label: "Mandelbrot pipeline test shader",
-        code: WEBGPU_COMPUTE_SHADER_SOURCE,
+        code: WEBGPU_PIPELINE_TEST_SHADER_SOURCE,
     });
 
     const computePipeline = await device.createComputePipelineAsync({
@@ -266,10 +299,22 @@ async function initializeWebGpuComputePipeline() {
  *
  * @returns {Promise<WebGpuComputePipelineContext>} Initialisierte Pipeline-Ressourcen.
  */
+function getWebGpuComputeTestPipeline() {
+    if (!webGpuComputeTestPipelinePromise) {
+        webGpuComputeTestPipelinePromise =
+            initializeWebGpuComputeTestPipeline().catch((error) => {
+                webGpuComputeTestPipelinePromise = null;
+                throw error;
+            });
+    }
+
+    return webGpuComputeTestPipelinePromise;
+}
+
 function getWebGpuComputePipeline() {
     if (!webGpuComputePipelinePromise) {
         webGpuComputePipelinePromise =
-            initializeWebGpuComputePipeline().catch((error) => {
+            initializeWebGpuComputeTestPipeline().catch((error) => {
                 webGpuComputePipelinePromise = null;
                 throw error;
             });
@@ -292,7 +337,7 @@ function getWebGpuComputePipeline() {
 async function runWebGpuComputePipelineTest() {
     const { device } = await getWebGpuWorkerContext();
 
-    const { computePipeline } = await getWebGpuComputePipeline();
+    const { computePipeline } = await getWebGpuComputeTestPipeline();
 
     const elementCount = 256;
     const bufferSize = elementCount * Uint32Array.BYTES_PER_ELEMENT;
