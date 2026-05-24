@@ -181,6 +181,94 @@ function gpuWorkerComputeMandelbrotRect(
 let webGpuWorkerContextPromise = null;
 
 /**
+ * Gehaltene WebGPU-Ressourcen für die Mandelbrot-Compute-Pipeline.
+ *
+ * @typedef {Object} WebGpuComputePipelineContext
+ * @property {GPUShaderModule} shaderModule - Kompiliertes Shader-Modul.
+ * @property {GPUComputePipeline} computePipeline - Compute-Pipeline.
+ */
+
+/**
+ * Zwischengespeicherte WebGPU-Compute-Pipeline.
+ *
+ * @type {Promise<WebGpuComputePipelineContext>|null}
+ */
+let webGpuComputePipelinePromise = null;
+
+/**
+ * Minimaler Compute-Shader zum Testen der WebGPU-Pipeline.
+ *
+ * Der Shader berechnet noch keine Mandelbrot-Daten. Er dient nur dazu,
+ * die Shader-Kompilierung und ComputePipeline-Erzeugung im Worker zu testen.
+ *
+ * @type {string}
+ */
+const WEBGPU_PIPELINE_TEST_SHADER_SOURCE = `
+@compute @workgroup_size(1)
+fn main() {
+}
+`;
+
+/**
+ * Initialisiert die WebGPU-Compute-Pipeline für die Mandelbrot-Berechnung.
+ *
+ * In diesem Zwischenschritt wird nur eine minimale Test-Pipeline erzeugt.
+ * Die Pipeline wird noch nicht für echte Mandelbrot-Berechnungen verwendet.
+ *
+ * @returns {Promise<WebGpuComputePipelineContext>} Initialisierte Pipeline-Ressourcen.
+ */
+async function initializeWebGpuComputePipeline() {
+    const { device } = await getWebGpuWorkerContext();
+
+    console.log("Initializing WebGPU Mandelbrot compute pipeline");
+
+    const shaderModule = device.createShaderModule({
+        label: "Mandelbrot pipeline test shader",
+        code: WEBGPU_PIPELINE_TEST_SHADER_SOURCE,
+    });
+
+    const computePipeline = await device.createComputePipelineAsync({
+        label: "Mandelbrot pipeline test compute pipeline",
+        layout: "auto",
+        compute: {
+            module: shaderModule,
+            entryPoint: "main",
+        },
+    });
+
+    console.log("WebGPU Mandelbrot compute pipeline initialized", {
+        shaderModule,
+        computePipeline,
+    });
+
+    return {
+        shaderModule,
+        computePipeline,
+    };
+}
+
+/**
+ * Gibt die initialisierte WebGPU-Compute-Pipeline zurück.
+ *
+ * Mehrere parallele Aufrufe teilen sich dieselbe Initialisierungs-Promise.
+ * Bei Fehlern wird der Cache zurückgesetzt, damit spätere Aufrufe erneut
+ * initialisieren können.
+ *
+ * @returns {Promise<WebGpuComputePipelineContext>} Initialisierte Pipeline-Ressourcen.
+ */
+function getWebGpuComputePipeline() {
+    if (!webGpuComputePipelinePromise) {
+        webGpuComputePipelinePromise =
+            initializeWebGpuComputePipeline().catch((error) => {
+                webGpuComputePipelinePromise = null;
+                throw error;
+            });
+    }
+
+    return webGpuComputePipelinePromise;
+}
+
+/**
  * Initialisiert den WebGPU-Kontext des Workers.
  *
  * Die Initialisierung wird lazy durchgeführt und anschließend wiederverwendet.
@@ -227,7 +315,12 @@ async function initializeWebGpuWorkerContext() {
  */
 function getWebGpuWorkerContext() {
     if (!webGpuWorkerContextPromise) {
-        webGpuWorkerContextPromise = initializeWebGpuWorkerContext();
+        webGpuWorkerContextPromise = initializeWebGpuWorkerContext().catch(
+            (error) => {
+                webGpuWorkerContextPromise = null;
+                throw error;
+            }
+        );
     }
 
     return webGpuWorkerContextPromise;
@@ -268,14 +361,17 @@ function getWebGpuWorkerContext() {
 /**
  * Behandelt eine Berechnungsanfrage an den Dummy-WebGPU-Worker.
  *
+ * Aktuell wird bereits die WebGPU-Pipeline initialisiert. Die fachliche
+ * Mandelbrot-Berechnung erfolgt weiterhin per JavaScript-Fallback.
+ * 
  * @param {WebGpuComputeRequestMessage} message - Eingehende Berechnungsanfrage.
  * @returns {void}
  */
 async function handleComputeMandelbrotRectMessage(
     message
 ) {
-    await getWebGpuWorkerContext(); 
-   
+    await getWebGpuComputePipeline(); 
+
     const result = gpuWorkerComputeMandelbrotRect(
         message.rect,
         message.imageWidth,
@@ -329,7 +425,7 @@ self.onmessage = async (event) => {
             throw new Error(`Unsupported WebGPU worker message type: ${message.type}`);
         }
 
-        await handleComputeMandelbrotRectMessage(message); 
+        await handleComputeMandelbrotRectMessage(message);
 
     } catch (error) {
         console.error("Mandelbrot WebGPU worker request failed", error);
