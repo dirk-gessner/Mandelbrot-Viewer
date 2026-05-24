@@ -172,117 +172,153 @@ function gpuWorkerComputeMandelbrotRect(
  * @returns 
  */
 async function computeMandelbrotRectOnGpu(
-  rect,
-  imageWidth,
-  imageHeight,
-  computationSettings
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings
 ) {
-  console.log("computeMandelbrotRectOnGpu (start)", {
-    rect,
-    imageWidth,
-    imageHeight,
-  });
+    console.log("computeMandelbrotRectOnGpu (start)", {
+        rect,
+        imageWidth,
+        imageHeight,
+    });
 
-  const { device } = await getWebGpuWorkerContext();
-  const { computePipeline } = await getWebGpuComputePipeline();
+    const { device } = await getWebGpuWorkerContext();
+    const { computePipeline } = await getWebGpuComputePipeline();
 
-  const pixelCount = rect.width * rect.height;
-  const iterationsBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
+    const pixelCount = rect.width * rect.height;
+    const iterationsBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
+    const escapeValuesBufferSize = pixelCount * Float32Array.BYTES_PER_ELEMENT;
 
-  const paramsArrayBuffer = createMandelbrotParamsArrayBuffer(
-    rect,
-    imageWidth,
-    imageHeight,
-    computationSettings
-  );
+    const paramsArrayBuffer = createMandelbrotParamsArrayBuffer(
+        rect,
+        imageWidth,
+        imageHeight,
+        computationSettings
+    );
 
-  const paramsBuffer = device.createBuffer({
-    label: "Mandelbrot params uniform buffer",
-    size: paramsArrayBuffer.byteLength,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
+    const paramsBuffer = device.createBuffer({
+        label: "Mandelbrot params uniform buffer",
+        size: paramsArrayBuffer.byteLength,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
 
-  const iterationsBuffer = device.createBuffer({
-    label: "Mandelbrot iterations storage buffer",
-    size: iterationsBufferSize,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-  });
+    const iterationsBuffer = device.createBuffer({
+        label: "Mandelbrot iterations storage buffer",
+        size: iterationsBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
 
-  const readbackBuffer = device.createBuffer({
-    label: "Mandelbrot iterations readback buffer",
-    size: iterationsBufferSize,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-  });
+    const iterationsReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot iterations readback buffer",
+        size: iterationsBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
 
-  device.queue.writeBuffer(paramsBuffer, 0, paramsArrayBuffer);
+    const escapeValuesBuffer = device.createBuffer({
+        label: "Mandelbrot escape values storage buffer",
+        size: escapeValuesBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
 
-  const bindGroup = device.createBindGroup({
-    label: "Mandelbrot iterations bind group",
-    layout: computePipeline.getBindGroupLayout(0),
-    entries: [
-      {
-        binding: 0,
-        resource: {
-          buffer: paramsBuffer,
-        },
-      },
-      {
-        binding: 1,
-        resource: {
-          buffer: iterationsBuffer,
-        },
-      },
-    ],
-  });
+    const escapeValuesReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot escape values readback buffer",
+        size: escapeValuesBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
 
-  const commandEncoder = device.createCommandEncoder({
-    label: "Mandelbrot iterations command encoder",
-  });
+    device.queue.writeBuffer(paramsBuffer, 0, paramsArrayBuffer);
 
-  const computePass = commandEncoder.beginComputePass({
-    label: "Mandelbrot iterations compute pass",
-  });
+    const bindGroup = device.createBindGroup({
+        label: "Mandelbrot iterations bind group",
+        layout: computePipeline.getBindGroupLayout(0),
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: paramsBuffer,
+                },
+            },
+            {
+                binding: 1,
+                resource: {
+                    buffer: iterationsBuffer,
+                },
+            },
+            {
+                binding: 2,
+                resource: {
+                    buffer: escapeValuesBuffer,
+                },
+            },
+        ],
+    });
 
-  computePass.setPipeline(computePipeline);
-  computePass.setBindGroup(0, bindGroup);
+    const commandEncoder = device.createCommandEncoder({
+        label: "Mandelbrot iterations command encoder",
+    });
 
-  computePass.dispatchWorkgroups(
-    Math.ceil(rect.width / 16),
-    Math.ceil(rect.height / 16)
-  );
+    const computePass = commandEncoder.beginComputePass({
+        label: "Mandelbrot iterations compute pass",
+    });
 
-  computePass.end();
+    computePass.setPipeline(computePipeline);
+    computePass.setBindGroup(0, bindGroup);
 
-  commandEncoder.copyBufferToBuffer(
-    iterationsBuffer,
-    0,
-    readbackBuffer,
-    0,
-    iterationsBufferSize
-  );
+    computePass.dispatchWorkgroups(
+        Math.ceil(rect.width / 16),
+        Math.ceil(rect.height / 16)
+    );
 
-  device.queue.submit([commandEncoder.finish()]);
+    computePass.end();
 
-  await readbackBuffer.mapAsync(GPUMapMode.READ);
+    commandEncoder.copyBufferToBuffer(
+        iterationsBuffer,
+        0,
+        iterationsReadbackBuffer,
+        0,
+        iterationsBufferSize
+    );
+    
+    commandEncoder.copyBufferToBuffer(
+        escapeValuesBuffer,
+        0,
+        escapeValuesReadbackBuffer,
+        0,
+        escapeValuesBufferSize
+    );
 
-  const mappedRange = readbackBuffer.getMappedRange();
-  const gpuIterations = new Uint32Array(mappedRange.slice(0));
+    device.queue.submit([commandEncoder.finish()]);
 
-  readbackBuffer.unmap();
+    await Promise .all ([
+        iterationsReadbackBuffer.mapAsync(GPUMapMode.READ),
+        escapeValuesReadbackBuffer.mapAsync(GPUMapMode.READ),
+    ]);
 
-  const result = createIterationDataFromGpuIterations(
-    rect,
-    gpuIterations,
-    computationSettings
-  );
+    const mappedIterationsRange   = iterationsReadbackBuffer.getMappedRange();
+    const mappedEscapeValuesRange = escapeValuesReadbackBuffer.getMappedRange();
 
-  console.log("computeMandelbrotRectOnGpu (done)", {
-    pixelCount,
-    minIterations: result.minIterations,
-    sample: result.iterations.slice(0, 16),
-  });
+    const gpuIterations   = new Uint32Array(mappedIterationsRange.slice(0));
+    const gpuEscapeValues = new Float32Array(mappedEscapeValuesRange.slice(0));
 
-  return result;
+    iterationsReadbackBuffer.unmap();
+    escapeValuesReadbackBuffer.unmap();
+
+    const result = createIterationDataFromGpuIterations(
+        rect,
+        gpuIterations,
+        gpuEscapeValues,
+        computationSettings
+    );
+
+    console.log("computeMandelbrotRectOnGpu (done)", {
+        pixelCount,
+        minIterations: result.minIterations,
+        iterations_sample: result.iterations.slice(0, 16),
+        escapeValues_sample: result.escapeValues.slice(0, 16),
+    });
+
+    return result;
 }
 
 /* --------------------------------------------------------------------------------------- */
@@ -372,6 +408,9 @@ var<uniform> params: Params;
 @group(0) @binding(1)
 var<storage, read_write> iterations: array<u32>;
 
+@group(0) @binding(2)
+var<storage, read_write> escapeValues: array<f32>;
+
 fn isInPeriod2Bulb(cx: f32, cy: f32) -> bool {
   return (cx + 1.0) * (cx + 1.0) + cy * cy <= 0.0625;
 }
@@ -407,6 +446,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   if (isInPeriod2Bulb(cx, cy) || isInMainCardioid(cx, cy)) {
     iterations[index] = params.maxIterations;
+    escapeValues[index] = 0.0;
     return;
   }
 
@@ -428,6 +468,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
   }
 
   iterations[index] = iteration;
+  escapeValues[index] = zx * zx + zy * zy;
 }
 `;
 
@@ -577,6 +618,7 @@ function createMandelbrotParamsArrayBuffer(
 }
 
 /**
+ * createIterationDataFromGpuIterations
  * 
  * @param {PixelRect} rect 
  * @param {*} gpuIterations 
@@ -586,6 +628,7 @@ function createMandelbrotParamsArrayBuffer(
 function createIterationDataFromGpuIterations(
   rect,
   gpuIterations,
+  gpuEscapeValues,
   computationSettings
 ) {
   const pixelCount = rect.width * rect.height;
@@ -599,12 +642,7 @@ function createIterationDataFromGpuIterations(
     const iteration = gpuIterations[index];
 
     iterations[index] = iteration;
-
-    if (iteration < maxIterations) {
-      escapeValues[index] = 16.0 + iteration;
-    } else {
-      escapeValues[index] = 0.0;
-    }
+    escapeValues[index] = gpuEscapeValues[index];    
 
     if (iteration < minIterations) {
       minIterations = iteration;
@@ -804,6 +842,25 @@ function getWebGpuWorkerContext() {
  */
 
 /**
+ * Entscheidet, ob die f32-Auflösung der GPU noch ausreichend für die Auflösung ist
+ * 
+ * @param {*} view 
+ * @param {number} imageWidth 
+ * @param {number} imageHeight 
+ * @returns 
+ */
+function shouldUseGpuForView(
+    view, 
+    imageWidth, 
+    imageHeight
+) {
+  const pixelWidth  = Math.abs(view.maxX - view.minX) / imageWidth;
+  const pixelHeight = Math.abs(view.maxY - view.minY) / imageHeight;
+
+  return Math.min(pixelWidth, pixelHeight) > 1e-7;
+}
+
+/**
  * Behandelt eine Berechnungsanfrage an den Dummy-WebGPU-Worker.
  *
  * Aktuell wird bereits die WebGPU-Pipeline initialisiert. Die fachliche
@@ -823,26 +880,39 @@ async function handleComputeMandelbrotRectMessage(
     );
 
     let result; 
-    try {
-        result = await computeMandelbrotRectOnGpu(
-            message.rect, 
-            message.imageWidth, 
-            message.imageHeight, 
-            message.computationSettings
-        );
-    } catch (error) {
-        console.warn(
-            "GPU Mandelbrot computation failed. Using worker JavaScript fallback.",
-            error
-        ); 
-
-        result = gpuWorkerComputeMandelbrotRect(
-            message.rect,
+    if (shouldUseGpuForView(
+            message.computationSettings.view,
             message.imageWidth,
-            message.imageHeight,
-            message.computationSettings
+            message.imageHeight)) {
+        try {
+            result = await computeMandelbrotRectOnGpu(
+                message.rect, 
+                message.imageWidth, 
+                message.imageHeight, 
+                message.computationSettings
+            );
+        } catch (error) {
+            console.warn(
+                "GPU Mandelbrot computation failed. Using worker JavaScript fallback.",
+                error
+            ); 
+        }
+    } else {
+        console.warn(
+            "View is too deep for f32 GPU computation. Using worker JavaScript fallback."
         );
+    }        
 
+    if (!result) {
+        // TODO: This fallback is single-threaded because it runs inside the WebGPU worker.
+        // For deep zooms, prefer falling back to the main CPU backend in mandelbrot.js
+        // so the existing multi-worker CPU implementation can be used.
+        result = gpuWorkerComputeMandelbrotRect(
+                message.rect,
+                message.imageWidth,
+                message.imageHeight,
+                message.computationSettings
+            );
     }
 
     const response = {
