@@ -185,7 +185,7 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
     ├── palettes.js
     ├── iteration-data.js
     ├── mandelbrot.js
-    ├── mandelbrot-worker.js
+    ├── mandelbrot-cpu-worker.js
     ├── rendering.js
     ├── layout.js
     ├── interactions.js
@@ -207,7 +207,7 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 - `js/palettes.js` definiert Farben und Farbpaletten.
 - `js/iteration-data.js` enthält generische Operationen auf Iterationsdaten, darunter Kopieren von Rechtecken, Dirty-Rect-Ermittlung, Panning- und Resize-Logik.
 - `js/mandelbrot.js` enthält die Mandelbrot-spezifische Orchestrierung, Worker-Aufrufe, Task-Aufteilung und das Zusammenführen der Teilergebnisse.
-- `js/mandelbrot-worker.js` enthält die eigentliche synchrone Mandelbrot-Berechnung, die im Worker ausgeführt wird.
+- `js/mandelbrot-cpu-worker.js` enthält die eigentliche synchrone Mandelbrot-Berechnung, die im Worker ausgeführt wird.
 - `js/rendering.js` enthält Rendering-Funktionen, den Aufbau von `ImageData` aus Iterationsdaten, Bildausgabe, Render-Overlay und Panning-Vorschau.
 - `js/layout.js` behandelt Canvas-Größe, initialen View, Seitenverhältnis, Resize-Logik und Reset der Ansicht.
 - `js/interactions.js` enthält Mausinteraktion, Panning, Zoom-Auswahl, Zoom-Out-Schritte, Mausradsteuerung und das Zeichnen des Auswahlrahmens mit Fadenkreuz.

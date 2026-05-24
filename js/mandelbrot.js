@@ -8,8 +8,11 @@
 // wieder zu einer zusammenhängenden Matrix zusammen.
 //
 // Die eigentliche synchrone Punkt- und Rechteckberechnung liegt in
-// `mandelbrot-worker.js`.
+// `mandelbrot-cpu-worker.js`.
 // -----------------------------------------------------------------------------
+
+const WEBGPU_MIN_PIXEL_SIZE = 1e-7;
+const MANDELBROT_CPU_WORKER_SCRIPT = "./js/mandelbrot-cpu-worker.js";
 
 /**
  * Teilt ein Pixelrechteck horizontal in mehrere Teilrechtecke.
@@ -124,7 +127,7 @@ function computeMandelbrotRectInCpuWorker(
 ) {
     return new Promise((resolve, reject) => {
 
-        const worker = new Worker("./js/mandelbrot-worker.js", {
+        const worker = new Worker(MANDELBROT_CPU_WORKER_SCRIPT, {
             type: "module"
         });
 
@@ -316,7 +319,7 @@ function shouldUseWebGpuForView(view, imageWidth, imageHeight) {
     const pixelWidth = Math.abs(view.maxX - view.minX) / imageWidth;
     const pixelHeight = Math.abs(view.maxY - view.minY) / imageHeight;
 
-    return Math.min(pixelWidth, pixelHeight) > 1e-7;
+    return Math.min(pixelWidth, pixelHeight) > WEBGPU_MIN_PIXEL_SIZE;
 }
 
 /**
@@ -340,7 +343,7 @@ async function computeMandelbrotRect(
   computationSettings
 ) {
     const useWebGpuBackend =
-        useWebGpuDummyBackend &&
+        USE_WEBGPU_BACKEND &&
         shouldUseWebGpuForView(
             computationSettings.view,
             imageWidth,

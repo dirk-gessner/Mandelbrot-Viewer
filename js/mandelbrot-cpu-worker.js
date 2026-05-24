@@ -151,7 +151,7 @@ function workerComputeMandelbrotRect(
 }
 
 /**
- * Nachricht an den Mandelbrot-Worker.
+ * Nachricht an den CPU-Mandelbrot-Worker.
  *
  * @typedef {Object} MandelbrotWorkerRequest
  * @property {PixelRect} rect
