@@ -262,10 +262,40 @@ async function computeMandelbrotRectOnGpu(
     computePass.setPipeline(computePipeline);
     computePass.setBindGroup(0, bindGroup);
 
-    computePass.dispatchWorkgroups(
-        Math.ceil(rect.width / 16),
-        Math.ceil(rect.height / 16)
-    );
+    // das folgende, um die Anzahl der Threads, etc. zu loggen, sonst einfach 
+    // -------------------------------------------------------------------------
+    // computePass.dispatchWorkgroups(
+    //     Math.ceil(rect.width / 16),
+    //     Math.ceil(rect.height / 16)
+    // );
+    // -------------------------------------------------------------------------
+    const workgroupSizeX = 16;
+    const workgroupSizeY = 16;
+
+    const workgroupCountX = Math.ceil(rect.width / workgroupSizeX);
+    const workgroupCountY = Math.ceil(rect.height / workgroupSizeY);
+
+    const dispatchedWorkgroups = workgroupCountX * workgroupCountY;
+    const dispatchedInvocations =
+        dispatchedWorkgroups * workgroupSizeX * workgroupSizeY;
+
+    const activePixels = rect.width * rect.height;
+    const inactiveInvocations = dispatchedInvocations - activePixels;
+
+    console.log("WebGPU Mandelbrot dispatch", {
+        rect,
+        workgroupSizeX,
+        workgroupSizeY,
+        workgroupCountX,
+        workgroupCountY,
+        dispatchedWorkgroups,
+        dispatchedInvocations,
+        activePixels,
+        inactiveInvocations,
+    });
+
+    computePass.dispatchWorkgroups(workgroupCountX, workgroupCountY);
+    // -------------------------------------------------------------------------
 
     computePass.end();
 
