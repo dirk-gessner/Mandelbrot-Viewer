@@ -741,41 +741,12 @@ function shouldUseGpuForView(
 async function handleComputeMandelbrotRectMessage(
     message
 ) {
-    let result; 
-    if (shouldUseGpuForView(
-            message.computationSettings.view,
-            message.imageWidth,
-            message.imageHeight)) {
-        try {
-            result = await computeMandelbrotRectOnGpu(
-                message.rect, 
-                message.imageWidth, 
-                message.imageHeight, 
-                message.computationSettings
-            );
-        } catch (error) {
-            console.warn(
-                "GPU Mandelbrot computation failed. Using worker JavaScript fallback.",
-                error
-            ); 
-        }
-    } else {
-        console.warn(
-            "View is too deep for f32 GPU computation. Using worker JavaScript fallback."
-        );
-    }        
-
-    if (!result) {
-        // TODO: This fallback is single-threaded because it runs inside the WebGPU worker.
-        // For deep zooms, prefer falling back to the main CPU backend in mandelbrot.js
-        // so the existing multi-worker CPU implementation can be used.
-        result = gpuWorkerComputeMandelbrotRect(
-                message.rect,
-                message.imageWidth,
-                message.imageHeight,
-                message.computationSettings
-            );
-    }
+    const result = await computeMandelbrotRectOnGpu(
+        message.rect, 
+        message.imageWidth, 
+        message.imageHeight, 
+        message.computationSettings
+    );
 
     const response = {
         type: "compute-mandelbrot-rect-result",
@@ -816,8 +787,6 @@ self.onmessage = async (event) => {
     const message = event.data;
 
     try {
-        console.log("Mandelbrot WebGPU worker received message", message);
-
         if (message.type !== "compute-mandelbrot-rect") {
             throw new Error(`Unsupported WebGPU worker message type: ${message.type}`);
         }

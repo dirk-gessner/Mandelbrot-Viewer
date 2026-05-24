@@ -301,12 +301,32 @@ async function computeMandelbrotRectCpu(
 }
 
 /**
+ * Prüft, ob die aktuelle Ansicht sinnvoll mit f32-WebGPU berechnet werden kann.
+ *
+ * WebGPU/WGSL arbeitet hier mit f32. Bei sehr tiefen Zoomstufen reicht die
+ * Präzision nicht mehr aus, um benachbarte Pixel sauber auf unterschiedliche
+ * komplexe Koordinaten abzubilden.
+ *
+ * @param {View}    view        - Aktueller Ausschnitt der komplexen Ebene.
+ * @param {number}  imageWidth  - (integer) Breite der vollständigen Zielmatrix.
+ * @param {number}  imageHeight - (integer) Höhe der vollständigen Zielmatrix.
+ * @returns {boolean}           - true, wenn WebGPU für diese Ansicht verwendet werden soll.
+ */
+function shouldUseWebGpuForView(view, imageWidth, imageHeight) {
+    const pixelWidth = Math.abs(view.maxX - view.minX) / imageWidth;
+    const pixelHeight = Math.abs(view.maxY - view.minY) / imageHeight;
+
+    return Math.min(pixelWidth, pixelHeight) > 1e-7;
+}
+
+/**
  * Berechnet die Mandelbrot-Iterationsdaten für ein Rechteck.
  *
  * Diese Funktion ist die zentrale Fassade für die Rechteckberechnung. Sie
- * entscheidet später zwischen CPU- und WebGPU-Backend. Aktuell kann der
- * WebGPU-Pfad testweise aktiviert werden und fällt bei Fehlern auf CPU zurück.
- *
+ * entscheidet zwischen WebGPU-Backend und CPU-Backend. Bei zu tiefen
+ * Zoomstufen wird direkt der CPU-Pfad verwendet, weil die aktuelle
+ * WebGPU-Implementierung mit f32 arbeitet.
+ * 
  * @param {PixelRect}           rect                 - Zu berechnender Pixelbereich.
  * @param {number}              imageWidth           - (integer) Breite der vollständigen Zielmatrix.
  * @param {number}              imageHeight          - (integer) Höhe der vollständigen Zielmatrix.
@@ -319,7 +339,15 @@ async function computeMandelbrotRect(
   imageHeight,
   computationSettings
 ) {
-  if (useWebGpuDummyBackend) {
+    const useWebGpuBackend =
+        useWebGpuDummyBackend &&
+        shouldUseWebGpuForView(
+            computationSettings.view,
+            imageWidth,
+            imageHeight
+        );
+
+  if (useWebGpuBackend) {
     try {
       return await computeMandelbrotRectWebGpu(
         rect,
@@ -333,6 +361,11 @@ async function computeMandelbrotRect(
         error
       );
     }
+  } else {
+      console.log(
+        "Resolution limits for WebGPU (Float32) reached. Falling back to CPU (Float64) backend."
+      );
+
   }
 
   return computeMandelbrotRectCpu(
