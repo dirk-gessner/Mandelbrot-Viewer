@@ -220,7 +220,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 }
 `;
 
-const MANDELBROT_ITERATIONS_SHADER_SOURCE = `...`;
+const MANDELBROT_ITERATIONS_SHADER_SOURCE = `
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
+}
+`;
 
 /**
  * Initialisiert die WebGPU-Compute-Pipeline für die Mandelbrot-Berechnung.
@@ -233,15 +237,15 @@ const MANDELBROT_ITERATIONS_SHADER_SOURCE = `...`;
 async function initializeWebGpuComputeTestPipeline() {
     const { device } = await getWebGpuWorkerContext();
 
-    console.log("Initializing WebGPU Mandelbrot compute pipeline");
+    console.log("Initializing WebGPU compute test pipeline");
 
     const shaderModule = device.createShaderModule({
-        label: "Mandelbrot pipeline test shader",
+        label: "WebGPU compute test shader",
         code: WEBGPU_PIPELINE_TEST_SHADER_SOURCE,
     });
 
     const computePipeline = await device.createComputePipelineAsync({
-        label: "Mandelbrot pipeline test compute pipeline",
+        label: "WebGPU compute test pipeline",
         layout: "auto",
         compute: {
             module: shaderModule,
@@ -249,7 +253,7 @@ async function initializeWebGpuComputeTestPipeline() {
         },
     });
 
-    console.log("WebGPU Mandelbrot compute pipeline initialized", {
+    console.log("WebGPU compute test pipeline initialized", {
         shaderModule,
         computePipeline,
     });
@@ -263,15 +267,15 @@ async function initializeWebGpuComputeTestPipeline() {
 async function initializeWebGpuComputePipeline() {
     const { device } = await getWebGpuWorkerContext();
 
-    console.log("Initializing WebGPU Mandelbrot compute pipeline");
+    console.log("Initializing WebGPU compute pipeline");
 
     const shaderModule = device.createShaderModule({
-        label: "Mandelbrot pipeline test shader",
-        code: WEBGPU_PIPELINE_TEST_SHADER_SOURCE,
+        label: "WebGPU compute shader",
+        code: MANDELBROT_ITERATIONS_SHADER_SOURCE,
     });
 
     const computePipeline = await device.createComputePipelineAsync({
-        label: "Mandelbrot pipeline test compute pipeline",
+        label: "WebGPU compute pipeline",
         layout: "auto",
         compute: {
             module: shaderModule,
@@ -279,7 +283,7 @@ async function initializeWebGpuComputePipeline() {
         },
     });
 
-    console.log("WebGPU Mandelbrot compute pipeline initialized", {
+    console.log("WebGPU compute pipeline initialized", {
         shaderModule,
         computePipeline,
     });
@@ -314,7 +318,7 @@ function getWebGpuComputeTestPipeline() {
 function getWebGpuComputePipeline() {
     if (!webGpuComputePipelinePromise) {
         webGpuComputePipelinePromise =
-            initializeWebGpuComputeTestPipeline().catch((error) => {
+            initializeWebGpuComputePipeline().catch((error) => {
                 webGpuComputePipelinePromise = null;
                 throw error;
             });
@@ -525,6 +529,8 @@ async function handleComputeMandelbrotRectMessage(
         "WebGPU compute pipeline test sample",
         gpuTestResult.slice(0, 16)
     );
+
+    await getWebGpuComputePipeline();
 
     const result = gpuWorkerComputeMandelbrotRect(
         message.rect,
