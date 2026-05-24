@@ -1,4 +1,4 @@
-const useWebGpuDummyBackend = true ; 
+const useWebGpuDummyBackend = true;
 
 /**
  * @file Main-thread proxy for WebGPU-based Mandelbrot rectangle computation.
@@ -171,31 +171,31 @@ function handleMandelbrotWebGpuWorkerError(event) {
  * @returns {Promise<IterationData>} Computed iteration data for the rectangle.
  */
 function computeMandelbrotRectWebGpu(
-  rect,
-  imageWidth,
-  imageHeight,
-  computationSettings
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings
 ) {
-  return new Promise((resolve, reject) => {
-    const requestId = nextWebGpuRequestId++;
+    return new Promise((resolve, reject) => {
+        const requestId = nextWebGpuRequestId++;
 
-    pendingWebGpuRequests.set(requestId, {
-      resolve,
-      reject,
+        pendingWebGpuRequests.set(requestId, {
+            resolve,
+            reject,
+        });
+
+        /** @type {WebGpuComputeRequestMessage} */
+        const message = {
+            type: "compute-mandelbrot-rect",
+            requestId,
+            rect,
+            imageWidth,
+            imageHeight,
+            computationSettings,
+        };
+
+        getMandelbrotWebGpuWorker().postMessage(message);
     });
-
-    /** @type {WebGpuComputeRequestMessage} */
-    const message = {
-      type: "compute-mandelbrot-rect",
-      requestId,
-      rect,
-      imageWidth,
-      imageHeight,
-      computationSettings,
-    };
-
-    getMandelbrotWebGpuWorker().postMessage(message);
-  });
 }
 
 /**
@@ -207,22 +207,22 @@ function computeMandelbrotRectWebGpu(
  * @returns {Promise<void>}
  */
 async function testMandelbrotWebGpuWorkerProxy() {
-  const result = await computeMandelbrotRectWebGpu(
-    { x: 0, y: 0, width: 8, height: 4 },
-    8,
-    4,
-    {
-      initialView: null,
-      view: {
-        minX: -2,
-        maxX: 1,
-        minY: -1,
-        maxY: 1,
-      },
-      maxIterations: 100,
-      escapeRadius: 5,
-    }
-  );
+    const result = await computeMandelbrotRectWebGpu(
+        { x: 0, y: 0, width: 8, height: 4 },
+        8,
+        4,
+        {
+            initialView: null,
+            view: {
+                minX: -2,
+                maxX: 1,
+                minY: -1,
+                maxY: 1,
+            },
+            maxIterations: 100,
+            escapeRadius: 5,
+        }
+    );
 
-  console.log("WebGPU worker proxy test result", result);
+    console.log("WebGPU worker proxy test result", result);
 }

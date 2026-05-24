@@ -1,3 +1,6 @@
+console.log("Mandelbrot WebGPU worker script loaded");
+
+
 // -----------------------------------------------------------------------------
 // Worker-seitige Mandelbrot-Berechnung über WebGPU
 // -----------------------------------------------------------------------------
@@ -8,6 +11,227 @@
 // Sie dient zunächst als Dummy-Worker, um die Nachrichtenstruktur zwischen
 // Hauptthread und Worker stabil zu testen.
 // -----------------------------------------------------------------------------
+
+/**
+ * Ermittelt den kleinsten Iterationswert in einem linearen Iterationsfeld.
+ * Worker-lokale Kopie von `findMinIterations` aus `iteration-data.js`.
+ *
+ * Der Worker läuft in einem eigenen Kontext und kann die Hilfsfunktion aus
+ * `iteration-data.js` nicht direkt verwenden.
+ * 
+ * @param {IterationArray} iterations   - zu analysierende Iterationsmatrix
+ * @returns {number}                    - (integer) minimaler Wert aus iterations
+ */
+function gpuWorkerFindMinIterations(iterations) {
+    if (iterations.length === 0) {
+        return 0;
+    }
+
+    let minIterations = iterations[0];
+
+    for (let i = 1; i < iterations.length; i++) {
+        if (iterations[i] < minIterations) {
+            minIterations = iterations[i];
+        }
+    }
+
+    return minIterations;
+}
+
+/**
+ * @typedef {Object} MandelbrotPointResult
+ * @property {number} iterations - (integer) Iterationswert des Punkts.
+ * @property {number} escapeValue - (decimal) Quadratischer Betrag beim Abbruch.
+ */
+
+/**
+ * Berechnet die Anzahl der Iterationen für einen Bildpunkt, bis Divergenz 
+ * eintritt oder die Abbruchschranke für die Iterationen erreicht ist. 
+ * 
+ * Optimierungen: Schnelle Überprüfungen für Punkte, die sicher in der 
+ * Menge liegen.
+ * 
+ * @param {number} cx               - (decimal) Koordinate auf der Real-Achse
+ * @param {number} cy               - (decimal) Koordinate auf der Imaginär-Achse
+ * @param {number} maxIterations    - (integer) obere Schranke für die Anzahl der Iterationen
+ * @param {number} escapeRadius     - (decimal) Escape-Radius zur Entscheidung auf Divergenz
+ * @returns {MandelbrotPointResult} - Ergebnis der Berechnung (Tupel aus iterations und esacapeValue)
+ */
+function gpuWorkerComputeMandelbrotPoint(
+    cx, cy,
+    maxIterations,
+    escapeRadius
+) {
+
+    // Schnelle Überprüfung: Periode-2-Glühbirne (Kreis auf der linken Seite)
+    if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) { // 1/16 = 0.0625
+        return {
+            iterations: maxIterations,
+            escapeValue: 0,
+        };
+    }
+
+    // Schnelle Überprüfung: Hauptkardiode (Herzform in der Mitte)
+    const q = (cx - 0.25) * (cx - 0.25) + cy * cy;
+    if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) {
+        return {
+            iterations: maxIterations,
+            escapeValue: 0,
+        };
+    }
+
+    // Standard-Iterationen für Punkte, die nicht in den schnellen 
+    // Überprüfungen liegen
+    let zx = 0;
+    let zy = 0;
+    let iteration = 0;
+    const escapeRadiusSquared = escapeRadius * escapeRadius;
+
+    while (zx * zx + zy * zy < escapeRadiusSquared && iteration < maxIterations) {
+        const temp = zx * zx - zy * zy + cx;
+        zy = 2 * zx * zy + cy;
+        zx = temp;
+        iteration++;
+    }
+
+    return {
+        iterations: iteration,
+        escapeValue: zx * zx + zy * zy,
+    };
+}
+
+/**
+ * Berechnet die Mandelbrot-Iterationen für ein gegebenes Rechteck
+ * läuft innerhalb eines Worker-Threads, also single-threaded
+ * 
+ * @param {PixelRect}           rect                    - zu berechnendes Rechteck
+ * @param {number}              imageWidth              - Breite der Pixelmatrix
+ * @param {number}              imageHeight             - Höhe der Pixelmatrix
+ * @param {ComputationSettings} computationSettings     - Parameter-Objekt für Mandelbrot-Berechnungen
+ * @returns {IterationData}                             - IterationData-Objekt
+ */
+function gpuWorkerComputeMandelbrotRect(
+    rect,
+    imageWidth, imageHeight,
+    computationSettings
+) {
+
+    console.log(
+        "gpuWorkerComputeMandelbrotRect (start)",
+        {
+            rect: rect,
+            imageWidth: imageWidth,
+            imageHeight: imageHeight,
+            computationSettings: computationSettings,
+        }
+    );
+
+    const { view, maxIterations, escapeRadius } = computationSettings;
+    const { minX, maxX, minY, maxY } = view;
+
+    const iterations = new Uint16Array(rect.width * rect.height);
+    const escapeValues = new Float32Array(rect.width * rect.height);
+
+    for (let localY = 0; localY < rect.height; localY++) {
+        for (let localX = 0; localX < rect.width; localX++) {
+
+            const px = rect.x + localX;
+            const py = rect.y + localY;
+
+            const x = minX + (px / imageWidth) * (maxX - minX);
+            const y = minY + (py / imageHeight) * (maxY - minY);
+
+            const result = gpuWorkerComputeMandelbrotPoint(x, y, maxIterations, escapeRadius);
+
+            const index = localY * rect.width + localX;
+            iterations[index] = result.iterations;
+            escapeValues[index] = result.escapeValue;
+        }
+    }
+
+    console.log(
+        "gpuWorkerComputeMandelbrotRect (done)"
+    );
+
+    return {
+        width: rect.width,
+        height: rect.height,
+        iterations,
+        escapeValues,
+        minIterations: gpuWorkerFindMinIterations(iterations),
+    };
+}
+
+/* --------------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------- */
+
+/**
+ * Gehaltene WebGPU-Ressourcen des Workers.
+ *
+ * @typedef {Object} WebGpuWorkerContext
+ * @property {GPUAdapter} adapter - WebGPU-Adapter.
+ * @property {GPUDevice} device - WebGPU-Device.
+ */
+
+/**
+ * Zwischengespeicherter WebGPU-Kontext des Workers.
+ *
+ * @type {Promise<WebGpuWorkerContext>|null}
+ */
+let webGpuWorkerContextPromise = null;
+
+/**
+ * Initialisiert den WebGPU-Kontext des Workers.
+ *
+ * Die Initialisierung wird lazy durchgeführt und anschließend wiederverwendet.
+ * In diesem Schritt wird noch keine Mandelbrot-Berechnung auf der GPU
+ * ausgeführt. Es wird nur geprüft, ob der Worker ein GPUDevice anlegen kann.
+ *
+ * @returns {Promise<WebGpuWorkerContext>} Initialisierter WebGPU-Kontext.
+ */
+async function initializeWebGpuWorkerContext() {
+    if (!self.navigator?.gpu) {
+        throw new Error("WebGPU is not available in this worker context.");
+    }
+
+    const adapter = await self.navigator.gpu.requestAdapter();
+
+    if (!adapter) {
+        throw new Error("No suitable WebGPU adapter found.");
+    }
+
+    const device = await adapter.requestDevice();
+
+    device.lost.then((info) => {
+        console.error("WebGPU device was lost.", info);
+        webGpuWorkerContextPromise = null;
+    });
+
+    console.log("WebGPU worker context initialized", {
+        adapter,
+        device,
+    });
+
+    return {
+        adapter,
+        device,
+    };
+}
+
+/**
+ * Gibt den initialisierten WebGPU-Kontext des Workers zurück.
+ *
+ * Mehrere parallele Aufrufe teilen sich dieselbe Initialisierungs-Promise.
+ *
+ * @returns {Promise<WebGpuWorkerContext>} Initialisierter WebGPU-Kontext.
+ */
+function getWebGpuWorkerContext() {
+    if (!webGpuWorkerContextPromise) {
+        webGpuWorkerContextPromise = initializeWebGpuWorkerContext();
+    }
+
+    return webGpuWorkerContextPromise;
+}
 
 /**
  * Nachricht an den WebGPU-Mandelbrot-Worker zur Berechnung eines Rechtecks.
@@ -42,65 +266,26 @@
  */
 
 /**
- * Erzeugt Dummy-Iterationsdaten für ein Rechteck.
- *
- * Die erzeugten Werte sind bewusst renderbar:
- * - Iterationswerte bleiben unterhalb von maxIterations, damit sie nicht als
- *   Punkte innerhalb der Mandelbrot-Menge interpretiert werden.
- * - Escape-Werte sind > 1, damit Smooth Coloring keine NaN-Werte erzeugt.
- *
- * @param {PixelRect} rect - Zu berechnender Pixelbereich.
- * @param {ComputationSettings} computationSettings - Einstellungen für die Berechnung.
- * @returns {IterationData} Dummy-Iterationsdaten für das Rechteck.
- */
-function createDummyIterationData(rect, computationSettings) {
-    const pixelCount = rect.width * rect.height;
-    const iterations = new Uint16Array(pixelCount);
-    const escapeValues = new Float32Array(pixelCount);
-
-    const maxIterations = Math.max(2, computationSettings.maxIterations);
-    const visibleIterationRange = maxIterations - 1;
-
-    let minIterations = Number.POSITIVE_INFINITY;
-
-    for (let y = 0; y < rect.height; y++) {
-        for (let x = 0; x < rect.width; x++) {
-            const index = y * rect.width + x;
-
-            const iteration =
-                1 + ((x + y + rect.x + rect.y) % visibleIterationRange);
-
-            iterations[index] = iteration;
-
-            // Wert deutlich > 1, damit Smooth Coloring stabil bleibt.
-            escapeValues[index] = 16.0 + iteration;
-
-            if (iteration < minIterations) {
-                minIterations = iteration;
-            }
-        }
-    }
-
-    return {
-        width: rect.width,
-        height: rect.height,
-        iterations,
-        escapeValues,
-        minIterations,
-    };
-}
-
-/**
  * Behandelt eine Berechnungsanfrage an den Dummy-WebGPU-Worker.
  *
  * @param {WebGpuComputeRequestMessage} message - Eingehende Berechnungsanfrage.
  * @returns {void}
  */
-function handleComputeMandelbrotRectMessage(message) {
-    const result = createDummyIterationData(
+function handleComputeMandelbrotRectMessage(
+    message
+) {
+    /* this line causes Error */
+    // await getWebGpuWorkerContext(); 
+    /* this line works */
+    getWebGpuWorkerContext();
+
+    const result = gpuWorkerComputeMandelbrotRect(
         message.rect,
+        message.imageWidth,
+        message.imageHeight,
         message.computationSettings
     );
+
     /** @type {WebGpuComputeSuccessMessage} */
     const response = {
         type: "compute-mandelbrot-rect-result",
@@ -141,12 +326,19 @@ self.onmessage = (event) => {
     const message = event.data;
 
     try {
+        console.log("Mandelbrot WebGPU worker received message", message);
+
         if (message.type !== "compute-mandelbrot-rect") {
             throw new Error(`Unsupported WebGPU worker message type: ${message.type}`);
         }
 
+        /* this line causes Error */
+        // await handleComputeMandelbrotRectMessage(message); 
+        /* this line works */
         handleComputeMandelbrotRectMessage(message);
+
     } catch (error) {
+        console.error("Mandelbrot WebGPU worker request failed", error);
         postErrorResponse(message?.requestId ?? -1, error);
     }
 };
