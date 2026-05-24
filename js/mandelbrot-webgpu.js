@@ -1,98 +1,97 @@
-const USE_WEBGPU_BACKEND = true;
-
 /**
- * @file Main-thread proxy for WebGPU-based Mandelbrot rectangle computation.
+ * @file Hauptthread-Proxy für WebGPU-basierte Mandelbrot-Rechteckberechnungen.
  *
- * This module does not perform WebGPU work directly. It owns a long-lived
- * worker instance, assigns request ids, tracks pending requests and resolves
- * results returned by the WebGPU worker.
+ * Dieses Modul führt selbst keine WebGPU-Befehle aus. Es verwaltet eine
+ * langlebige Worker-Instanz, vergibt Anfrage-IDs, verfolgt offene Anfragen
+ * und löst die vom WebGPU-Worker zurückgegebenen Ergebnisse auf.
  */
 
 /**
- * Name of the worker script that will later contain the WebGPU implementation.
+ * Pfad zum Worker-Skript mit der eigentlichen WebGPU-Implementierung.
  *
  * @type {string}
  */
 const MANDELBROT_WEBGPU_WORKER_SCRIPT = "./js/mandelbrot-webgpu-worker.js";
 
 /**
- * Singleton worker instance used for all WebGPU Mandelbrot computations.
+ * Singleton-Worker-Instanz für alle WebGPU-Mandelbrot-Berechnungen.
  *
- * The worker is kept alive because WebGPU device and pipeline initialization
- * should be reused across multiple rectangle computations.
+ * Der Worker bleibt aktiv, damit WebGPU-Device und Compute-Pipeline nur einmal
+ * initialisiert und anschließend für mehrere Rechteckberechnungen
+ * wiederverwendet werden können.
  *
  * @type {Worker|null}
  */
 let mandelbrotWebGpuWorker = null;
 
 /**
- * Monotonically increasing request id for worker messages.
+ * Fortlaufende Anfrage-ID für Nachrichten an den WebGPU-Worker.
  *
  * @type {number}
  */
 let nextWebGpuRequestId = 1;
 
 /**
- * Pending requests keyed by request id.
+ * Offene WebGPU-Anfragen, indiziert nach Anfrage-ID.
  *
  * @type {Map<number, WebGpuPendingRequest>}
  */
 const pendingWebGpuRequests = new Map();
 
 /**
- * Pending Promise callbacks for a WebGPU worker request.
+ * Promise-Callbacks einer offenen WebGPU-Worker-Anfrage.
  *
  * @typedef {Object} WebGpuPendingRequest
- * @property {(value: IterationData) => void} resolve Resolves the request.
- * @property {(reason?: unknown) => void} reject Rejects the request.
+ * @property {(value: IterationData) => void} resolve - Erfüllt die Anfrage.
+ * @property {(reason?: unknown) => void} reject - Lehnt die Anfrage ab.
  */
 
 /**
- * Message sent from the main thread to the WebGPU worker.
+ * Nachricht vom Hauptthread an den WebGPU-Worker.
  *
  * @typedef {Object} WebGpuComputeRequestMessage
- * @property {"compute-mandelbrot-rect"} type Message type.
- * @property {number} requestId Unique request id.
- * @property {Rect} rect Rectangle to compute.
- * @property {number} imageWidth Width of the complete image in pixels.
- * @property {number} imageHeight Height of the complete image in pixels.
- * @property {ComputationSettings} computationSettings Mandelbrot computation settings.
+ * @property {"compute-mandelbrot-rect"} type - Nachrichtentyp.
+ * @property {number} requestId - Eindeutige Anfrage-ID.
+ * @property {PixelRect} rect - Zu berechnender Pixelbereich.
+ * @property {number} imageWidth - Breite der vollständigen Zielmatrix in Pixeln.
+ * @property {number} imageHeight - Höhe der vollständigen Zielmatrix in Pixeln.
+ * @property {ComputationSettings} computationSettings - Mandelbrot-Berechnungseinstellungen.
  */
 
 /**
- * Successful response sent by the WebGPU worker.
+ * Erfolgsantwort des WebGPU-Workers.
  *
  * @typedef {Object} WebGpuComputeSuccessMessage
- * @property {"compute-mandelbrot-rect-result"} type Message type.
- * @property {number} requestId Request id from the original request.
- * @property {true} ok Indicates success.
- * @property {IterationData} result Computed iteration data for the requested rectangle.
+ * @property {"compute-mandelbrot-rect-result"} type - Nachrichtentyp.
+ * @property {number} requestId - Anfrage-ID der ursprünglichen Anfrage.
+ * @property {true} ok - Kennzeichen für eine erfolgreiche Berechnung.
+ * @property {IterationData} result - Berechnete Iterationsdaten für den angefragten Pixelbereich.
  */
 
 /**
- * Error response sent by the WebGPU worker.
+ * Fehlerantwort des WebGPU-Workers.
  *
  * @typedef {Object} WebGpuComputeErrorMessage
- * @property {"compute-mandelbrot-rect-result"} type Message type.
- * @property {number} requestId Request id from the original request.
- * @property {false} ok Indicates failure.
- * @property {string} error Error message.
+ * @property {"compute-mandelbrot-rect-result"} type - Nachrichtentyp.
+ * @property {number} requestId - Anfrage-ID der ursprünglichen Anfrage.
+ * @property {false} ok - Kennzeichen für eine fehlgeschlagene Berechnung.
+ * @property {string} error - Fehlerbeschreibung.
  */
 
 /**
- * Response message sent by the WebGPU worker.
+ * Antwortnachricht des WebGPU-Workers.
  *
  * @typedef {WebGpuComputeSuccessMessage|WebGpuComputeErrorMessage} WebGpuComputeResponseMessage
  */
 
 /**
- * Returns the long-lived WebGPU worker instance.
+ * Gibt die langlebige WebGPU-Worker-Instanz zurück.
  *
- * The worker is created lazily on the first computation request and then reused.
- * Reusing the worker avoids repeated setup cost for adapter, device, shader
- * module and compute pipeline in the worker implementation.
+ * Der Worker wird bei der ersten Berechnungsanfrage lazy erzeugt und danach
+ * wiederverwendet. Dadurch fallen Adapter-, Device-, Shader- und
+ * Pipeline-Initialisierung nicht für jede Rechteckberechnung erneut an.
  *
- * @returns {Worker} The shared WebGPU worker instance.
+ * @returns {Worker} Gemeinsam genutzte WebGPU-Worker-Instanz.
  */
 function getMandelbrotWebGpuWorker() {
     if (mandelbrotWebGpuWorker) {
@@ -110,9 +109,9 @@ function getMandelbrotWebGpuWorker() {
 }
 
 /**
- * Handles result messages from the WebGPU worker.
+ * Verarbeitet Ergebnisnachrichten des WebGPU-Workers.
  *
- * @param {MessageEvent<WebGpuComputeResponseMessage>} event Worker message event.
+ * @param {MessageEvent<WebGpuComputeResponseMessage>} event - Worker-Nachricht.
  * @returns {void}
  */
 function handleMandelbrotWebGpuWorkerMessage(event) {
@@ -138,9 +137,9 @@ function handleMandelbrotWebGpuWorkerMessage(event) {
 }
 
 /**
- * Rejects all pending WebGPU requests after an unhandled worker error.
+ * Lehnt alle offenen WebGPU-Anfragen nach einem unbehandelten Worker-Fehler ab.
  *
- * @param {ErrorEvent} event Worker error event.
+ * @param {ErrorEvent} event - Worker-Fehlerereignis.
  * @returns {void}
  */
 function handleMandelbrotWebGpuWorkerError(event) {
@@ -159,16 +158,17 @@ function handleMandelbrotWebGpuWorkerError(event) {
 }
 
 /**
- * Computes Mandelbrot iteration data for a rectangle using the WebGPU worker.
+ * Berechnet Mandelbrot-Iterationsdaten für ein Rechteck über den WebGPU-Worker.
  *
- * This function only sends the request to the worker. The actual WebGPU
- * implementation lives in `mandelbrot-webgpu-worker.js`.
+ * Diese Funktion schickt nur die Anfrage an den Worker und verwaltet die
+ * zugehörige Promise. Die eigentliche WebGPU-Berechnung liegt in
+ * `mandelbrot-webgpu-worker.js`.
  *
- * @param {Rect} rect Rectangle to compute.
- * @param {number} imageWidth Width of the complete image in pixels.
- * @param {number} imageHeight Height of the complete image in pixels.
- * @param {ComputationSettings} computationSettings Mandelbrot computation settings.
- * @returns {Promise<IterationData>} Computed iteration data for the rectangle.
+ * @param {PixelRect} rect - Zu berechnender Pixelbereich.
+ * @param {number} imageWidth - Breite der vollständigen Zielmatrix in Pixeln.
+ * @param {number} imageHeight - Höhe der vollständigen Zielmatrix in Pixeln.
+ * @param {ComputationSettings} computationSettings - Mandelbrot-Berechnungseinstellungen.
+ * @returns {Promise<IterationData>} Berechnete Iterationsdaten für den Pixelbereich.
  */
 function computeMandelbrotRectWebGpu(
     rect,

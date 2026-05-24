@@ -1,6 +1,3 @@
-console.log("Mandelbrot WebGPU worker script loaded");
-
-
 // -----------------------------------------------------------------------------
 // Worker-seitige Mandelbrot-Berechnung über WebGPU
 // -----------------------------------------------------------------------------
@@ -10,13 +7,149 @@ console.log("Mandelbrot WebGPU worker script loaded");
 // -----------------------------------------------------------------------------
 
 /**
- * computeMandelbrotRectOnGpu
+ * Antwortnachricht des WebGPU-Mandelbrot-Workers.
+ *
+ * @typedef {WebGpuComputeSuccessMessage|WebGpuComputeErrorMessage} WebGpuComputeResponseMessage
+ */
+
+
+/**
+ * Compute-Shader zur Berechnung der Mandelbrot-Iterationswerte.
+ *
+ * @type {string}
+ */
+const MANDELBROT_ITERATIONS_SHADER_SOURCE = `
+struct Params {
+  rectX: u32,
+  rectY: u32,
+  rectWidth: u32,
+  rectHeight: u32,
+
+  imageWidth: u32,
+  imageHeight: u32,
+  maxIterations: u32,
+  _pad0: u32,
+
+  centerXHigh: f32,
+  centerXLow: f32,
+  centerYHigh: f32,
+  centerYLow: f32,
+
+  pixelScaleX: f32,
+  pixelScaleY: f32,
+  imageCenterX: f32,
+  imageCenterY: f32,
+
+  escapeRadius: f32,
+  _pad1: f32,
+  _pad2: f32,
+  _pad3: f32,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read_write> iterations: array<u32>;
+
+@group(0) @binding(2)
+var<storage, read_write> escapeValues: array<f32>;
+
+fn isInPeriod2Bulb(cx: f32, cy: f32) -> bool {
+  return (cx + 1.0) * (cx + 1.0) + cy * cy <= 0.0625;
+}
+
+fn isInMainCardioid(cx: f32, cy: f32) -> bool {
+  let q = (cx - 0.25) * (cx - 0.25) + cy * cy;
+  return q * (q + (cx - 0.25)) <= 0.25 * cy * cy;
+}
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
+  let localX = globalId.x;
+  let localY = globalId.y;
+
+  if (localX >= params.rectWidth || localY >= params.rectHeight) {
+    return;
+  }
+
+  let px = params.rectX + localX;
+  let py = params.rectY + localY;  
+  
+  let localDx =
+    (f32(px) - params.imageCenterX) * params.pixelScaleX;  
+  
+  let localDy =
+    (f32(py) - params.imageCenterY) * params.pixelScaleY;  
+  
+  let cx =
+    params.centerXHigh + (params.centerXLow + localDx);   
+  
+  let cy =
+    params.centerYHigh + (params.centerYLow + localDy);
+
+  let index = localY * params.rectWidth + localX;
+
+  if (isInPeriod2Bulb(cx, cy) || isInMainCardioid(cx, cy)) {
+    iterations[index] = params.maxIterations;
+    escapeValues[index] = 0.0;
+    return;
+  }
+
+  var zx = 0.0;
+  var zy = 0.0;
+  var iteration = 0u;
+  let escapeRadiusSquared = params.escapeRadius * params.escapeRadius;
+
+  loop {
+    if (zx * zx + zy * zy >= escapeRadiusSquared || iteration >= params.maxIterations) {
+      break;
+    }
+
+    let temp = zx * zx - zy * zy + cx;
+    zy = 2.0 * zx * zy + cy;
+    zx = temp;
+
+    iteration = iteration + 1u;
+  }
+
+  iterations[index] = iteration;
+  escapeValues[index] = zx * zx + zy * zy;
+}
+`;
+
+/**
+ * Zerlegt eine JavaScript-number in zwei Float32-Anteile.
+ *
+ * high enthält den auf Float32 gerundeten Hauptwert.
+ * low enthält den Restwert, ebenfalls als Float32.
+ *
+ * @param {number} value - Zu zerlegender 64-bit JavaScript-Wert.
+ * @returns {{ high: number, low: number }} High-/Low-Anteile als Float32-kompatible Zahlen.
+ */
+function splitFloat64ToFloat32Pair(value) {
+    const high = Math.fround(value);
+    const low = Math.fround(value - high);
+
+    return {
+        high,
+        low,
+    };
+}
+
+/**
+ * Berechnet einen Pixelbereich der Mandelbrot-Menge auf der GPU.
+ *
+ * Die Funktion erzeugt die benötigten WebGPU-Buffer, schreibt die
+ * Uniform-Parameter für den Shader, startet den Compute-Pass und liest die
+ * Iterations- und Escape-Werte anschließend wieder in JavaScript-Arrays
+ * zurück.
  * 
- * @param {PixelRect} rect 
- * @param {number} imageWidth 
- * @param {number} imageHeight 
- * @param {ComputationSettings} computationSettings 
- * @returns 
+ * @param {PixelRect} rect - Zu berechnender Pixelbereich.
+ * @param {number} imageWidth - Breite der vollständigen Zielmatrix in Pixeln.
+ * @param {number} imageHeight - Höhe der vollständigen Zielmatrix in Pixeln.
+ * @param {ComputationSettings} computationSettings - Einstellungen für die Mandelbrot-Berechnung.
+ * @returns {Promise<IterationData>} Berechnete Iterationsdaten für den Pixelbereich.
  */
 async function computeMandelbrotRectOnGpu(
     rect,
@@ -198,9 +331,6 @@ async function computeMandelbrotRectOnGpu(
     return result;
 }
 
-/* --------------------------------------------------------------------------------------- */
-/* --------------------------------------------------------------------------------------- */
-
 /**
  * Gehaltene WebGPU-Ressourcen des Workers.
  *
@@ -230,104 +360,6 @@ let webGpuWorkerContextPromise = null;
  * @type {Promise<WebGpuComputePipelineContext>|null}
  */
 let webGpuComputePipelinePromise = null;
-
-/**
- * Compute-Shader zur Berechnung der Mandelbrot-Iterationswerte.
- *
- * @type {string}
- */
-const MANDELBROT_ITERATIONS_SHADER_SOURCE = `
-struct Params {
-  rectX: u32,
-  rectY: u32,
-  rectWidth: u32,
-  rectHeight: u32,
-
-  imageWidth: u32,
-  imageHeight: u32,
-  maxIterations: u32,
-  _pad0: u32,
-
-  minX: f32,
-  maxX: f32,
-  minY: f32,
-  maxY: f32,
-
-  escapeRadius: f32,
-  _pad1: f32,
-  _pad2: f32,
-  _pad3: f32,
-};
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-
-@group(0) @binding(1)
-var<storage, read_write> iterations: array<u32>;
-
-@group(0) @binding(2)
-var<storage, read_write> escapeValues: array<f32>;
-
-fn isInPeriod2Bulb(cx: f32, cy: f32) -> bool {
-  return (cx + 1.0) * (cx + 1.0) + cy * cy <= 0.0625;
-}
-
-fn isInMainCardioid(cx: f32, cy: f32) -> bool {
-  let q = (cx - 0.25) * (cx - 0.25) + cy * cy;
-  return q * (q + (cx - 0.25)) <= 0.25 * cy * cy;
-}
-
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
-  let localX = globalId.x;
-  let localY = globalId.y;
-
-  if (localX >= params.rectWidth || localY >= params.rectHeight) {
-    return;
-  }
-
-  let px = params.rectX + localX;
-  let py = params.rectY + localY;
-
-  let cx =
-    params.minX +
-    (f32(px) / f32(params.imageWidth)) *
-    (params.maxX - params.minX);
-
-  let cy =
-    params.minY +
-    (f32(py) / f32(params.imageHeight)) *
-    (params.maxY - params.minY);
-
-  let index = localY * params.rectWidth + localX;
-
-  if (isInPeriod2Bulb(cx, cy) || isInMainCardioid(cx, cy)) {
-    iterations[index] = params.maxIterations;
-    escapeValues[index] = 0.0;
-    return;
-  }
-
-  var zx = 0.0;
-  var zy = 0.0;
-  var iteration = 0u;
-  let escapeRadiusSquared = params.escapeRadius * params.escapeRadius;
-
-  loop {
-    if (zx * zx + zy * zy >= escapeRadiusSquared || iteration >= params.maxIterations) {
-      break;
-    }
-
-    let temp = zx * zx - zy * zy + cx;
-    zy = 2.0 * zx * zy + cy;
-    zx = temp;
-
-    iteration = iteration + 1u;
-  }
-
-  iterations[index] = iteration;
-  escapeValues[index] = zx * zx + zy * zy;
-}
-`;
 
 /**
  * Initialisiert die WebGPU-Compute-Pipeline für die Mandelbrot-Berechnung.
@@ -386,56 +418,83 @@ function getWebGpuComputePipeline() {
 }
 
 /**
- * createMandelbrotParamsArrayBuffer
+ * Erstellt den Uniform-Buffer-Inhalt für den Mandelbrot-Compute-Shader.
+ *
+ * Das Layout muss zur `Params`-Struktur im WGSL-Shader passen. Die komplexe
+ * Bildmitte wird in High-/Low-Float32-Anteile zerlegt, damit große
+ * Koordinatenwerte etwas stabiler mit lokalen Pixelabständen kombiniert
+ * werden können.
  * 
- * @param {PixelRect} rect 
- * @param {number} imageWidth 
- * @param {number} imageHeight 
- * @param {ComputationSettings} computationSettings 
- * @returns {*}
+ * @param {PixelRect} rect - Zu berechnender Pixelbereich.
+ * @param {number} imageWidth - Breite der vollständigen Zielmatrix in Pixeln.
+ * @param {number} imageHeight - Höhe der vollständigen Zielmatrix in Pixeln.
+ * @param {ComputationSettings} computationSettings - Einstellungen für die Mandelbrot-Berechnung.
+ * @returns {ArrayBuffer} Binärer Uniform-Buffer-Inhalt für den Shader.
  */
 function createMandelbrotParamsArrayBuffer(
-  rect,
-  imageWidth,
-  imageHeight,
-  computationSettings
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings
 ) {
-  const { view, maxIterations, escapeRadius } = computationSettings;
-  const { minX, maxX, minY, maxY } = view;
+    const { view, maxIterations, escapeRadius } = computationSettings;
+    const { minX, maxX, minY, maxY } = view;
 
-  const buffer = new ArrayBuffer(64);
-  const dataView = new DataView(buffer);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
 
-  dataView.setUint32(0, rect.x, true);
-  dataView.setUint32(4, rect.y, true);
-  dataView.setUint32(8, rect.width, true);
-  dataView.setUint32(12, rect.height, true);
+    const centerXParts = splitFloat64ToFloat32Pair(centerX);
+    const centerYParts = splitFloat64ToFloat32Pair(centerY);
 
-  dataView.setUint32(16, imageWidth, true);
-  dataView.setUint32(20, imageHeight, true);
-  dataView.setUint32(24, maxIterations, true);
-  dataView.setUint32(28, 0, true);
+    const pixelScaleX = Math.fround((maxX - minX) / imageWidth);
+    const pixelScaleY = Math.fround((maxY - minY) / imageHeight);
 
-  dataView.setFloat32(32, minX, true);
-  dataView.setFloat32(36, maxX, true);
-  dataView.setFloat32(40, minY, true);
-  dataView.setFloat32(44, maxY, true);
+    const imageCenterX = Math.fround(imageWidth / 2);
+    const imageCenterY = Math.fround(imageHeight / 2);
 
-  dataView.setFloat32(48, escapeRadius, true);
-  dataView.setFloat32(52, 0, true);
-  dataView.setFloat32(56, 0, true);
-  dataView.setFloat32(60, 0, true);
+    const buffer = new ArrayBuffer(80);
+    const dataView = new DataView(buffer);
 
-  return buffer;
+    dataView.setUint32(0, rect.x, true);
+    dataView.setUint32(4, rect.y, true);
+    dataView.setUint32(8, rect.width, true);
+    dataView.setUint32(12, rect.height, true);
+
+    dataView.setUint32(16, imageWidth, true);
+    dataView.setUint32(20, imageHeight, true);
+    dataView.setUint32(24, maxIterations, true);
+    dataView.setUint32(28, 0, true);
+
+    dataView.setFloat32(32, centerXParts.high, true);
+    dataView.setFloat32(36, centerXParts.low, true);
+    dataView.setFloat32(40, centerYParts.high, true);
+    dataView.setFloat32(44, centerYParts.low, true);
+
+    dataView.setFloat32(48, pixelScaleX, true);
+    dataView.setFloat32(52, pixelScaleY, true);
+    dataView.setFloat32(56, imageCenterX, true);
+    dataView.setFloat32(60, imageCenterY, true);
+
+    dataView.setFloat32(64, escapeRadius, true);
+    dataView.setFloat32(68, 0, true);
+    dataView.setFloat32(72, 0, true);
+    dataView.setFloat32(76, 0, true);
+
+    return buffer;
 }
 
 /**
- * createIterationDataFromGpuIterations
+ * Wandelt die aus der GPU gelesenen Ergebnisarrays in `IterationData` um.
+ *
+ * Der Shader schreibt Iterationszahlen als `u32`, während die Rendering-Pipeline
+ * im Hauptthread `Uint16Array` erwartet. Die Escape-Werte werden unverändert in
+ * ein eigenes `Float32Array` übernommen.
  * 
- * @param {PixelRect} rect 
- * @param {*} gpuIterations 
- * @param {ComputationSettings} computationSettings 
- * @returns {IterationData}
+ * @param {PixelRect}           rect                - Berechneter Pixelbereich.
+ * @param {Uint32Array}         gpuIterations       - Von der GPU gelesene Iterationszahlen.
+ * @param {Float32Array}        gpuEscapeValues     - Von der GPU gelesene Escape-Werte.
+ * @param {ComputationSettings} computationSettings - Einstellungen mit der maximalen Iterationszahl.
+ * @returns {IterationData} Iterationsdaten im Format der bestehenden Rendering-Pipeline.
  */
 function createIterationDataFromGpuIterations(
   rect,
@@ -561,29 +620,10 @@ function getWebGpuWorkerContext() {
  */
 
 /**
- * Entscheidet, ob die f32-Auflösung der GPU noch ausreichend für die Auflösung ist
- * 
- * @param {*} view 
- * @param {number} imageWidth 
- * @param {number} imageHeight 
- * @returns 
- */
-function shouldUseGpuForView(
-    view, 
-    imageWidth, 
-    imageHeight
-) {
-  const pixelWidth  = Math.abs(view.maxX - view.minX) / imageWidth;
-  const pixelHeight = Math.abs(view.maxY - view.minY) / imageHeight;
-
-  return Math.min(pixelWidth, pixelHeight) > 1e-7;
-}
-
-/**
- * Behandelt eine Berechnungsanfrage an den Dummy-WebGPU-Worker.
+ * Behandelt eine Berechnungsanfrage an den WebGPU-Mandelbrot-Worker.
  *
- * Aktuell wird bereits die WebGPU-Pipeline initialisiert. Die fachliche
- * Mandelbrot-Berechnung erfolgt weiterhin per JavaScript-Fallback.
+ * Die Anfrage wird auf der GPU berechnet und anschließend als standardisierte
+ * Erfolgsantwort an den Hauptthread zurückgesendet.
  * 
  * @param {WebGpuComputeRequestMessage} message - Eingehende Berechnungsanfrage.
  * @returns {void}

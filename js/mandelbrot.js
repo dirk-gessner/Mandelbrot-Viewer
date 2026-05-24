@@ -3,15 +3,42 @@
 // -----------------------------------------------------------------------------
 //
 // Diese Datei koordiniert die Mandelbrot-Berechnung aus Sicht des Hauptthreads.
-// Sie berechnet Pixel nicht selbst, sondern zerlegt Rechtecke in Teilaufgaben,
-// startet Web-Worker, sammelt deren IterationData-Ergebnisse ein und führt sie
-// wieder zu einer zusammenhängenden Matrix zusammen.
+// Sie berechnet Pixel nicht selbst, sondern entscheidet zwischen WebGPU- und
+// CPU-Backend, zerlegt CPU-Rechtecke in Teilaufgaben, startet Web-Worker,
+// sammelt deren IterationData-Ergebnisse ein und führt sie wieder zu einer
+// zusammenhängenden Matrix zusammen.
 //
-// Die eigentliche synchrone Punkt- und Rechteckberechnung liegt in
-// `mandelbrot-cpu-worker.js`.
+// Die eigentliche CPU-Berechnung liegt in `mandelbrot-cpu-worker.js`; die
+// WebGPU-Berechnung wird über `mandelbrot-webgpu.js` an den WebGPU-Worker
+// delegiert.
 // -----------------------------------------------------------------------------
 
+/**
+ * Kleinste Pixelgröße in der komplexen Ebene, ab der das f32-WebGPU-Backend
+ * noch verwendet wird.
+ *
+ * Unterhalb dieser Grenze wird auf das CPU-Backend ausgewichen, weil dessen
+ * JavaScript-number-Arithmetik für tiefe Zoomstufen mehr Präzision bietet.
+ *
+ * @type {number}
+ */
 const WEBGPU_MIN_PIXEL_SIZE = 1e-7;
+
+/**
+ * Aktiviert oder deaktiviert das WebGPU-Backend global.
+ *
+ * Wenn diese Option deaktiviert ist, verwendet die zentrale Berechnungsfassade
+ * immer den CPU-Pfad, unabhängig von der aktuellen Zoomstufe.
+ *
+ * @type {boolean}
+ */
+const USE_WEBGPU_BACKEND = true;
+
+/**
+ * Pfad zum CPU-Worker-Skript für Mandelbrot-Rechteckberechnungen.
+ *
+ * @type {string}
+ */
 const MANDELBROT_CPU_WORKER_SCRIPT = "./js/mandelbrot-cpu-worker.js";
 
 /**
@@ -365,7 +392,7 @@ async function computeMandelbrotRect(
       );
     }
   } else {
-      console.log(
+      console.warn(
         "Resolution limits for WebGPU (Float32) reached. Falling back to CPU (Float64) backend."
       );
 
