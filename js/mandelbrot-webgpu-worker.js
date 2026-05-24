@@ -204,92 +204,18 @@ let webGpuComputePipelinePromise = null;
  * @type {string}
  */
 const WEBGPU_COMPUTE_SHADER_SOURCE = `
-struct Params {
-  rectX: u32,
-  rectY: u32,
-  rectWidth: u32,
-  rectHeight: u32,
-
-  imageWidth: u32,
-  imageHeight: u32,
-  maxIterations: u32,
-  _pad0: u32,
-
-  minX: f32,
-  maxX: f32,
-  minY: f32,
-  maxY: f32,
-
-  escapeRadius: f32,
-  _pad1: f32,
-  _pad2: f32,
-  _pad3: f32,
-};
-
 @group(0) @binding(0)
-var<uniform> params: Params;
+var<storage, read_write> output: array<u32>;
 
-@group(0) @binding(1)
-var<storage, read_write> iterations: array<u32>;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+  let index = global_id.x;
 
-fn isInPeriod2Bulb(cx: f32, cy: f32) -> bool {
-  return (cx + 1.0) * (cx + 1.0) + cy * cy <= 0.0625;
-}
-
-fn isInMainCardioid(cx: f32, cy: f32) -> bool {
-  let q = (cx - 0.25) * (cx - 0.25) + cy * cy;
-  return q * (q + (cx - 0.25)) <= 0.25 * cy * cy;
-}
-
-@compute @workgroup_size(16, 16)
-fn main(
-  @builtin(global_invocation_id) globalId: vec3<u32>
-) {
-  let localX = globalId.x;
-  let localY = globalId.y;
-
-  if (localX >= params.rectWidth || localY >= params.rectHeight) {
+  if (index >= 256u) {
     return;
   }
 
-  let px = params.rectX + localX;
-  let py = params.rectY + localY;
-
-  let cx =
-    params.minX +
-    (f32(px) / f32(params.imageWidth)) *
-    (params.maxX - params.minX);
-
-  let cy =
-    params.minY +
-    (f32(py) / f32(params.imageHeight)) *
-    (params.maxY - params.minY);
-
-  let index = localY * params.rectWidth + localX;
-
-  if (isInPeriod2Bulb(cx, cy) || isInMainCardioid(cx, cy)) {
-    iterations[index] = params.maxIterations;
-    return;
-  }
-
-  var zx = 0.0;
-  var zy = 0.0;
-  var iteration = 0u;
-  let escapeRadiusSquared = params.escapeRadius * params.escapeRadius;
-
-  loop {
-    if (zx * zx + zy * zy >= escapeRadiusSquared || iteration >= params.maxIterations) {
-      break;
-    }
-
-    let temp = zx * zx - zy * zy + cx;
-    zy = 2.0 * zx * zy + cy;
-    zx = temp;
-
-    iteration = iteration + 1u;
-  }
-
-  iterations[index] = iteration;
+  output[index] = index;
 }
 `;
 
@@ -547,7 +473,6 @@ function getWebGpuWorkerContext() {
 async function handleComputeMandelbrotRectMessage(
     message
 ) {
-    await getWebGpuComputePipeline();
 
     const gpuTestResult = await runWebGpuComputePipelineTest();
 
