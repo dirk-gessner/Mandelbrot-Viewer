@@ -196,16 +196,100 @@ let webGpuWorkerContextPromise = null;
 let webGpuComputePipelinePromise = null;
 
 /**
- * Minimaler Compute-Shader zum Testen der WebGPU-Pipeline.
+ * Compute-Shader zur Berechnung der Mandelbrot-Iterationswerte.
  *
- * Der Shader berechnet noch keine Mandelbrot-Daten. Er dient nur dazu,
- * die Shader-Kompilierung und ComputePipeline-Erzeugung im Worker zu testen.
+ * In diesem ersten GPU-Schritt wird nur der Iterationsbuffer berechnet.
+ * Escape-Werte werden anschließend noch im JavaScript-Worker approximiert.
  *
  * @type {string}
  */
-const WEBGPU_PIPELINE_TEST_SHADER_SOURCE = `
-@compute @workgroup_size(1)
-fn main() {
+const WEBGPU_COMPUTE_SHADER_SOURCE = `
+struct Params {
+  rectX: u32,
+  rectY: u32,
+  rectWidth: u32,
+  rectHeight: u32,
+
+  imageWidth: u32,
+  imageHeight: u32,
+  maxIterations: u32,
+  _pad0: u32,
+
+  minX: f32,
+  maxX: f32,
+  minY: f32,
+  maxY: f32,
+
+  escapeRadius: f32,
+  _pad1: f32,
+  _pad2: f32,
+  _pad3: f32,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read_write> iterations: array<u32>;
+
+fn isInPeriod2Bulb(cx: f32, cy: f32) -> bool {
+  return (cx + 1.0) * (cx + 1.0) + cy * cy <= 0.0625;
+}
+
+fn isInMainCardioid(cx: f32, cy: f32) -> bool {
+  let q = (cx - 0.25) * (cx - 0.25) + cy * cy;
+  return q * (q + (cx - 0.25)) <= 0.25 * cy * cy;
+}
+
+@compute @workgroup_size(16, 16)
+fn main(
+  @builtin(global_invocation_id) globalId: vec3<u32>
+) {
+  let localX = globalId.x;
+  let localY = globalId.y;
+
+  if (localX >= params.rectWidth || localY >= params.rectHeight) {
+    return;
+  }
+
+  let px = params.rectX + localX;
+  let py = params.rectY + localY;
+
+  let cx =
+    params.minX +
+    (f32(px) / f32(params.imageWidth)) *
+    (params.maxX - params.minX);
+
+  let cy =
+    params.minY +
+    (f32(py) / f32(params.imageHeight)) *
+    (params.maxY - params.minY);
+
+  let index = localY * params.rectWidth + localX;
+
+  if (isInPeriod2Bulb(cx, cy) || isInMainCardioid(cx, cy)) {
+    iterations[index] = params.maxIterations;
+    return;
+  }
+
+  var zx = 0.0;
+  var zy = 0.0;
+  var iteration = 0u;
+  let escapeRadiusSquared = params.escapeRadius * params.escapeRadius;
+
+  loop {
+    if (zx * zx + zy * zy >= escapeRadiusSquared || iteration >= params.maxIterations) {
+      break;
+    }
+
+    let temp = zx * zx - zy * zy + cx;
+    zy = 2.0 * zx * zy + cy;
+    zx = temp;
+
+    iteration = iteration + 1u;
+  }
+
+  iterations[index] = iteration;
 }
 `;
 
@@ -224,7 +308,7 @@ async function initializeWebGpuComputePipeline() {
 
     const shaderModule = device.createShaderModule({
         label: "Mandelbrot pipeline test shader",
-        code: WEBGPU_PIPELINE_TEST_SHADER_SOURCE,
+        code: WEBGPU_COMPUTE_SHADER_SOURCE,
     });
 
     const computePipeline = await device.createComputePipelineAsync({
@@ -266,6 +350,99 @@ function getWebGpuComputePipeline() {
     }
 
     return webGpuComputePipelinePromise;
+}
+
+/**
+ * Führt einen einfachen Compute-Test auf der GPU aus.
+ *
+ * Der Shader schreibt für jedes Element seinen linearen Index in einen
+ * StorageBuffer. Anschließend werden die Daten zurück in ein Uint32Array
+ * gelesen.
+ *
+ * Diese Funktion dient ausschließlich zum Testen der GPU-Datenpipeline.
+ *
+ * @returns {Promise<Uint32Array>} Von der GPU erzeugte Testdaten.
+ */
+async function runWebGpuComputePipelineTest() {
+    const { device } = await getWebGpuWorkerContext();
+
+    const { computePipeline } = await getWebGpuComputePipeline();
+
+    const elementCount = 256;
+    const bufferSize = elementCount * Uint32Array.BYTES_PER_ELEMENT;
+
+    console.log("Running WebGPU compute pipeline test", {
+        elementCount,
+        bufferSize,
+    });
+
+    const storageBuffer = device.createBuffer({
+        label: "WebGPU pipeline test storage buffer",
+        size: bufferSize,
+        usage:
+            GPUBufferUsage.STORAGE |
+            GPUBufferUsage.COPY_SRC |
+            GPUBufferUsage.COPY_DST,
+    });
+
+    const readbackBuffer = device.createBuffer({
+        label: "WebGPU pipeline test readback buffer",
+        size: bufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const bindGroup = device.createBindGroup({
+        label: "WebGPU pipeline test bind group",
+        layout: computePipeline.getBindGroupLayout(0),
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: storageBuffer,
+                },
+            },
+        ],
+    });
+
+    const commandEncoder = device.createCommandEncoder({
+        label: "WebGPU pipeline test command encoder",
+    });
+
+    const computePass = commandEncoder.beginComputePass({
+        label: "WebGPU pipeline test compute pass",
+    });
+
+    computePass.setPipeline(computePipeline);
+    computePass.setBindGroup(0, bindGroup);
+
+    const workgroupSize = 64;
+    const workgroupCount = Math.ceil(elementCount / workgroupSize);
+
+    computePass.dispatchWorkgroups(workgroupCount);
+
+    computePass.end();
+
+    commandEncoder.copyBufferToBuffer(
+        storageBuffer,
+        0,
+        readbackBuffer,
+        0,
+        bufferSize
+    );
+
+    device.queue.submit([commandEncoder.finish()]);
+
+    await readbackBuffer.mapAsync(GPUMapMode.READ);
+
+    const mappedRange = readbackBuffer.getMappedRange();
+
+    const result = new Uint32Array(mappedRange.slice(0));
+
+    readbackBuffer.unmap();
+
+    console.log("WebGPU compute pipeline test result", result);
+
+    return result;
 }
 
 /**
@@ -370,7 +547,14 @@ function getWebGpuWorkerContext() {
 async function handleComputeMandelbrotRectMessage(
     message
 ) {
-    await getWebGpuComputePipeline(); 
+    await getWebGpuComputePipeline();
+
+    const gpuTestResult = await runWebGpuComputePipelineTest();
+
+    console.log(
+        "WebGPU compute pipeline test sample",
+        gpuTestResult.slice(0, 16)
+    );
 
     const result = gpuWorkerComputeMandelbrotRect(
         message.rect,
