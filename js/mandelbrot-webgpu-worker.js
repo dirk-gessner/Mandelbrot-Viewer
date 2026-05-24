@@ -7,9 +7,6 @@ console.log("Mandelbrot WebGPU worker script loaded");
 //
 // Diese Datei läuft in einem separaten Web-Worker-Kontext.
 //
-// In der ersten Ausbaustufe enthält sie noch keine echte WebGPU-Berechnung.
-// Sie dient zunächst als Dummy-Worker, um die Nachrichtenstruktur zwischen
-// Hauptthread und Worker stabil zu testen.
 // -----------------------------------------------------------------------------
 
 /**
@@ -352,33 +349,13 @@ let webGpuWorkerContextPromise = null;
  *
  * @type {Promise<WebGpuComputePipelineContext>|null}
  */
-let webGpuComputeTestPipelinePromise = null;
 let webGpuComputePipelinePromise = null;
 
 /**
  * Compute-Shader zur Berechnung der Mandelbrot-Iterationswerte.
  *
- * In diesem ersten GPU-Schritt wird nur der Iterationsbuffer berechnet.
- * Escape-Werte werden anschließend noch im JavaScript-Worker approximiert.
- *
  * @type {string}
  */
-const WEBGPU_PIPELINE_TEST_SHADER_SOURCE = `
-@group(0) @binding(0)
-var<storage, read_write> output: array<u32>;
-
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-  let index = global_id.x;
-
-  if (index >= 256u) {
-    return;
-  }
-
-  output[index] = index;
-}
-`;
-
 const MANDELBROT_ITERATIONS_SHADER_SOURCE = `
 struct Params {
   rectX: u32,
@@ -475,41 +452,8 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 /**
  * Initialisiert die WebGPU-Compute-Pipeline für die Mandelbrot-Berechnung.
  *
- * In diesem Zwischenschritt wird nur eine minimale Test-Pipeline erzeugt.
- * Die Pipeline wird noch nicht für echte Mandelbrot-Berechnungen verwendet.
- *
  * @returns {Promise<WebGpuComputePipelineContext>} Initialisierte Pipeline-Ressourcen.
  */
-async function initializeWebGpuComputeTestPipeline() {
-    const { device } = await getWebGpuWorkerContext();
-
-    console.log("Initializing WebGPU compute test pipeline");
-
-    const shaderModule = device.createShaderModule({
-        label: "WebGPU compute test shader",
-        code: WEBGPU_PIPELINE_TEST_SHADER_SOURCE,
-    });
-
-    const computePipeline = await device.createComputePipelineAsync({
-        label: "WebGPU compute test pipeline",
-        layout: "auto",
-        compute: {
-            module: shaderModule,
-            entryPoint: "main",
-        },
-    });
-
-    console.log("WebGPU compute test pipeline initialized", {
-        shaderModule,
-        computePipeline,
-    });
-
-    return {
-        shaderModule,
-        computePipeline,
-    };
-}
-
 async function initializeWebGpuComputePipeline() {
     const { device } = await getWebGpuWorkerContext();
 
@@ -549,18 +493,6 @@ async function initializeWebGpuComputePipeline() {
  *
  * @returns {Promise<WebGpuComputePipelineContext>} Initialisierte Pipeline-Ressourcen.
  */
-function getWebGpuComputeTestPipeline() {
-    if (!webGpuComputeTestPipelinePromise) {
-        webGpuComputeTestPipelinePromise =
-            initializeWebGpuComputeTestPipeline().catch((error) => {
-                webGpuComputeTestPipelinePromise = null;
-                throw error;
-            });
-    }
-
-    return webGpuComputeTestPipelinePromise;
-}
-
 function getWebGpuComputePipeline() {
     if (!webGpuComputePipelinePromise) {
         webGpuComputePipelinePromise =
@@ -656,99 +588,6 @@ function createIterationDataFromGpuIterations(
     escapeValues,
     minIterations,
   };
-}
-
-/**
- * Führt einen einfachen Compute-Test auf der GPU aus.
- *
- * Der Shader schreibt für jedes Element seinen linearen Index in einen
- * StorageBuffer. Anschließend werden die Daten zurück in ein Uint32Array
- * gelesen.
- *
- * Diese Funktion dient ausschließlich zum Testen der GPU-Datenpipeline.
- *
- * @returns {Promise<Uint32Array>} Von der GPU erzeugte Testdaten.
- */
-async function runWebGpuComputePipelineTest() {
-    const { device } = await getWebGpuWorkerContext();
-
-    const { computePipeline } = await getWebGpuComputeTestPipeline();
-
-    const elementCount = 256;
-    const bufferSize = elementCount * Uint32Array.BYTES_PER_ELEMENT;
-
-    console.log("Running WebGPU compute pipeline test", {
-        elementCount,
-        bufferSize,
-    });
-
-    const storageBuffer = device.createBuffer({
-        label: "WebGPU pipeline test storage buffer",
-        size: bufferSize,
-        usage:
-            GPUBufferUsage.STORAGE |
-            GPUBufferUsage.COPY_SRC |
-            GPUBufferUsage.COPY_DST,
-    });
-
-    const readbackBuffer = device.createBuffer({
-        label: "WebGPU pipeline test readback buffer",
-        size: bufferSize,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-
-    const bindGroup = device.createBindGroup({
-        label: "WebGPU pipeline test bind group",
-        layout: computePipeline.getBindGroupLayout(0),
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: storageBuffer,
-                },
-            },
-        ],
-    });
-
-    const commandEncoder = device.createCommandEncoder({
-        label: "WebGPU pipeline test command encoder",
-    });
-
-    const computePass = commandEncoder.beginComputePass({
-        label: "WebGPU pipeline test compute pass",
-    });
-
-    computePass.setPipeline(computePipeline);
-    computePass.setBindGroup(0, bindGroup);
-
-    const workgroupSize = 64;
-    const workgroupCount = Math.ceil(elementCount / workgroupSize);
-
-    computePass.dispatchWorkgroups(workgroupCount);
-
-    computePass.end();
-
-    commandEncoder.copyBufferToBuffer(
-        storageBuffer,
-        0,
-        readbackBuffer,
-        0,
-        bufferSize
-    );
-
-    device.queue.submit([commandEncoder.finish()]);
-
-    await readbackBuffer.mapAsync(GPUMapMode.READ);
-
-    const mappedRange = readbackBuffer.getMappedRange();
-
-    const result = new Uint32Array(mappedRange.slice(0));
-
-    readbackBuffer.unmap();
-
-    console.log("WebGPU compute pipeline test result", result);
-
-    return result;
 }
 
 /**
@@ -872,13 +711,6 @@ function shouldUseGpuForView(
 async function handleComputeMandelbrotRectMessage(
     message
 ) {
-
-    const gpuTestResult = await runWebGpuComputePipelineTest();
-    console.log(
-        "WebGPU compute pipeline test sample",
-        gpuTestResult.slice(0, 16)
-    );
-
     let result; 
     if (shouldUseGpuForView(
             message.computationSettings.view,
