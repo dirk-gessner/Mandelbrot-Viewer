@@ -13,6 +13,10 @@
 // delegiert.
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Konstanten und globale Einstellungen
+// -----------------------------------------------------------------------------
+
 /**
  * Kleinste Pixelgröße in der komplexen Ebene, ab der das f32-WebGPU-Backend
  * noch verwendet wird.
@@ -48,6 +52,18 @@ const MANDELBROT_CPU_WORKER_SCRIPT = "./js/fractals/mandelbrot/mandelbrot-cpu-wo
  * @type {number}
  */
 const MANDELBROT_REFERENCE_CANDIDATE_LIMIT = 16;
+
+/**
+ * Maximalwerte für die Iterationen bei der Ermittlung der Referenz-Orbits.
+ * 
+ * @type {number}
+ */
+const MANDELBROT_REFERENCE_ORBIT_ITERATIONS = 50000;
+const MANDELBROT_REFERENCE_ORBIT_ESCAPE_RADIUS = 256;
+
+// -----------------------------------------------------------------------------
+// Funktionen
+// -----------------------------------------------------------------------------
 
 /**
  * Teilt ein Pixelrechteck horizontal in mehrere Teilrechtecke.
@@ -447,6 +463,81 @@ async function computeMandelbrot(
 // Hilfsfunktionen für die Ermittlung der Referenzkandidaten für 
 // Perturbationsberechnungen
 // -----------------------------------------------------------------------------
+
+/**
+ * @typedef {Object} MandelbrotReferenceOrbit
+ * @property {ReferenceCandidate}   referenceCandidate  - Kandidat, fuer den der Orbit berechnet wurde.
+ * @property {Float64Array}         zx                  - Realteile des Referenzorbits.
+ * @property {Float64Array}         zy                  - Imaginaerteile des Referenzorbits.
+ * @property {number}               iterations          - (integer) Anzahl berechneter Orbitpunkte.
+ * @property {number}               escapeIteration     - (integer) Erste Escape-Iteration oder -1, wenn kein Escape erreicht wurde.
+ * @property {number}               escapeValue         - (decimal) Quadratischer Betrag am Ende der Berechnung.
+ */
+
+/**
+ * Berechnet den Referenzorbit für einen gegebenen Kandidaten.
+ * 
+ * @param {ReferenceCandidate} referenceCandidate   - Kandidat, für den der Referenzorbit berechnet werden soll.
+ * @param {number} maxIterations                    - (integer) Maximale Anzahl von Iterationen für die Berechnung des Orbits.
+ * @param {number} escapeRadius                     - (decimal) Radius, bei dem ein Orbit als "escaped" gilt.   
+ * @returns {MandelbrotReferenceOrbit}              - Berechneter Referenzorbit mit zugehörigen Informationen.     
+ */
+function computeMandelbrotReferenceOrbit(
+    referenceCandidate,
+    maxIterations = MANDELBROT_REFERENCE_ORBIT_ITERATIONS,
+    escapeRadius  = MANDELBROT_REFERENCE_ORBIT_ESCAPE_RADIUS
+) {
+    const zx = new Float64Array(maxIterations + 1);
+    const zy = new Float64Array(maxIterations + 1);
+
+    const cx = referenceCandidate.cx;
+    const cy = referenceCandidate.cy;
+    const escapeRadiusSquared = escapeRadius * escapeRadius;
+
+    let escapeIteration = -1;
+    let escapeValue = 0;
+    let iteration = 0;
+
+    zx[0] = 0;
+    zy[0] = 0;
+
+    for (iteration = 0; iteration < maxIterations; iteration++) {
+        const currentZx = zx[iteration];
+        const currentZy = zy[iteration];
+
+        escapeValue = currentZx * currentZx + currentZy * currentZy;
+
+        if (escapeValue >= escapeRadiusSquared) {
+            escapeIteration = iteration;
+            break;
+        }
+
+        const nextZx = currentZx * currentZx - currentZy * currentZy + cx;
+        const nextZy = 2 * currentZx * currentZy + cy;
+
+        zx[iteration + 1] = nextZx;
+        zy[iteration + 1] = nextZy;
+    }
+
+    const computedIterations = escapeIteration >= 0
+        ? escapeIteration
+        : maxIterations;
+
+    if (escapeIteration < 0) {
+        const finalZx = zx[computedIterations];
+        const finalZy = zy[computedIterations];
+        escapeValue = finalZx * finalZx + finalZy * finalZy;
+    }
+
+    return {
+        referenceCandidate,
+        zx: zx.slice(0, computedIterations + 1),
+        zy: zy.slice(0, computedIterations + 1),
+        iterations: computedIterations,
+        escapeIteration,
+        escapeValue,
+    };
+}
 
 /**
  * Vergleicht zwei Referenzkandidaten nach ihrer allgemeinen Qualitaet.
