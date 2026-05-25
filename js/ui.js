@@ -23,6 +23,7 @@ const app = Vue.createApp({
             workerCountInput: multiThreadSettings.workerCount, 
             tasksPerWorkerInput: multiThreadSettings.tasksPerWorker, 
             lastIterationDataUpdateSeconds : runtimeStats.lastIterationDataUpdateSeconds,
+            lastComputationBackend: runtimeStats.lastComputationBackend,
 
             availablePalettes: colorPalettes,
             selectedPaletteKey: renderSettings.paletteKey,
@@ -50,6 +51,7 @@ const app = Vue.createApp({
             this.viewInfo.maxY = view.maxY;
             this.viewInfo.zoomLevel = ((initialView.maxX - initialView.minX) / (view.maxX - view.minX));
             this.lastIterationDataUpdateSeconds = runtimeStats.lastIterationDataUpdateSeconds;            
+            this.lastComputationBackend = runtimeStats.lastComputationBackend;
         },
 
         updateMaxIterations() {

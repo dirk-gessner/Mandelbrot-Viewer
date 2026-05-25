@@ -364,10 +364,10 @@ function shouldUseWebGpuForView(view, imageWidth, imageHeight) {
  * @returns {Promise<IterationData>}                 - Berechnete Iterationsdaten für `rect`.
  */
 async function computeMandelbrotRect(
-  rect,
-  imageWidth,
-  imageHeight,
-  computationSettings
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings
 ) {
     const useWebGpuBackend =
         USE_WEBGPU_BACKEND &&
@@ -377,33 +377,35 @@ async function computeMandelbrotRect(
             imageHeight
         );
 
-  if (useWebGpuBackend) {
-    try {
-      return await computeMandelbrotRectWebGpu(
+    if (useWebGpuBackend) {
+        try {
+            runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_WEBGPU;
+            return await computeMandelbrotRectWebGpu(
+                rect,
+                imageWidth,
+                imageHeight,
+                computationSettings
+            );
+        } catch (error) {
+            console.warn(
+                "WebGPU Mandelbrot backend failed. Falling back to CPU backend.",
+                error
+            );
+        }
+    } else {
+        console.warn(
+            "Resolution limits for WebGPU (Float32) reached. Falling back to CPU (Float64) backend."
+        );
+
+    }
+
+    runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_CPU;
+    return computeMandelbrotRectCpu(
         rect,
         imageWidth,
         imageHeight,
         computationSettings
-      );
-    } catch (error) {
-      console.warn(
-        "WebGPU Mandelbrot backend failed. Falling back to CPU backend.",
-        error
-      );
-    }
-  } else {
-      console.warn(
-        "Resolution limits for WebGPU (Float32) reached. Falling back to CPU (Float64) backend."
-      );
-
-  }
-
-  return computeMandelbrotRectCpu(
-    rect,
-    imageWidth,
-    imageHeight,
-    computationSettings
-  );
+    );
 }
 
 /**
