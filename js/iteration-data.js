@@ -992,3 +992,94 @@ function refreshReferenceCandidates(
         iterationData.escapeValues
     );
 }
+
+/**
+ * Waehlt den besten Referenzkandidaten fuer eine Ziel-View aus.
+ *
+ * Die Funktion bevorzugt Kandidaten, die innerhalb der Ziel-View liegen. Unter
+ * diesen Kandidaten gewinnt zuerst der hoehere Iterationswert. Bei gleichem
+ * Iterationswert wird der Kandidat bevorzugt, der naeher an der Mitte der
+ * Ziel-View liegt. Der Escape-Wert dient zuletzt als Tie-Breaker; ein kleinerer
+ * Escape-Wert ist besser.
+ *
+ * Falls kein Kandidat innerhalb der Ziel-View liegt, wird der Kandidat gewaehlt,
+ * der der Mitte der Ziel-View am naechsten liegt. Auch in diesem Fall dienen
+ * Iterationswert und Escape-Wert als nachrangige Tie-Breaker.
+ *
+ * @param {ReferenceCandidate[]} referenceCandidates - Verfuegbare Referenzkandidaten.
+ * @param {View}                 view                - Ziel-View, fuer die ein Referenzpunkt gesucht wird.
+ * @returns {?ReferenceCandidate} Bester Kandidat fuer die Ziel-View oder null, wenn keine Kandidaten vorhanden sind.
+ */
+function selectReferenceCandidateForView(
+    referenceCandidates,
+    view
+) {
+    if (!referenceCandidates || referenceCandidates.length === 0) {
+        return null;
+    }
+
+    const centerX = (view.minX + view.maxX) / 2;
+    const centerY = (view.minY + view.maxY) / 2;
+
+    const viewWidth = Math.abs(view.maxX - view.minX);
+    const viewHeight = Math.abs(view.maxY - view.minY);
+
+    // Absicherung gegen entartete Views, damit die Distanzbewertung nicht durch
+    // Division durch 0 oder extrem kleine Werte instabil wird.
+    const safeViewWidth = Math.max(viewWidth, Number.EPSILON);
+    const safeViewHeight = Math.max(viewHeight, Number.EPSILON);
+
+    function isCandidateInsideView(candidate) {
+        return candidate.cx >= Math.min(view.minX, view.maxX) &&
+               candidate.cx <= Math.max(view.minX, view.maxX) &&
+               candidate.cy >= Math.min(view.minY, view.maxY) &&
+               candidate.cy <= Math.max(view.minY, view.maxY);
+    }
+
+    function getNormalizedDistanceToViewCenter(candidate) {
+        const normalizedDx = (candidate.cx - centerX) / safeViewWidth;
+        const normalizedDy = (candidate.cy - centerY) / safeViewHeight;
+
+        return Math.sqrt(
+            normalizedDx * normalizedDx +
+            normalizedDy * normalizedDy
+        );
+    }
+
+    function compareCandidates(a, b) {
+        const aInside = isCandidateInsideView(a);
+        const bInside = isCandidateInsideView(b);
+
+        if (aInside !== bInside) {
+            return aInside ? -1 : 1;
+        }
+
+        const aDistance = getNormalizedDistanceToViewCenter(a);
+        const bDistance = getNormalizedDistanceToViewCenter(b);
+
+        // Innerhalb der Ziel-View ist die Orbit-Qualitaet wichtiger als die
+        // exakte Lage. Ausserhalb der Ziel-View ist Naehe wichtiger, weil der
+        // Kandidat sonst als Referenzpunkt fuer diese View wenig hilfreich ist.
+        if (aInside && bInside) {
+            if (a.iterations !== b.iterations) {
+                return b.iterations - a.iterations;
+            }
+
+            if (aDistance !== bDistance) {
+                return aDistance - bDistance;
+            }
+        } else {
+            if (aDistance !== bDistance) {
+                return aDistance - bDistance;
+            }
+
+            if (a.iterations !== b.iterations) {
+                return b.iterations - a.iterations;
+            }
+        }
+
+        return a.escapeValue - b.escapeValue;
+    }
+
+    return [...referenceCandidates].sort(compareCandidates)[0];
+}

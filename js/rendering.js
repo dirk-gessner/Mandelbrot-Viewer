@@ -422,6 +422,71 @@ function drawSelectionFrame(
 }
 
 /**
+ * Zeichnet Referenzkandidaten als Debug-Overlay auf den Canvas.
+ *
+ * Die Markierungen werden nicht in die berechneten Bilddaten geschrieben,
+ * sondern nur ueber das aktuelle Canvas-Bild gelegt. Normale Kandidaten
+ * erhalten einen kleinen Kreis; der fuer die aktuelle View ausgewaehlte
+ * Kandidat wird groesser und andersfarbig markiert.
+ *
+ * @param {CanvasRenderingContext2D} ctx - Zeichenkontext des Fraktal-Canvas.
+ * @param {IterationData} iterationData - Aktuelle Iterationsdaten.
+ * @param {View} view - Aktuelle View fuer die Auswahl des besten Kandidaten.
+ * @param {number} pixelDx - Horizontale Anzeigeverschiebung beim Panning.
+ * @param {number} pixelDy - Vertikale Anzeigeverschiebung beim Panning.
+ * @returns {void}
+ */
+function drawReferenceCandidateOverlay(
+    ctx,
+    iterationData,
+    view,
+    pixelDx,
+    pixelDy
+) {
+    if (!iterationData?.referenceCandidates?.length) {
+        return;
+    }
+
+    const selectedCandidate = selectReferenceCandidateForView(
+        iterationData.referenceCandidates,
+        view
+    );
+
+    ctx.save();
+
+    for (const candidate of iterationData.referenceCandidates) {
+        const x = candidate.pixelX + pixelDx;
+        const y = candidate.pixelY + pixelDy;
+
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(136, 255, 0, 0.99)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    if (selectedCandidate) {
+        const x = selectedCandidate.pixelX + pixelDx;
+        const y = selectedCandidate.pixelY + pixelDy;
+
+        ctx.beginPath();
+        ctx.arc(x, y, 10, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(255, 0, 180, 1)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(x - 4, y);
+        ctx.lineTo(x + 4, y);
+        ctx.moveTo(x, y - 4);
+        ctx.lineTo(x, y + 4);
+        ctx.stroke();
+    }
+
+    ctx.restore();
+}
+
+/**
  * Zeichnet die aktuellen ImageData auf den Canvas 
  * und ergänzt ggfs. den aktiven selectionFrame.
  *
@@ -450,6 +515,14 @@ function drawScene(pixelDx = 0, pixelDy = 0) {
     if (selection.active) {
         drawSelectionFrame(ctx, selection);
     }
+
+    drawReferenceCandidateOverlay(
+        ctx,
+        iterationData,
+        computationSettings.view,
+        pixelDx,
+        pixelDy
+    );    
 
     app.updateInfo();
 }
