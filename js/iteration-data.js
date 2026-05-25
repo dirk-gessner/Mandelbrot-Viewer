@@ -342,7 +342,10 @@ async function computeShiftedIterationData(
     // da sich durch die Verschiebung neue Bereiche mit möglicherweise 
     // niedrigeren Iterationszahlen ergeben können
     newData.minIterations = findMinIterations(newData.iterations);
-
+    newData.referenceCandidates = refreshReferenceCandidates(
+        newData, 
+        computationSettings.view
+    );
     return newData;
 }
 
@@ -532,6 +535,10 @@ async function fillDirtyResizeRects(
     }
 
     newData.minIterations = findMinIterations(newData.iterations);
+    newData.referenceCandidates = refreshReferenceCandidates(
+        newData, 
+        computationSettings.view
+    );
     return newData; 
 }
 
@@ -675,8 +682,9 @@ async function resizeIterationData(
         copyIterationRect(rectData, newData, copyRegion);
 
         newData.minIterations = findMinIterations(newData.iterations);
-        newData.referenceCandidates = mergeReferenceCandidates(
-            rectData.referenceCandidates
+        newData.referenceCandidates = refreshReferenceCandidates(
+            newData, 
+            computationSettings.view
         );
 
         return {
@@ -905,7 +913,9 @@ function collectReferenceCandidatesFromArrays(
     escapeValues,
     limit = REFERENCE_CANDIDATE_LIMIT
 ) {
-    const candidates = [];
+    const gridColumns = 4;
+    const gridRows = 4;
+    const candidatesByCell = new Array(gridColumns * gridRows).fill(null);
     const { minX, maxX, minY, maxY } = view;
 
     for (let localY = 0; localY < rect.height; localY++) {
@@ -923,21 +933,62 @@ function collectReferenceCandidatesFromArrays(
                 escapeValue: escapeValues[index],
             };
 
-            candidates.push(candidate);
+            const cellX = Math.min(
+                gridColumns - 1,
+                Math.floor((pixelX / imageWidth) * gridColumns)
+            );
 
-            candidates.sort((a, b) => {
-                if (b.iterations !== a.iterations) {
-                    return b.iterations - a.iterations;
-                }
+            const cellY = Math.min(
+                gridRows - 1,
+                Math.floor((pixelY / imageHeight) * gridRows)
+            );
 
-                return a.escapeValue - b.escapeValue;
-            });
+            const cellIndex = cellY * gridColumns + cellX;
+            const currentCandidate = candidatesByCell[cellIndex];
 
-            if (candidates.length > limit) {
-                candidates.length = limit;
+            if (
+                !currentCandidate ||
+                candidate.iterations > currentCandidate.iterations ||
+                (
+                    candidate.iterations === currentCandidate.iterations &&
+                    candidate.escapeValue < currentCandidate.escapeValue
+                )
+            ) {
+                candidatesByCell[cellIndex] = candidate;
             }
         }
     }
 
-    return candidates;
+    return mergeReferenceCandidates(
+        candidatesByCell.filter(candidate => candidate !== null)
+    ).slice(0, limit);
+}
+
+/**
+ * Ermittelt die Referenzkandidaten einer vollstaendigen Iterationsmatrix neu.
+ *
+ * Die Funktion sammelt Kandidaten aus den kompletten `iterations`- und
+ * `escapeValues`-Arrays. Das ist sinnvoll, wenn eine Matrix aus kopierten und
+ * neu berechneten Bereichen zusammengesetzt wurde, z.B. nach Pan- oder
+ * Resize-Operationen. Dadurch werden die Kandidaten wieder passend zur gesamten
+ * aktuellen Zielmatrix verteilt.
+ *
+ * Das uebergebene `iterationData`-Objekt wird nicht veraendert.
+ *
+ * @param {IterationData} iterationData - Vollstaendige Iterationsmatrix, fuer die Kandidaten ermittelt werden sollen.
+ * @param {View}          view          - Zur Iterationsmatrix gehoerender Ausschnitt der komplexen Ebene.
+ * @returns {ReferenceCandidate[]} Neu ermittelte Referenzkandidaten.
+ */
+function refreshReferenceCandidates(
+    iterationData,
+    view
+) {
+    return collectReferenceCandidatesFromArrays(
+        { x: 0, y: 0, width: iterationData.width, height: iterationData.height },
+        iterationData.width,
+        iterationData.height,
+        view,
+        iterationData.iterations,
+        iterationData.escapeValues
+    );
 }
