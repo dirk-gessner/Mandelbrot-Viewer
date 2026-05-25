@@ -7,8 +7,6 @@
 // Iterations-Matrix
 // -----------------------------------------------------------------------------
 
-const REFERENCE_CANDIDATE_LIMIT = 16;
-
 /**
  * Lineares Feld mit einem Iterationswert je Pixel.
  *
@@ -299,11 +297,6 @@ async function computeShiftedIterationData(
 
     // Daten des nach der Verschiebung noch sichtbaren Bereichs übernehmen
     copyIterationRect( oldData, newData, copyRegion) ; 
-    newData.referenceCandidates = shiftReferenceCandidates(
-        oldData.referenceCandidates,
-        dx, dy,
-        width, height
-    );
 
     // ermittle die neu sichtbar gewordenen Bereiche
     // returns: [{x, y, width, height}, {x, y, width, height}, ...]
@@ -332,22 +325,27 @@ async function computeShiftedIterationData(
         // berechnete Daten des Rechtecks in den neuen Cache 
         // an Stelle (rect.x, rect.y) übernehmen
         copyIterationRect(rectData, newData, copyRegion);
-        newData.referenceCandidates = mergeReferenceCandidates(
-            newData.referenceCandidates,
-            rectData.referenceCandidates
-        );
     }
 
     // Aktualisiere die minimale Iterationsanzahl im neuen Cache, 
     // da sich durch die Verschiebung neue Bereiche mit möglicherweise 
     // niedrigeren Iterationszahlen ergeben können
     newData.minIterations = findMinIterations(newData.iterations);
-    newData.referenceCandidates = refreshReferenceCandidates(
-        newData, 
-        computationSettings.view
-    );
     return newData;
 }
+
+/**
+ * Ergaenzt oder aktualisiert abgeleitete Metadaten einer fertigen Iterationsmatrix.
+ *
+ * Die Funktion wird erst aufgerufen, wenn eine vollstaendige Zielmatrix vorliegt.
+ * Fraktalspezifische Implementierungen koennen hier z.B. Referenzkandidaten
+ * fuer spaetere Berechnungen ermitteln.
+ *
+ * @callback FinalizeIterationData
+ * @param {IterationData} iterationData - Vollstaendige Iterationsmatrix.
+ * @param {ComputationSettings} computationSettings - Einstellungen der zugehoerigen Berechnung.
+ * @returns {IterationData} Finalisierte Iterationsmatrix.
+ */
 
 /**
  * Aktualisiert den globalen Iterationsdaten-Cache nach einem Shift (dx, dy).
@@ -356,15 +354,17 @@ async function computeShiftedIterationData(
  * Sie verschiebt den vorhandenen Cache und berechnet nur neu sichtbar gewordene
  * Bereiche nach.
  *
- * @param {number}               dx - (integer) Horizontale Verschiebung in Pixeln.
- * @param {number}               dy - (integer) Vertikale Verschiebung in Pixeln.
- * @param {ComputeIterationRect} [computeFn=computeMandelbrotRect] - Funktion zur Berechnung neu sichtbarer Rechtecke.
- * @throws {Error}                  - Wenn kein Iterationsdaten-Cache vorhanden ist.
+ * @param {number}                dx         - (integer) Horizontale Verschiebung in Pixeln.
+ * @param {number}                dy         - (integer) Vertikale Verschiebung in Pixeln.
+ * @param {ComputeIterationRect}  computeFn  - Funktion zur Berechnung neu sichtbarer Rechtecke.
+ * @param {FinalizeIterationData} finalizeFn - Funktion zur Finalisierung der neuen Iterationsdaten.
+ * @throws {Error}                           - Wenn kein Iterationsdaten-Cache vorhanden ist.
  * @returns {Promise<void>}
  */
 async function updateIterationDataByShift(
     dx, dy, 
-    computeFn = computeMandelbrotRect
+    computeFn = computeMandelbrotRect, 
+    finalizeFn = finalizeMandelbrot,
 ) {
 
     // Wenn kein Cache vorhanden ist, einfach neu berechnen
@@ -375,10 +375,16 @@ async function updateIterationDataByShift(
     // Iterationsdaten verschieben
     // computeMandelbrotRect als Parameter austauschbar
     iterationData = await computeShiftedIterationData(
-                                iterationData, 
-                                dx, dy, 
-                                computeFn, 
-                                computationSettings ); 
+        iterationData, 
+        dx, dy, 
+        computeFn, 
+        computationSettings 
+    ); 
+
+    iterationData = finalizeFn(
+        iterationData, 
+        computationSettings 
+    ); 
 }
 
 // -----------------------------------------------------------------------------
@@ -528,17 +534,9 @@ async function fillDirtyResizeRects(
         // berechnete Daten des Rechtecks in den neuen Cache 
         // an Stelle (rect.x, rect.y) übernehmen
         copyIterationRect(rectData, newData, copyRegion); 
-        newData.referenceCandidates = mergeReferenceCandidates(
-            newData.referenceCandidates,
-            rectData.referenceCandidates
-        );
     }
 
     newData.minIterations = findMinIterations(newData.iterations);
-    newData.referenceCandidates = refreshReferenceCandidates(
-        newData, 
-        computationSettings.view
-    );
     return newData; 
 }
 
@@ -598,13 +596,6 @@ async function expandIterationData(
 
     // Daten aus oldData (preservedRect) nach newData kopieren
     copyIterationRect(oldData, newData, copyRegion);
-    newData.referenceCandidates = shiftReferenceCandidates(
-        oldData.referenceCandidates,
-        preservedRect.x,
-        preservedRect.y,
-        newSize.width,
-        newSize.height
-    );
 
     return await fillDirtyResizeRects( 
         newData, 
@@ -624,12 +615,13 @@ async function expandIterationData(
  * - Vergrößerung: die Matrix wird horizontal und/oder vertikal erweitert,
  *   wobei vorhandene Daten übernommen und nur neue Bereiche berechnet werden
  *
- * @param {IterationData}        oldData             - Bisherige Iterationsdaten.
- * @param {View}                 oldView             - View, die zu `oldData` gehört.
- * @param {View}                 newView             - Gewünschte View für die neue Canvas-Größe.
- * @param {ImageSize}            oldSize             - (integer) Bisherige Canvas-Größe.
- * @param {ImageSize}            newSize             - (integer) Neue Canvas-Größe.
- * @param {ComputeIterationRect} computeFn           - Funktion zur Berechnung einzelner Rechtecke.
+ * @param {IterationData}         oldData            - Bisherige Iterationsdaten.
+ * @param {View}                  oldView            - View, die zu `oldData` gehört.
+ * @param {View}                  newView            - Gewünschte View für die neue Canvas-Größe.
+ * @param {ImageSize}             oldSize            - (integer) Bisherige Canvas-Größe.
+ * @param {ImageSize}             newSize            - (integer) Neue Canvas-Größe.
+ * @param {ComputeIterationRect}  computeFn          - Funktion zur Berechnung einzelner Rechtecke.
+ * @param {FinalizeIterationData} finalizeFn         - Funktion zur Finalisierung der neuen Iterationsdaten.
  * @param {ComputationSettings}  computationSettings - Berechnungseinstellungen.
  * @throws {Error}                                   - Wenn keine alten Iterationsdaten übergeben werden.
  * @returns {Promise<ResizeIterationDataResult>}     - Angepasste Iterationsdaten und die dazu passende View.
@@ -641,6 +633,7 @@ async function resizeIterationData(
     oldSize, 
     newSize,
     computeFn = computeMandelbrotRect,
+    finalizeFn = finalizeMandelbrot, 
     computationSettings 
 ) {
     
@@ -682,13 +675,14 @@ async function resizeIterationData(
         copyIterationRect(rectData, newData, copyRegion);
 
         newData.minIterations = findMinIterations(newData.iterations);
-        newData.referenceCandidates = refreshReferenceCandidates(
-            newData, 
-            computationSettings.view
-        );
 
+        const finalizedData = finalizeFn(
+            newData, 
+            copySettingsWithView(computationSettings, newView)
+        ); 
+    
         return {
-            iterationData:  newData, 
+            iterationData:  finalizedData, 
             view:           newView, 
         }
     }
@@ -743,6 +737,11 @@ async function resizeIterationData(
         currentSize = nextSize;
     }
 
+    currentData = finalizeFn(
+        currentData, 
+        copySettingsWithView(computationSettings, currentView)
+    ); 
+
     return {
         iterationData:  currentData, 
         view:           currentView, 
@@ -771,11 +770,13 @@ async function resizeIterationData(
  * `computationSettings` und schreibt das Ergebnis in den globalen Cache
  * `iterationData`.
  *
- * @param {ComputeIterationData} [computeFn=computeMandelbrot] - Funktion zur vollständigen Berechnung.
+ * @param {ComputeIterationData}  computeFn         - Funktion zur vollständigen Berechnung.
+ * @param {FinalizeIterationData} finalizeFn        - Funktion zur Finalisierung der berechneten Daten.
  * @returns {Promise<void>}
  */
 async function computeIterationData(
-    computeFn = computeMandelbrot
+    computeFn = computeMandelbrot, 
+    finalizeFn = finalizeMandelbrot
 ) {
 
     const imageSize = getCanvasImageSize() 
@@ -788,6 +789,11 @@ async function computeIterationData(
                         imageSize.height, 
                         computationSettings)
     );
+
+    iterationData = finalizeFn (
+        iterationData, 
+        computationSettings, 
+    );
 }
 
 
@@ -797,289 +803,13 @@ async function computeIterationData(
 // -----------------------------------------------------------------------------
 
 /**
- * Fuehrt mehrere Kandidatenlisten zusammen und reduziert sie auf die besten
- * Referenzkandidaten.
+ * Standard-Finalisierung fuer Fraktale ohne zusaetzliche Iterationsmetadaten.
  *
- * Die Bewertung ist bewusst einfach: Kandidaten mit hoeherem Iterationswert
- * sind besser. Bei gleichem Iterationswert wird der kleinere Escape-Wert
- * bevorzugt, weil dieser Punkt tendenziell weniger stark divergiert ist.
- *
- * `undefined` oder leere Listen sind erlaubt, damit Aufrufer nicht an jeder
- * Stelle defensiv pruefen muessen, ob ein Ergebnis bereits Kandidaten enthaelt.
- *
- * @param {...ReferenceCandidate[]} candidateLists - Kandidatenlisten, die zusammengefuehrt werden sollen.
- * @returns {ReferenceCandidate[]} Die besten Kandidaten, absteigend nach Qualitaet sortiert.
+ * @param {IterationData} iterationData - Fertige Iterationsmatrix.
+ * @returns {IterationData} Unveraenderte Iterationsmatrix.
  */
-function mergeReferenceCandidates(
-    ...candidateLists
+function finalizeIterationDataDefault(
+    iterationData
 ) {
-    const candidates = [];
-
-    for (const candidateList of candidateLists) {
-        if (!candidateList) {
-            continue;
-        }
-
-        for (const candidate of candidateList) {
-            candidates.push(candidate);
-        }
-    }
-
-    candidates.sort((a, b) => {
-        if (b.iterations !== a.iterations) {
-            return b.iterations - a.iterations;
-        }
-
-        return a.escapeValue - b.escapeValue;
-    });
-
-    return candidates.slice(0, REFERENCE_CANDIDATE_LIMIT);
-}
-
-/**
- * Verschiebt Referenzkandidaten um eine Pixelverschiebung und entfernt
- * Kandidaten, die danach ausserhalb der Zielmatrix liegen.
- *
- * Diese Funktion passt zur Pan-Logik: vorhandene Iterationsdaten werden bei
- * einer Verschiebung im neuen Bild um `dx`/`dy` versetzt wiederverwendet.
- * Die komplexen Koordinaten `cx`/`cy` bleiben dabei unveraendert, weil sie
- * denselben mathematischen Punkt beschreiben. Nur die Pixelposition innerhalb
- * der neuen Zielmatrix aendert sich.
- *
- * @param {ReferenceCandidate[]} candidates - Bisherige Referenzkandidaten.
- * @param {number} dx                       - (integer) Horizontale Pixelverschiebung.
- * @param {number} dy                       - (integer) Vertikale Pixelverschiebung.
- * @param {number} width                    - (integer) Breite der Zielmatrix.
- * @param {number} height                   - (integer) Hoehe der Zielmatrix.
- * @returns {ReferenceCandidate[]} Verschobene und auf die Zielmatrix begrenzte Kandidaten.
- */
-function shiftReferenceCandidates(
-    candidates,
-    dx, dy,
-    width, height
-) {
-    if (!candidates) {
-        return [];
-    }
-
-    const shiftedCandidates = [];
-
-    for (const candidate of candidates) {
-        const pixelX = candidate.pixelX + dx;
-        const pixelY = candidate.pixelY + dy;
-
-        if (pixelX < 0 || pixelX >= width || pixelY < 0 || pixelY >= height) {
-            continue;
-        }
-
-        shiftedCandidates.push({
-            ...candidate,
-            pixelX,
-            pixelY,
-        });
-    }
-
-    return mergeReferenceCandidates(shiftedCandidates);
-}
-
-/**
- * Ermittelt die besten Referenzkandidaten aus berechneten Iterations- und
- * Escape-Wert-Arrays.
- *
- * Die Funktion arbeitet auf einem Teilrechteck `rect`, gibt die Pixelpositionen
- * aber immer bezogen auf die vollstaendige Zielmatrix zurueck. Dadurch koennen
- * Kandidaten aus Teilberechnungen spaeter direkt zusammengefuehrt werden.
- *
- * Die komplexen Koordinaten werden mit derselben linearen Abbildung bestimmt,
- * die auch die CPU-Berechnung verwendet:
- *
- *   cx = minX + pixelX / imageWidth  * (maxX - minX)
- *   cy = minY + pixelY / imageHeight * (maxY - minY)
- *
- * @param {PixelRect}        rect         - Berechneter Pixelbereich innerhalb der Zielmatrix.
- * @param {number}           imageWidth   - (integer) Breite der vollstaendigen Zielmatrix.
- * @param {number}           imageHeight  - (integer) Hoehe der vollstaendigen Zielmatrix.
- * @param {View}             view         - Ausschnitt der komplexen Ebene.
- * @param {IterationArray}   iterations   - Iterationswerte fuer `rect`.
- * @param {EscapeValueArray} escapeValues - Escape-Werte fuer `rect`.
- * @param {number}           [limit=REFERENCE_CANDIDATE_LIMIT] - (integer) Maximale Anzahl Kandidaten.
- * @returns {ReferenceCandidate[]} Beste Kandidaten aus dem uebergebenen Rechteck.
- */
-function collectReferenceCandidatesFromArrays(
-    rect,
-    imageWidth, imageHeight,
-    view,
-    iterations,
-    escapeValues,
-    limit = REFERENCE_CANDIDATE_LIMIT
-) {
-    const gridColumns = 4;
-    const gridRows = 4;
-    const candidatesByCell = new Array(gridColumns * gridRows).fill(null);
-    const { minX, maxX, minY, maxY } = view;
-
-    for (let localY = 0; localY < rect.height; localY++) {
-        for (let localX = 0; localX < rect.width; localX++) {
-            const index = localY * rect.width + localX;
-            const pixelX = rect.x + localX;
-            const pixelY = rect.y + localY;
-
-            const candidate = {
-                pixelX,
-                pixelY,
-                cx: minX + (pixelX / imageWidth) * (maxX - minX),
-                cy: minY + (pixelY / imageHeight) * (maxY - minY),
-                iterations: iterations[index],
-                escapeValue: escapeValues[index],
-            };
-
-            const cellX = Math.min(
-                gridColumns - 1,
-                Math.floor((pixelX / imageWidth) * gridColumns)
-            );
-
-            const cellY = Math.min(
-                gridRows - 1,
-                Math.floor((pixelY / imageHeight) * gridRows)
-            );
-
-            const cellIndex = cellY * gridColumns + cellX;
-            const currentCandidate = candidatesByCell[cellIndex];
-
-            if (
-                !currentCandidate ||
-                candidate.iterations > currentCandidate.iterations ||
-                (
-                    candidate.iterations === currentCandidate.iterations &&
-                    candidate.escapeValue < currentCandidate.escapeValue
-                )
-            ) {
-                candidatesByCell[cellIndex] = candidate;
-            }
-        }
-    }
-
-    return mergeReferenceCandidates(
-        candidatesByCell.filter(candidate => candidate !== null)
-    ).slice(0, limit);
-}
-
-/**
- * Ermittelt die Referenzkandidaten einer vollstaendigen Iterationsmatrix neu.
- *
- * Die Funktion sammelt Kandidaten aus den kompletten `iterations`- und
- * `escapeValues`-Arrays. Das ist sinnvoll, wenn eine Matrix aus kopierten und
- * neu berechneten Bereichen zusammengesetzt wurde, z.B. nach Pan- oder
- * Resize-Operationen. Dadurch werden die Kandidaten wieder passend zur gesamten
- * aktuellen Zielmatrix verteilt.
- *
- * Das uebergebene `iterationData`-Objekt wird nicht veraendert.
- *
- * @param {IterationData} iterationData - Vollstaendige Iterationsmatrix, fuer die Kandidaten ermittelt werden sollen.
- * @param {View}          view          - Zur Iterationsmatrix gehoerender Ausschnitt der komplexen Ebene.
- * @returns {ReferenceCandidate[]} Neu ermittelte Referenzkandidaten.
- */
-function refreshReferenceCandidates(
-    iterationData,
-    view
-) {
-    return collectReferenceCandidatesFromArrays(
-        { x: 0, y: 0, width: iterationData.width, height: iterationData.height },
-        iterationData.width,
-        iterationData.height,
-        view,
-        iterationData.iterations,
-        iterationData.escapeValues
-    );
-}
-
-/**
- * Waehlt den besten Referenzkandidaten fuer eine Ziel-View aus.
- *
- * Die Funktion bevorzugt Kandidaten, die innerhalb der Ziel-View liegen. Unter
- * diesen Kandidaten gewinnt zuerst der hoehere Iterationswert. Bei gleichem
- * Iterationswert wird der Kandidat bevorzugt, der naeher an der Mitte der
- * Ziel-View liegt. Der Escape-Wert dient zuletzt als Tie-Breaker; ein kleinerer
- * Escape-Wert ist besser.
- *
- * Falls kein Kandidat innerhalb der Ziel-View liegt, wird der Kandidat gewaehlt,
- * der der Mitte der Ziel-View am naechsten liegt. Auch in diesem Fall dienen
- * Iterationswert und Escape-Wert als nachrangige Tie-Breaker.
- *
- * @param {ReferenceCandidate[]} referenceCandidates - Verfuegbare Referenzkandidaten.
- * @param {View}                 view                - Ziel-View, fuer die ein Referenzpunkt gesucht wird.
- * @returns {?ReferenceCandidate} Bester Kandidat fuer die Ziel-View oder null, wenn keine Kandidaten vorhanden sind.
- */
-function selectReferenceCandidateForView(
-    referenceCandidates,
-    view
-) {
-    if (!referenceCandidates || referenceCandidates.length === 0) {
-        return null;
-    }
-
-    const centerX = (view.minX + view.maxX) / 2;
-    const centerY = (view.minY + view.maxY) / 2;
-
-    const viewWidth = Math.abs(view.maxX - view.minX);
-    const viewHeight = Math.abs(view.maxY - view.minY);
-
-    // Absicherung gegen entartete Views, damit die Distanzbewertung nicht durch
-    // Division durch 0 oder extrem kleine Werte instabil wird.
-    const safeViewWidth = Math.max(viewWidth, Number.EPSILON);
-    const safeViewHeight = Math.max(viewHeight, Number.EPSILON);
-
-    function isCandidateInsideView(candidate) {
-        return candidate.cx >= Math.min(view.minX, view.maxX) &&
-               candidate.cx <= Math.max(view.minX, view.maxX) &&
-               candidate.cy >= Math.min(view.minY, view.maxY) &&
-               candidate.cy <= Math.max(view.minY, view.maxY);
-    }
-
-    function getNormalizedDistanceToViewCenter(candidate) {
-        const normalizedDx = (candidate.cx - centerX) / safeViewWidth;
-        const normalizedDy = (candidate.cy - centerY) / safeViewHeight;
-
-        return Math.sqrt(
-            normalizedDx * normalizedDx +
-            normalizedDy * normalizedDy
-        );
-    }
-
-    function compareCandidates(a, b) {
-        const aInside = isCandidateInsideView(a);
-        const bInside = isCandidateInsideView(b);
-
-        if (aInside !== bInside) {
-            return aInside ? -1 : 1;
-        }
-
-        const aDistance = getNormalizedDistanceToViewCenter(a);
-        const bDistance = getNormalizedDistanceToViewCenter(b);
-
-        // Innerhalb der Ziel-View ist die Orbit-Qualitaet wichtiger als die
-        // exakte Lage. Ausserhalb der Ziel-View ist Naehe wichtiger, weil der
-        // Kandidat sonst als Referenzpunkt fuer diese View wenig hilfreich ist.
-        if (aInside && bInside) {
-            if (a.iterations !== b.iterations) {
-                return b.iterations - a.iterations;
-            }
-
-            if (aDistance !== bDistance) {
-                return aDistance - bDistance;
-            }
-        } else {
-            if (aDistance !== bDistance) {
-                return aDistance - bDistance;
-            }
-
-            if (a.iterations !== b.iterations) {
-                return b.iterations - a.iterations;
-            }
-        }
-
-        return a.escapeValue - b.escapeValue;
-    }
-
-    return [...referenceCandidates].sort(compareCandidates)[0];
+    return iterationData;
 }

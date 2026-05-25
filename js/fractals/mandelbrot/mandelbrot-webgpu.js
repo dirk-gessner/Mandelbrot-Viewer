@@ -48,24 +48,13 @@ async function computeMandelbrotRectWebGpu(
     imageHeight,
     computationSettings
 ) {
-    const result = await mandelbrotWebGpuClient.request({
+    return  await mandelbrotWebGpuClient.request({
         type: MANDELBROT_COMPUTE_REQUEST,
         rect,
         imageWidth,
         imageHeight,
         computationSettings,
     });
-
-    result.referenceCandidates = collectReferenceCandidatesFromArrays(
-        rect,
-        imageWidth,
-        imageHeight,
-        computationSettings.view,
-        result.iterations,
-        result.escapeValues
-    );
-
-    return result;
 }
 
 /**

@@ -42,6 +42,14 @@ const USE_WEBGPU_BACKEND = true;
 const MANDELBROT_CPU_WORKER_SCRIPT = "./js/fractals/mandelbrot/mandelbrot-cpu-worker.js";
 
 /**
+ * Maximale Anzahl von Referenzkandidaten, die gesammelt und für Perturbationsberechnungen
+ * noch verwendet wird.
+ *
+ * @type {number}
+ */
+const MANDELBROT_REFERENCE_CANDIDATE_LIMIT = 16;
+
+/**
  * Teilt ein Pixelrechteck horizontal in mehrere Teilrechtecke.
  *
  * Die Teilrechtecke behalten `x` und `width` des Ausgangsrechtecks.
@@ -111,12 +119,10 @@ function mergeIterationDataParts(
 
     let targetOffset  = 0;
     let minIterations = Number.POSITIVE_INFINITY;
-    const referenceCandidateLists = [];
 
     for (const part of parts) {
         iterations.set(part.iterations, targetOffset);
         escapeValues.set(part.escapeValues, targetOffset);
-        referenceCandidateLists.push(part.referenceCandidates);
 
         targetOffset += part.iterations.length;
 
@@ -131,7 +137,7 @@ function mergeIterationDataParts(
         iterations,
         escapeValues,
         minIterations,
-        referenceCandidates: mergeReferenceCandidates(...referenceCandidateLists)
+        referenceCandidates: [], 
     };
 }
 
@@ -164,15 +170,6 @@ function computeMandelbrotRectInCpuWorker(
         worker.onmessage = (event) => {
             worker.terminate();
             const result = event.data;
-            result.referenceCandidates = collectReferenceCandidatesFromArrays(
-                rect,
-                imageWidth,
-                imageHeight,
-                computationSettings.view,
-                result.iterations,
-                result.escapeValues
-            );
-
             resolve(result);
         };
 
@@ -445,3 +442,253 @@ async function computeMandelbrot(
     );
 }
 
+
+// -----------------------------------------------------------------------------
+// Hilfsfunktionen für die Ermittlung der Referenzkandidaten für 
+// Perturbationsberechnungen
+// -----------------------------------------------------------------------------
+
+/**
+ * Vergleicht zwei Referenzkandidaten nach ihrer allgemeinen Qualitaet.
+ *
+ * Kandidaten mit hoeherem Iterationswert werden bevorzugt. Bei gleichem
+ * Iterationswert gewinnt der Kandidat mit kleinerem Escape-Wert, weil sein
+ * Orbit zum Abbruchzeitpunkt weniger stark divergiert ist.
+ *
+ * Die Funktion ist als Sortier-Callback fuer `Array.prototype.sort` gedacht.
+ * Ein negativer Rueckgabewert bedeutet, dass `a` vor `b` einsortiert wird.
+ *
+ * @param {ReferenceCandidate} a - Erster Referenzkandidat.
+ * @param {ReferenceCandidate} b - Zweiter Referenzkandidat.
+ * @returns {number} Sortierwert fuer absteigende Kandidatenqualitaet.
+ */
+function compareReferenceCandidates(
+    a, b
+) {
+    if (b.iterations !== a.iterations) {
+        return b.iterations - a.iterations;
+    }
+
+    return a.escapeValue - b.escapeValue;
+}
+
+/**
+ * Ermittelt die besten Referenzkandidaten aus berechneten Iterations- und
+ * Escape-Wert-Arrays.
+ *
+ * Die Funktion arbeitet auf einem Teilrechteck `rect`, gibt die Pixelpositionen
+ * aber immer bezogen auf die vollstaendige Zielmatrix zurueck. Dadurch koennen
+ * Kandidaten aus Teilberechnungen spaeter direkt zusammengefuehrt werden.
+ *
+ * Die komplexen Koordinaten werden mit derselben linearen Abbildung bestimmt,
+ * die auch die CPU-Berechnung verwendet:
+ *
+ *   cx = minX + pixelX / imageWidth  * (maxX - minX)
+ *   cy = minY + pixelY / imageHeight * (maxY - minY)
+ *
+ * @param {PixelRect}        rect         - Berechneter Pixelbereich innerhalb der Zielmatrix.
+ * @param {number}           imageWidth   - (integer) Breite der vollstaendigen Zielmatrix.
+ * @param {number}           imageHeight  - (integer) Hoehe der vollstaendigen Zielmatrix.
+ * @param {View}             view         - Ausschnitt der komplexen Ebene.
+ * @param {IterationArray}   iterations   - Iterationswerte fuer `rect`.
+ * @param {EscapeValueArray} escapeValues - Escape-Werte fuer `rect`.
+ * @param {number}           [limit=MANDELBROT_REFERENCE_CANDIDATE_LIMIT] - (integer) Maximale Anzahl Kandidaten.
+ * @returns {ReferenceCandidate[]} Beste Kandidaten aus dem uebergebenen Rechteck.
+ */
+function collectReferenceCandidatesFromArrays(
+    rect,
+    imageWidth, imageHeight,
+    view,
+    iterations,
+    escapeValues,
+    limit = MANDELBROT_REFERENCE_CANDIDATE_LIMIT
+) {
+    const gridColumns = 4;
+    const gridRows = 4;
+    const candidatesByCell = new Array(gridColumns * gridRows).fill(null);
+    const { minX, maxX, minY, maxY } = view;
+
+    for (let localY = 0; localY < rect.height; localY++) {
+        for (let localX = 0; localX < rect.width; localX++) {
+            const index = localY * rect.width + localX;
+            const pixelX = rect.x + localX;
+            const pixelY = rect.y + localY;
+
+            const candidate = {
+                pixelX,
+                pixelY,
+                cx: minX + (pixelX / imageWidth) * (maxX - minX),
+                cy: minY + (pixelY / imageHeight) * (maxY - minY),
+                iterations: iterations[index],
+                escapeValue: escapeValues[index],
+            };
+
+            const cellX = Math.min(
+                gridColumns - 1,
+                Math.floor((pixelX / imageWidth) * gridColumns)
+            );
+
+            const cellY = Math.min(
+                gridRows - 1,
+                Math.floor((pixelY / imageHeight) * gridRows)
+            );
+
+            const cellIndex = cellY * gridColumns + cellX;
+            const currentCandidate = candidatesByCell[cellIndex];
+
+            if (!currentCandidate ||
+                compareReferenceCandidates(candidate, currentCandidate) < 0) 
+            {
+                candidatesByCell[cellIndex] = candidate;
+            }
+        }
+    }
+
+    return candidatesByCell
+        .filter(candidate => candidate !== null)
+        .sort(compareReferenceCandidates)
+        .slice(0, limit);
+}
+
+/**
+ * Ermittelt die Referenzkandidaten einer vollstaendigen Iterationsmatrix neu.
+ *
+ * Die Funktion sammelt Kandidaten aus den kompletten `iterations`- und
+ * `escapeValues`-Arrays. Das ist sinnvoll, wenn eine Matrix aus kopierten und
+ * neu berechneten Bereichen zusammengesetzt wurde, z.B. nach Pan- oder
+ * Resize-Operationen. Dadurch werden die Kandidaten wieder passend zur gesamten
+ * aktuellen Zielmatrix verteilt.
+ *
+ * Das uebergebene `iterationData`-Objekt wird nicht veraendert.
+ *
+ * @param {IterationData} iterationData - Vollstaendige Iterationsmatrix, fuer die Kandidaten ermittelt werden sollen.
+ * @param {View}          view          - Zur Iterationsmatrix gehoerender Ausschnitt der komplexen Ebene.
+ * @returns {ReferenceCandidate[]} Neu ermittelte Referenzkandidaten.
+ */
+function refreshReferenceCandidates(
+    iterationData,
+    view
+) {
+    return collectReferenceCandidatesFromArrays(
+        { x: 0, y: 0, width: iterationData.width, height: iterationData.height },
+        iterationData.width,
+        iterationData.height,
+        view,
+        iterationData.iterations,
+        iterationData.escapeValues
+    );
+}
+
+/**
+ * Waehlt den besten Referenzkandidaten fuer eine Ziel-View aus.
+ *
+ * Die Funktion bevorzugt Kandidaten, die innerhalb der Ziel-View liegen. Unter
+ * diesen Kandidaten gewinnt zuerst der hoehere Iterationswert. Bei gleichem
+ * Iterationswert wird der Kandidat bevorzugt, der naeher an der Mitte der
+ * Ziel-View liegt. Der Escape-Wert dient zuletzt als Tie-Breaker; ein kleinerer
+ * Escape-Wert ist besser.
+ *
+ * Falls kein Kandidat innerhalb der Ziel-View liegt, wird der Kandidat gewaehlt,
+ * der der Mitte der Ziel-View am naechsten liegt. Auch in diesem Fall dienen
+ * Iterationswert und Escape-Wert als nachrangige Tie-Breaker.
+ *
+ * @param {ReferenceCandidate[]} referenceCandidates - Verfuegbare Referenzkandidaten.
+ * @param {View}                 view                - Ziel-View, fuer die ein Referenzpunkt gesucht wird.
+ * @returns {?ReferenceCandidate} Bester Kandidat fuer die Ziel-View oder null, wenn keine Kandidaten vorhanden sind.
+ */
+function selectReferenceCandidateForView(
+    referenceCandidates,
+    view
+) {
+    if (!referenceCandidates || referenceCandidates.length === 0) {
+        return null;
+    }
+
+    const centerX = (view.minX + view.maxX) / 2;
+    const centerY = (view.minY + view.maxY) / 2;
+
+    const viewWidth = Math.abs(view.maxX - view.minX);
+    const viewHeight = Math.abs(view.maxY - view.minY);
+
+    // Absicherung gegen entartete Views, damit die Distanzbewertung nicht durch
+    // Division durch 0 oder extrem kleine Werte instabil wird.
+    const safeViewWidth = Math.max(viewWidth, Number.EPSILON);
+    const safeViewHeight = Math.max(viewHeight, Number.EPSILON);
+
+    function isCandidateInsideView(candidate) {
+        return candidate.cx >= Math.min(view.minX, view.maxX) &&
+               candidate.cx <= Math.max(view.minX, view.maxX) &&
+               candidate.cy >= Math.min(view.minY, view.maxY) &&
+               candidate.cy <= Math.max(view.minY, view.maxY);
+    }
+
+    function getNormalizedDistanceToViewCenter(candidate) {
+        const normalizedDx = (candidate.cx - centerX) / safeViewWidth;
+        const normalizedDy = (candidate.cy - centerY) / safeViewHeight;
+
+        return Math.sqrt(
+            normalizedDx * normalizedDx +
+            normalizedDy * normalizedDy
+        );
+    }
+
+    function compareCandidates(a, b) {
+        const aInside = isCandidateInsideView(a);
+        const bInside = isCandidateInsideView(b);
+
+        if (aInside !== bInside) {
+            return aInside ? -1 : 1;
+        }
+
+        const aDistance = getNormalizedDistanceToViewCenter(a);
+        const bDistance = getNormalizedDistanceToViewCenter(b);
+
+        // Innerhalb der Ziel-View ist die Orbit-Qualitaet wichtiger als die
+        // exakte Lage. Ausserhalb der Ziel-View ist Naehe wichtiger, weil der
+        // Kandidat sonst als Referenzpunkt fuer diese View wenig hilfreich ist.
+        if (aInside && bInside) {
+            if (a.iterations !== b.iterations) {
+                return b.iterations - a.iterations;
+            }
+
+            if (aDistance !== bDistance) {
+                return aDistance - bDistance;
+            }
+        } else {
+            if (aDistance !== bDistance) {
+                return aDistance - bDistance;
+            }
+
+            if (a.iterations !== b.iterations) {
+                return b.iterations - a.iterations;
+            }
+        }
+
+        return a.escapeValue - b.escapeValue;
+    }
+
+    return [...referenceCandidates].sort(compareCandidates)[0];
+}
+
+/**
+ * Ergaenzt Mandelbrot-spezifische Metadaten fuer eine fertige Iterationsmatrix.
+ *
+ * Aktuell werden Referenzkandidaten fuer spaetere Perturbationsberechnungen aus
+ * der vollstaendigen Matrix ermittelt.
+ *
+ * @param {IterationData} iterationData - Fertige Mandelbrot-Iterationsmatrix.
+ * @param {ComputationSettings} computationSettings - Mandelbrot-Berechnungseinstellungen.
+ * @returns {IterationData} Iterationsmatrix mit aktualisierten Referenzkandidaten.
+ */
+function finalizeMandelbrot(
+    iterationData,
+    computationSettings
+) {
+    iterationData.referenceCandidates =
+        refreshReferenceCandidates(
+            iterationData,
+            computationSettings.view
+        );
+
+    return iterationData;
+}

@@ -2,6 +2,7 @@
 // Funktionssammlung für Rendering der Iterations-Matrix
 // -----------------------------------------------------------------------------
 
+const DEBUG_DRAW_REFERENCE_CANDIDATES = true;
 
 /**
  * Größe einer Pixelmatrix oder Canvas-Fläche.
@@ -516,13 +517,15 @@ function drawScene(pixelDx = 0, pixelDy = 0) {
         drawSelectionFrame(ctx, selection);
     }
 
-    drawReferenceCandidateOverlay(
-        ctx,
-        iterationData,
-        computationSettings.view,
-        pixelDx,
-        pixelDy
-    );    
+    if (DEBUG_DRAW_REFERENCE_CANDIDATES) {
+        drawReferenceCandidateOverlay(
+            ctx,
+            iterationData,
+            computationSettings.view,
+            pixelDx,
+            pixelDy
+        );    
+    }
 
     app.updateInfo();
 }
