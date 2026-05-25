@@ -16,7 +16,7 @@
 /**
  * Lineares Feld mit einem Escape-Wert je Pixel.
  *
- * @typedef {Float64Array} EscapeValueArray
+ * @typedef {Float32Array} EscapeValueArray
  */
 
 /**
@@ -111,7 +111,7 @@ function createEmptyIterationData(
         width,
         height,
         iterations: new Uint16Array(width * height),
-        escapeValues: new Float64Array(width * height),
+        escapeValues: new Float32Array(width * height),
         minIterations: 0
     };
 }

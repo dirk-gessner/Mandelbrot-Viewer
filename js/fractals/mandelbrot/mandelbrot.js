@@ -3,13 +3,43 @@
 // -----------------------------------------------------------------------------
 //
 // Diese Datei koordiniert die Mandelbrot-Berechnung aus Sicht des Hauptthreads.
-// Sie berechnet Pixel nicht selbst, sondern zerlegt Rechtecke in Teilaufgaben,
-// startet Web-Worker, sammelt deren IterationData-Ergebnisse ein und führt sie
-// wieder zu einer zusammenhängenden Matrix zusammen.
+// Sie berechnet Pixel nicht selbst, sondern entscheidet zwischen WebGPU- und
+// CPU-Backend, zerlegt CPU-Rechtecke in Teilaufgaben, startet Web-Worker,
+// sammelt deren IterationData-Ergebnisse ein und führt sie wieder zu einer
+// zusammenhängenden Matrix zusammen.
 //
-// Die eigentliche synchrone Punkt- und Rechteckberechnung liegt in
-// `mandelbrot-worker.js`.
+// Die eigentliche CPU-Berechnung liegt in `mandelbrot-cpu-worker.js`; die
+// WebGPU-Berechnung wird über `mandelbrot-webgpu.js` an den WebGPU-Worker
+// delegiert.
 // -----------------------------------------------------------------------------
+
+/**
+ * Kleinste Pixelgröße in der komplexen Ebene, ab der das f32-WebGPU-Backend
+ * noch verwendet wird.
+ *
+ * Unterhalb dieser Grenze wird auf das CPU-Backend ausgewichen, weil dessen
+ * JavaScript-number-Arithmetik für tiefe Zoomstufen mehr Präzision bietet.
+ *
+ * @type {number}
+ */
+const WEBGPU_MIN_PIXEL_SIZE = 1e-7;
+
+/**
+ * Aktiviert oder deaktiviert das WebGPU-Backend global.
+ *
+ * Wenn diese Option deaktiviert ist, verwendet die zentrale Berechnungsfassade
+ * immer den CPU-Pfad, unabhängig von der aktuellen Zoomstufe.
+ *
+ * @type {boolean}
+ */
+const USE_WEBGPU_BACKEND = true;
+
+/**
+ * Pfad zum CPU-Worker-Skript für Mandelbrot-Rechteckberechnungen.
+ *
+ * @type {string}
+ */
+const MANDELBROT_CPU_WORKER_SCRIPT = "./js/fractals/mandelbrot/mandelbrot-cpu-worker.js";
 
 /**
  * Teilt ein Pixelrechteck horizontal in mehrere Teilrechtecke.
@@ -77,7 +107,7 @@ function mergeIterationDataParts(
     const totalPixels = rect.width * rect.height;
 
     const iterations   = new Uint16Array(totalPixels);
-    const escapeValues = new Float64Array(totalPixels);
+    const escapeValues = new Float32Array(totalPixels);
 
     let targetOffset  = 0;
     let minIterations = Number.POSITIVE_INFINITY;
@@ -115,7 +145,7 @@ function mergeIterationDataParts(
  * @param {number}              [workerId=0]        - (integer) Diagnose-ID für Fehlermeldungen.
  * @returns {Promise<IterationData>}                - Vom Worker berechnete Iterationsdaten.
  */
-function computeMandelbrotRectInWorker(
+function computeMandelbrotRectInCpuWorker(
     rect,
     imageWidth,
     imageHeight,
@@ -124,7 +154,7 @@ function computeMandelbrotRectInWorker(
 ) {
     return new Promise((resolve, reject) => {
 
-        const worker = new Worker("./js/mandelbrot-worker.js", {
+        const worker = new Worker(MANDELBROT_CPU_WORKER_SCRIPT, {
             type: "module"
         });
 
@@ -152,7 +182,7 @@ function computeMandelbrotRectInWorker(
  * Berechnet mehrere Mandelbrot-Teilrechtecke mit begrenzter Worker-Parallelität.
  *
  * Dies ist kein echter Worker-Pool: Für jeden Task wird über
- * `computeMandelbrotRectInWorker` ein eigener Worker erzeugt. Die Funktion
+ * `computeMandelbrotRectInCpuWorker` ein eigener Worker erzeugt. Die Funktion
  * begrenzt nur, wie viele dieser Worker-Aufträge gleichzeitig laufen.
  *
  * Die Ergebnisreihenfolge entspricht der Reihenfolge der übergebenen Tasks.
@@ -164,7 +194,7 @@ function computeMandelbrotRectInWorker(
  * @param {number}              workerCount          - (integer) Maximale Anzahl gleichzeitig laufender Worker-Aufträge.
  * @returns {Promise<IterationData[]>}               - Berechnete Iterationsdaten je Task.
  */
-async function computeTasksWithWorkerConcurrency(
+async function computeTasksWithCpuWorkerConcurrency(
     tasks,
     imageWidth,
     imageHeight,
@@ -179,7 +209,7 @@ async function computeTasksWithWorkerConcurrency(
             const taskIndex = nextTaskIndex++;
             const rect = tasks[taskIndex];
 
-            const result = await computeMandelbrotRectInWorker(
+            const result = await computeMandelbrotRectInCpuWorker(
                 rect,
                 imageWidth,
                 imageHeight,
@@ -216,7 +246,7 @@ async function computeTasksWithWorkerConcurrency(
  * @param {number}              workerCount          - (integer) Maximale Anzahl gleichzeitig laufender Worker-Aufträge.
  * @returns {Promise<IterationData>}                 - Berechnete Iterationsdaten für `rect`.
  */
-async function computeMandelbrotRectParallel(
+async function computeMandelbrotRectCpuParallel(
     rect,
     imageWidth,
     imageHeight,
@@ -229,7 +259,7 @@ async function computeMandelbrotRectParallel(
 
     const startedAt = performance.now();
     console.log(
-        "computeMandelbrotRectParallel (start)",
+        "computeMandelbrotRectCpuParallel (start)",
         {
             requestedWorkers: workerCount,
             tasksPerWorker: tasksPerWorker,
@@ -237,7 +267,7 @@ async function computeMandelbrotRectParallel(
         }
     );
 
-    const parts = await computeTasksWithWorkerConcurrency(
+    const parts = await computeTasksWithCpuWorkerConcurrency(
         tasks,
         imageWidth,
         imageHeight,
@@ -249,7 +279,7 @@ async function computeMandelbrotRectParallel(
 
     const elapsed = performance.now() - startedAt;
     console.log(
-        "computeMandelbrotRectParallel (done)",
+        "computeMandelbrotRectCpuParallel (done)",
         {
             elapsedMilleSeconds: elapsed,
         }
@@ -274,7 +304,7 @@ async function computeMandelbrotRectParallel(
  * @param {ComputationSettings} computationSettings  - Einstellungen für die Berechnung.
  * @returns {Promise<IterationData>}                 - Berechnete Iterationsdaten für `rect`.
  */
-async function computeMandelbrotRect(
+async function computeMandelbrotRectCpu(
     rect,
     imageWidth,
     imageHeight,
@@ -283,7 +313,7 @@ async function computeMandelbrotRect(
     const workerCount = multiThreadSettings.workerCount;
 
     if (workerCount <= 1 || rect.width * rect.height < 10000) {
-        return computeMandelbrotRectInWorker(
+        return computeMandelbrotRectInCpuWorker(
             rect,
             imageWidth,
             imageHeight,
@@ -291,12 +321,90 @@ async function computeMandelbrotRect(
         );
     }
 
-    return computeMandelbrotRectParallel(
+    return computeMandelbrotRectCpuParallel(
         rect,
         imageWidth,
         imageHeight,
         computationSettings,
         workerCount
+    );
+}
+
+/**
+ * Prüft, ob die aktuelle Ansicht sinnvoll mit f32-WebGPU berechnet werden kann.
+ *
+ * WebGPU/WGSL arbeitet hier mit f32. Bei sehr tiefen Zoomstufen reicht die
+ * Präzision nicht mehr aus, um benachbarte Pixel sauber auf unterschiedliche
+ * komplexe Koordinaten abzubilden.
+ *
+ * @param {View}    view        - Aktueller Ausschnitt der komplexen Ebene.
+ * @param {number}  imageWidth  - (integer) Breite der vollständigen Zielmatrix.
+ * @param {number}  imageHeight - (integer) Höhe der vollständigen Zielmatrix.
+ * @returns {boolean}           - true, wenn WebGPU für diese Ansicht verwendet werden soll.
+ */
+function shouldUseWebGpuForView(view, imageWidth, imageHeight) {
+    const pixelWidth = Math.abs(view.maxX - view.minX) / imageWidth;
+    const pixelHeight = Math.abs(view.maxY - view.minY) / imageHeight;
+
+    return Math.min(pixelWidth, pixelHeight) > WEBGPU_MIN_PIXEL_SIZE;
+}
+
+/**
+ * Berechnet die Mandelbrot-Iterationsdaten für ein Rechteck.
+ *
+ * Diese Funktion ist die zentrale Fassade für die Rechteckberechnung. Sie
+ * entscheidet zwischen WebGPU-Backend und CPU-Backend. Bei zu tiefen
+ * Zoomstufen wird direkt der CPU-Pfad verwendet, weil die aktuelle
+ * WebGPU-Implementierung mit f32 arbeitet.
+ * 
+ * @param {PixelRect}           rect                 - Zu berechnender Pixelbereich.
+ * @param {number}              imageWidth           - (integer) Breite der vollständigen Zielmatrix.
+ * @param {number}              imageHeight          - (integer) Höhe der vollständigen Zielmatrix.
+ * @param {ComputationSettings} computationSettings  - Einstellungen für die Berechnung.
+ * @returns {Promise<IterationData>}                 - Berechnete Iterationsdaten für `rect`.
+ */
+async function computeMandelbrotRect(
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings
+) {
+    const useWebGpuBackend =
+        USE_WEBGPU_BACKEND &&
+        shouldUseWebGpuForView(
+            computationSettings.view,
+            imageWidth,
+            imageHeight
+        );
+
+    if (useWebGpuBackend) {
+        try {
+            runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_WEBGPU;
+            return await computeMandelbrotRectWebGpu(
+                rect,
+                imageWidth,
+                imageHeight,
+                computationSettings
+            );
+        } catch (error) {
+            console.warn(
+                "WebGPU Mandelbrot backend failed. Falling back to CPU backend.",
+                error
+            );
+        }
+    } else {
+        console.warn(
+            "Resolution limits for WebGPU (Float32) reached. Falling back to CPU (Float64) backend."
+        );
+
+    }
+
+    runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_CPU;
+    return computeMandelbrotRectCpu(
+        rect,
+        imageWidth,
+        imageHeight,
+        computationSettings
     );
 }
 

@@ -75,7 +75,7 @@
                     </div>
 
                     <div id="multithreading" class="control-group separation-line"> 
-                        <h3>Parameter für Multithreading</h3>
+                        <h3>Parameter für Multithreading (CPU)</h3>
                         <!--------------------------------------------------------------------->
                         <div class="control-row">
                             <label for="workerCountInput">Anzahl Worker-Threads:&nbsp;</label>
@@ -104,7 +104,8 @@
                         </div>
 
                         <div class="control-row">
-                            Letzte Berechnung: {{ lastIterationDataUpdateSeconds.toFixed(3) }} s
+                            Letzte Berechnung: {{ lastIterationDataUpdateSeconds.toFixed(3) }} s<br> 
+                            Backend: {{ lastComputationBackend }}                        
                         </div>
                     </div>
 
@@ -278,7 +279,9 @@
     <script src="js/timing.js"></script>
     <script src="js/palettes.js"></script>
     <script src="js/iteration-data.js"></script>
-    <script src="js/mandelbrot.js"></script>
+    <script src="js/core/worker-rpc-client.js"></script>
+    <script src="js/fractals/mandelbrot/mandelbrot-webgpu.js"></script>
+    <script src="js/fractals/mandelbrot/mandelbrot.js"></script>
     <script src="js/rendering.js"></script>
     <script src="js/layout.js"></script>
     <script src="js/interactions.js"></script>
