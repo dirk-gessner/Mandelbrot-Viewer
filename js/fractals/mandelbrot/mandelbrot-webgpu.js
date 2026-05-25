@@ -42,19 +42,30 @@ const mandelbrotWebGpuClient = createWorkerRpcClient(
  * @param {ComputationSettings} computationSettings - Mandelbrot-Berechnungseinstellungen.
  * @returns {Promise<IterationData>} Berechnete Iterationsdaten für den Pixelbereich.
  */
-function computeMandelbrotRectWebGpu(
+async function computeMandelbrotRectWebGpu(
     rect,
     imageWidth,
     imageHeight,
     computationSettings
 ) {
-    return mandelbrotWebGpuClient.request({
+    const result = await mandelbrotWebGpuClient.request({
         type: MANDELBROT_COMPUTE_REQUEST,
         rect,
         imageWidth,
         imageHeight,
         computationSettings,
     });
+
+    result.referenceCandidates = collectReferenceCandidatesFromArrays(
+        rect,
+        imageWidth,
+        imageHeight,
+        computationSettings.view,
+        result.iterations,
+        result.escapeValues
+    );
+
+    return result;
 }
 
 /**

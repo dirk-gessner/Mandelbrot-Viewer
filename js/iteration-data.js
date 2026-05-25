@@ -7,6 +7,8 @@
 // Iterations-Matrix
 // -----------------------------------------------------------------------------
 
+const REFERENCE_CANDIDATE_LIMIT = 16;
+
 /**
  * Lineares Feld mit einem Iterationswert je Pixel.
  *
@@ -20,17 +22,45 @@
  */
 
 /**
- * Iterationsdaten für eine vollständig oder teilweise berechnete Fraktalfläche.
+ * Kandidat fuer einen Referenzpunkt bei einer spaeteren
+ * Perturbation-Berechnung.
  *
- * Die Arrays sind linear gespeichert. Der Wert für Pixel (x, y) liegt an Index:
+ * Ein Kandidat beschreibt einen bereits berechneten Bildpunkt, dessen Orbit
+ * lange genug in der Naehe der Mandelbrot-Menge bleibt, um als Referenzorbit
+ * fuer eine tiefere Zoomstufe interessant zu sein. Typischerweise werden die
+ * Kandidaten aus den Pixeln mit den hoechsten Iterationswerten gewonnen.
+ *
+ * `pixelX` und `pixelY` beziehen sich auf die vollstaendige Zielmatrix, nicht
+ * zwingend auf ein Teilrechteck. `cx` und `cy` sind die dazugehoerigen
+ * Koordinaten in der komplexen Ebene.
+ *
+ * @typedef {Object} ReferenceCandidate
+ * @property {number} pixelX       - (integer) X-Position des Kandidaten in der vollstaendigen Pixelmatrix.
+ * @property {number} pixelY       - (integer) Y-Position des Kandidaten in der vollstaendigen Pixelmatrix.
+ * @property {number} cx           - (decimal) Realteil der komplexen Koordinate des Kandidaten.
+ * @property {number} cy           - (decimal) Imaginaerteil der komplexen Koordinate des Kandidaten.
+ * @property {number} iterations   - (integer) Iterationswert des Kandidaten bei der normalen Berechnung.
+ * @property {number} escapeValue  - (decimal) Quadratischer Betrag des Orbits beim Abbruch.
+ */
+
+/**
+ * Iterationsdaten fuer eine vollstaendig oder teilweise berechnete Fraktalflaeche.
+ *
+ * Die Arrays sind linear gespeichert. Der Wert fuer Pixel (x, y) liegt an Index:
  * y * width + x.
  *
+ * `referenceCandidates` enthaelt optionale Kandidaten fuer spaetere
+ * Perturbation-Berechnungen. Die Kandidaten sind Metadaten zur Berechnung und
+ * werden vom normalen Rendering nicht benoetigt. Wenn das Feld vorhanden ist,
+ * sollte es bevorzugt absteigend nach `iterations` sortiert sein.
+ *
  * @typedef {Object} IterationData
- * @property {number}           width           - (integer) Breite der Datenmatrix in Pixeln.
- * @property {number}           height          - (integer) Höhe der Datenmatrix in Pixeln.
- * @property {IterationArray}   iterations      - (integer) Iterationswert je Pixel.
- * @property {EscapeValueArray} escapeValues    - (decimal) Escape-Wert je Pixel.
- * @property {number}           minIterations   - (integer) Niedrigster Iterationswert aus iterations.
+ * @property {number}               width                 - (integer) Breite der Datenmatrix in Pixeln.
+ * @property {number}               height                - (integer) Hoehe der Datenmatrix in Pixeln.
+ * @property {IterationArray}       iterations            - (integer) Iterationswert je Pixel.
+ * @property {EscapeValueArray}     escapeValues          - (decimal) Escape-Wert je Pixel.
+ * @property {number}               minIterations         - (integer) Niedrigster Iterationswert aus `iterations`.
+ * @property {ReferenceCandidate[]} [referenceCandidates] - Kandidaten fuer Referenzpunkte, typischerweise nach Iterationswert absteigend sortiert.
  */
 
 /**
@@ -112,7 +142,8 @@ function createEmptyIterationData(
         height,
         iterations: new Uint16Array(width * height),
         escapeValues: new Float32Array(width * height),
-        minIterations: 0
+        minIterations: 0, 
+        referenceCandidates: [], 
     };
 }
 
@@ -268,6 +299,11 @@ async function computeShiftedIterationData(
 
     // Daten des nach der Verschiebung noch sichtbaren Bereichs übernehmen
     copyIterationRect( oldData, newData, copyRegion) ; 
+    newData.referenceCandidates = shiftReferenceCandidates(
+        oldData.referenceCandidates,
+        dx, dy,
+        width, height
+    );
 
     // ermittle die neu sichtbar gewordenen Bereiche
     // returns: [{x, y, width, height}, {x, y, width, height}, ...]
@@ -296,6 +332,10 @@ async function computeShiftedIterationData(
         // berechnete Daten des Rechtecks in den neuen Cache 
         // an Stelle (rect.x, rect.y) übernehmen
         copyIterationRect(rectData, newData, copyRegion);
+        newData.referenceCandidates = mergeReferenceCandidates(
+            newData.referenceCandidates,
+            rectData.referenceCandidates
+        );
     }
 
     // Aktualisiere die minimale Iterationsanzahl im neuen Cache, 
@@ -485,6 +525,10 @@ async function fillDirtyResizeRects(
         // berechnete Daten des Rechtecks in den neuen Cache 
         // an Stelle (rect.x, rect.y) übernehmen
         copyIterationRect(rectData, newData, copyRegion); 
+        newData.referenceCandidates = mergeReferenceCandidates(
+            newData.referenceCandidates,
+            rectData.referenceCandidates
+        );
     }
 
     newData.minIterations = findMinIterations(newData.iterations);
@@ -547,6 +591,13 @@ async function expandIterationData(
 
     // Daten aus oldData (preservedRect) nach newData kopieren
     copyIterationRect(oldData, newData, copyRegion);
+    newData.referenceCandidates = shiftReferenceCandidates(
+        oldData.referenceCandidates,
+        preservedRect.x,
+        preservedRect.y,
+        newSize.width,
+        newSize.height
+    );
 
     return await fillDirtyResizeRects( 
         newData, 
@@ -624,6 +675,9 @@ async function resizeIterationData(
         copyIterationRect(rectData, newData, copyRegion);
 
         newData.minIterations = findMinIterations(newData.iterations);
+        newData.referenceCandidates = mergeReferenceCandidates(
+            rectData.referenceCandidates
+        );
 
         return {
             iterationData:  newData, 
@@ -729,3 +783,161 @@ async function computeIterationData(
 }
 
 
+// -----------------------------------------------------------------------------
+// Hilfsfunktionen für die Ermittlung der Referenzkandidaten für 
+// Perturbationsberechnungen
+// -----------------------------------------------------------------------------
+
+/**
+ * Fuehrt mehrere Kandidatenlisten zusammen und reduziert sie auf die besten
+ * Referenzkandidaten.
+ *
+ * Die Bewertung ist bewusst einfach: Kandidaten mit hoeherem Iterationswert
+ * sind besser. Bei gleichem Iterationswert wird der kleinere Escape-Wert
+ * bevorzugt, weil dieser Punkt tendenziell weniger stark divergiert ist.
+ *
+ * `undefined` oder leere Listen sind erlaubt, damit Aufrufer nicht an jeder
+ * Stelle defensiv pruefen muessen, ob ein Ergebnis bereits Kandidaten enthaelt.
+ *
+ * @param {...ReferenceCandidate[]} candidateLists - Kandidatenlisten, die zusammengefuehrt werden sollen.
+ * @returns {ReferenceCandidate[]} Die besten Kandidaten, absteigend nach Qualitaet sortiert.
+ */
+function mergeReferenceCandidates(
+    ...candidateLists
+) {
+    const candidates = [];
+
+    for (const candidateList of candidateLists) {
+        if (!candidateList) {
+            continue;
+        }
+
+        for (const candidate of candidateList) {
+            candidates.push(candidate);
+        }
+    }
+
+    candidates.sort((a, b) => {
+        if (b.iterations !== a.iterations) {
+            return b.iterations - a.iterations;
+        }
+
+        return a.escapeValue - b.escapeValue;
+    });
+
+    return candidates.slice(0, REFERENCE_CANDIDATE_LIMIT);
+}
+
+/**
+ * Verschiebt Referenzkandidaten um eine Pixelverschiebung und entfernt
+ * Kandidaten, die danach ausserhalb der Zielmatrix liegen.
+ *
+ * Diese Funktion passt zur Pan-Logik: vorhandene Iterationsdaten werden bei
+ * einer Verschiebung im neuen Bild um `dx`/`dy` versetzt wiederverwendet.
+ * Die komplexen Koordinaten `cx`/`cy` bleiben dabei unveraendert, weil sie
+ * denselben mathematischen Punkt beschreiben. Nur die Pixelposition innerhalb
+ * der neuen Zielmatrix aendert sich.
+ *
+ * @param {ReferenceCandidate[]} candidates - Bisherige Referenzkandidaten.
+ * @param {number} dx                       - (integer) Horizontale Pixelverschiebung.
+ * @param {number} dy                       - (integer) Vertikale Pixelverschiebung.
+ * @param {number} width                    - (integer) Breite der Zielmatrix.
+ * @param {number} height                   - (integer) Hoehe der Zielmatrix.
+ * @returns {ReferenceCandidate[]} Verschobene und auf die Zielmatrix begrenzte Kandidaten.
+ */
+function shiftReferenceCandidates(
+    candidates,
+    dx, dy,
+    width, height
+) {
+    if (!candidates) {
+        return [];
+    }
+
+    const shiftedCandidates = [];
+
+    for (const candidate of candidates) {
+        const pixelX = candidate.pixelX + dx;
+        const pixelY = candidate.pixelY + dy;
+
+        if (pixelX < 0 || pixelX >= width || pixelY < 0 || pixelY >= height) {
+            continue;
+        }
+
+        shiftedCandidates.push({
+            ...candidate,
+            pixelX,
+            pixelY,
+        });
+    }
+
+    return mergeReferenceCandidates(shiftedCandidates);
+}
+
+/**
+ * Ermittelt die besten Referenzkandidaten aus berechneten Iterations- und
+ * Escape-Wert-Arrays.
+ *
+ * Die Funktion arbeitet auf einem Teilrechteck `rect`, gibt die Pixelpositionen
+ * aber immer bezogen auf die vollstaendige Zielmatrix zurueck. Dadurch koennen
+ * Kandidaten aus Teilberechnungen spaeter direkt zusammengefuehrt werden.
+ *
+ * Die komplexen Koordinaten werden mit derselben linearen Abbildung bestimmt,
+ * die auch die CPU-Berechnung verwendet:
+ *
+ *   cx = minX + pixelX / imageWidth  * (maxX - minX)
+ *   cy = minY + pixelY / imageHeight * (maxY - minY)
+ *
+ * @param {PixelRect}        rect         - Berechneter Pixelbereich innerhalb der Zielmatrix.
+ * @param {number}           imageWidth   - (integer) Breite der vollstaendigen Zielmatrix.
+ * @param {number}           imageHeight  - (integer) Hoehe der vollstaendigen Zielmatrix.
+ * @param {View}             view         - Ausschnitt der komplexen Ebene.
+ * @param {IterationArray}   iterations   - Iterationswerte fuer `rect`.
+ * @param {EscapeValueArray} escapeValues - Escape-Werte fuer `rect`.
+ * @param {number}           [limit=REFERENCE_CANDIDATE_LIMIT] - (integer) Maximale Anzahl Kandidaten.
+ * @returns {ReferenceCandidate[]} Beste Kandidaten aus dem uebergebenen Rechteck.
+ */
+function collectReferenceCandidatesFromArrays(
+    rect,
+    imageWidth, imageHeight,
+    view,
+    iterations,
+    escapeValues,
+    limit = REFERENCE_CANDIDATE_LIMIT
+) {
+    const candidates = [];
+    const { minX, maxX, minY, maxY } = view;
+
+    for (let localY = 0; localY < rect.height; localY++) {
+        for (let localX = 0; localX < rect.width; localX++) {
+            const index = localY * rect.width + localX;
+            const pixelX = rect.x + localX;
+            const pixelY = rect.y + localY;
+
+            const candidate = {
+                pixelX,
+                pixelY,
+                cx: minX + (pixelX / imageWidth) * (maxX - minX),
+                cy: minY + (pixelY / imageHeight) * (maxY - minY),
+                iterations: iterations[index],
+                escapeValue: escapeValues[index],
+            };
+
+            candidates.push(candidate);
+
+            candidates.sort((a, b) => {
+                if (b.iterations !== a.iterations) {
+                    return b.iterations - a.iterations;
+                }
+
+                return a.escapeValue - b.escapeValue;
+            });
+
+            if (candidates.length > limit) {
+                candidates.length = limit;
+            }
+        }
+    }
+
+    return candidates;
+}

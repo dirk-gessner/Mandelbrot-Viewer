@@ -60,6 +60,7 @@ export function createIterationDataFromGpuArrays(
     iterations,
     escapeValues,
     minIterations,
+    referenceCandidates: [],
   };
 }
 

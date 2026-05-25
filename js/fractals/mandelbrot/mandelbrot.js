@@ -111,10 +111,12 @@ function mergeIterationDataParts(
 
     let targetOffset  = 0;
     let minIterations = Number.POSITIVE_INFINITY;
+    const referenceCandidateLists = [];
 
     for (const part of parts) {
         iterations.set(part.iterations, targetOffset);
         escapeValues.set(part.escapeValues, targetOffset);
+        referenceCandidateLists.push(part.referenceCandidates);
 
         targetOffset += part.iterations.length;
 
@@ -128,7 +130,8 @@ function mergeIterationDataParts(
         height: rect.height,
         iterations,
         escapeValues,
-        minIterations
+        minIterations,
+        referenceCandidates: mergeReferenceCandidates(...referenceCandidateLists)
     };
 }
 
@@ -160,7 +163,17 @@ function computeMandelbrotRectInCpuWorker(
 
         worker.onmessage = (event) => {
             worker.terminate();
-            resolve(event.data);
+            const result = event.data;
+            result.referenceCandidates = collectReferenceCandidatesFromArrays(
+                rect,
+                imageWidth,
+                imageHeight,
+                computationSettings.view,
+                result.iterations,
+                result.escapeValues
+            );
+
+            resolve(result);
         };
 
         worker.onerror = (error) => {
