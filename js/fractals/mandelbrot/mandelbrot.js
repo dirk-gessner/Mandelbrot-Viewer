@@ -51,7 +51,7 @@ const MANDELBROT_CPU_WORKER_SCRIPT = "./js/fractals/mandelbrot/mandelbrot-cpu-wo
  *
  * @type {number}
  */
-const MANDELBROT_REFERENCE_CANDIDATE_LIMIT = 16;
+const MANDELBROT_REFERENCE_CANDIDATE_LIMIT = 64;
 
 /**
  * Maximalwerte für die Iterationen bei der Ermittlung der Referenz-Orbits.
@@ -59,7 +59,7 @@ const MANDELBROT_REFERENCE_CANDIDATE_LIMIT = 16;
  * @type {number}
  */
 const MANDELBROT_REFERENCE_ORBIT_ITERATIONS = 50000;
-const MANDELBROT_REFERENCE_ORBIT_ESCAPE_RADIUS = 256;
+const MANDELBROT_REFERENCE_ORBIT_ESCAPE_RADIUS = 1256;
 
 // -----------------------------------------------------------------------------
 // Funktionen
@@ -357,18 +357,19 @@ async function computeMandelbrotRectCpu(
 }
 
 /**
- * Prüft, ob die aktuelle Ansicht sinnvoll mit f32-WebGPU berechnet werden kann.
+ * Prueft, ob die aktuelle Ansicht noch sinnvoll mit dem klassischen f32-WebGPU-
+ * Shader berechnet werden kann.
  *
- * WebGPU/WGSL arbeitet hier mit f32. Bei sehr tiefen Zoomstufen reicht die
- * Präzision nicht mehr aus, um benachbarte Pixel sauber auf unterschiedliche
- * komplexe Koordinaten abzubilden.
+ * Unterhalb der Grenz-Pixelgroesse reicht die f32-Praezision nicht mehr aus,
+ * um benachbarte Pixel sauber auf unterschiedliche komplexe Koordinaten
+ * abzubilden. In diesem Fall sollte der Perturbation-Shader verwendet werden.
  *
  * @param {View}    view        - Aktueller Ausschnitt der komplexen Ebene.
  * @param {number}  imageWidth  - (integer) Breite der vollständigen Zielmatrix.
  * @param {number}  imageHeight - (integer) Höhe der vollständigen Zielmatrix.
  * @returns {boolean}           - true, wenn WebGPU für diese Ansicht verwendet werden soll.
  */
-function shouldUseWebGpuForView(view, imageWidth, imageHeight) {
+function canUseStandardWebGpuShaderForView(view, imageWidth, imageHeight) {
     const pixelWidth = Math.abs(view.maxX - view.minX) / imageWidth;
     const pixelHeight = Math.abs(view.maxY - view.minY) / imageHeight;
 
@@ -395,15 +396,18 @@ async function computeMandelbrotRect(
     imageHeight,
     computationSettings
 ) {
-    const useWebGpuBackend =
-        USE_WEBGPU_BACKEND &&
-        shouldUseWebGpuForView(
-            computationSettings.view,
-            imageWidth,
-            imageHeight
+    const useStandardWebGpuShader = (
+            USE_WEBGPU_BACKEND && canUseStandardWebGpuShaderForView(
+                computationSettings.view,
+                imageWidth,
+                imageHeight
+            )
         );
-
-    if (useWebGpuBackend) {
+    const usePerturbationWebGpuShader = ( 
+            USE_WEBGPU_BACKEND && !useStandardWebGpuShader 
+        ); 
+        
+    if (useStandardWebGpuShader) {
         try {
             runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_WEBGPU;
             return await computeMandelbrotRectWebGpu(
@@ -418,11 +422,41 @@ async function computeMandelbrotRect(
                 error
             );
         }
-    } else {
+    } else if (usePerturbationWebGpuShader) {
+
         console.warn(
-            "Resolution limits for WebGPU (Float32) reached. Falling back to CPU (Float64) backend."
+            "Resolution limits for Standard WebGPU (Float32) reached. Switching to Perturbation WebGPU backend."
         );
 
+        const referenceOrbit = selectMandelbrotPerturbationReferenceOrbit(
+            iterationData?.referenceCandidates,
+            computationSettings.view,
+            computationSettings.maxIterations
+        );
+
+        if (referenceOrbit) {
+            try {
+                runtimeStats.lastComputationBackend =
+                    `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
+
+                return await computeMandelbrotRectWebGpu(
+                    rect,
+                    imageWidth,
+                    imageHeight,
+                    computationSettings,
+                    referenceOrbit
+                );
+            } catch (error) {
+                console.warn(
+                    "WebGPU Mandelbrot perturbation backend failed. Falling back to CPU backend.",
+                    error
+                );
+            }
+        } else {
+            console.warn(
+                "WebGPU Mandelbrot perturbation backend can't find a suitable reference orbit. Falling back to CPU backend."
+            );
+        }
     }
 
     runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_CPU;
@@ -553,9 +587,7 @@ function computeMandelbrotReferenceOrbit(
  * @param {ReferenceCandidate} b - Zweiter Referenzkandidat.
  * @returns {number} Sortierwert fuer absteigende Kandidatenqualitaet.
  */
-function compareReferenceCandidates(
-    a, b
-) {
+function compareReferenceCandidates(a, b) {
     if (b.iterations !== a.iterations) {
         return b.iterations - a.iterations;
     }
@@ -576,13 +608,14 @@ function compareReferenceCandidates(
  *
  *   cx = minX + pixelX / imageWidth  * (maxX - minX)
  *   cy = minY + pixelY / imageHeight * (maxY - minY)
- *
- * @param {PixelRect}        rect         - Berechneter Pixelbereich innerhalb der Zielmatrix.
- * @param {number}           imageWidth   - (integer) Breite der vollstaendigen Zielmatrix.
- * @param {number}           imageHeight  - (integer) Hoehe der vollstaendigen Zielmatrix.
- * @param {View}             view         - Ausschnitt der komplexen Ebene.
- * @param {IterationArray}   iterations   - Iterationswerte fuer `rect`.
- * @param {EscapeValueArray} escapeValues - Escape-Werte fuer `rect`.
+ * 
+ * @param {PixelRect}        rect          - Berechneter Pixelbereich innerhalb der Zielmatrix.
+ * @param {number}           imageWidth    - (integer) Breite der vollstaendigen Zielmatrix.
+ * @param {number}           imageHeight   - (integer) Hoehe der vollstaendigen Zielmatrix.
+ * @param {View}             view          - Ausschnitt der komplexen Ebene.
+ * @param {IterationArray}   iterations    - Iterationswerte fuer `rect`.
+ * @param {EscapeValueArray} escapeValues  - Escape-Werte fuer `rect`.
+ * @param {number}           maxIterations - (integer) aktueller Wert für Iterationsabbruch ohne Divergenz
  * @param {number}           [limit=MANDELBROT_REFERENCE_CANDIDATE_LIMIT] - (integer) Maximale Anzahl Kandidaten.
  * @returns {ReferenceCandidate[]} Beste Kandidaten aus dem uebergebenen Rechteck.
  */
@@ -592,10 +625,11 @@ function collectReferenceCandidatesFromArrays(
     view,
     iterations,
     escapeValues,
+    maxIterations, 
     limit = MANDELBROT_REFERENCE_CANDIDATE_LIMIT
 ) {
-    const gridColumns = 4;
-    const gridRows = 4;
+    const gridColumns = 8;
+    const gridRows = 8;
     const candidatesByCell = new Array(gridColumns * gridRows).fill(null);
     const { minX, maxX, minY, maxY } = view;
 
@@ -626,9 +660,11 @@ function collectReferenceCandidatesFromArrays(
 
             const cellIndex = cellY * gridColumns + cellX;
             const currentCandidate = candidatesByCell[cellIndex];
+            const candidateReachedMax = candidate.iterations >= maxIterations;
 
-            if (!currentCandidate ||
-                compareReferenceCandidates(candidate, currentCandidate) < 0) 
+            if  ( candidateReachedMax&&
+                    ( !currentCandidate ||
+                      compareReferenceCandidates(candidate, currentCandidate) < 0)) 
             {
                 candidatesByCell[cellIndex] = candidate;
             }
@@ -654,11 +690,13 @@ function collectReferenceCandidatesFromArrays(
  *
  * @param {IterationData} iterationData - Vollstaendige Iterationsmatrix, fuer die Kandidaten ermittelt werden sollen.
  * @param {View}          view          - Zur Iterationsmatrix gehoerender Ausschnitt der komplexen Ebene.
+ * @param {number}        maxIterations - (integer) aktueller Wert für Iterationsabbruch ohne Divergenz
  * @returns {ReferenceCandidate[]} Neu ermittelte Referenzkandidaten.
  */
 function refreshReferenceCandidates(
     iterationData,
-    view
+    view, 
+    maxIterations
 ) {
     return collectReferenceCandidatesFromArrays(
         { x: 0, y: 0, width: iterationData.width, height: iterationData.height },
@@ -666,33 +704,29 @@ function refreshReferenceCandidates(
         iterationData.height,
         view,
         iterationData.iterations,
-        iterationData.escapeValues
+        iterationData.escapeValues, 
+        maxIterations, 
     );
 }
 
+
 /**
- * Waehlt den besten Referenzkandidaten fuer eine Ziel-View aus.
+ * Sortiert Referenzkandidaten nach ihrer Eignung fuer eine Ziel-View.
  *
- * Die Funktion bevorzugt Kandidaten, die innerhalb der Ziel-View liegen. Unter
- * diesen Kandidaten gewinnt zuerst der hoehere Iterationswert. Bei gleichem
- * Iterationswert wird der Kandidat bevorzugt, der naeher an der Mitte der
- * Ziel-View liegt. Der Escape-Wert dient zuletzt als Tie-Breaker; ein kleinerer
- * Escape-Wert ist besser.
- *
- * Falls kein Kandidat innerhalb der Ziel-View liegt, wird der Kandidat gewaehlt,
- * der der Mitte der Ziel-View am naechsten liegt. Auch in diesem Fall dienen
- * Iterationswert und Escape-Wert als nachrangige Tie-Breaker.
+ * Die Sortierung bevorzugt Kandidaten innerhalb der Ziel-View. Innerhalb der
+ * View zaehlt zuerst die Orbit-Qualitaet, ausserhalb zuerst die Naehe zur
+ * View-Mitte.
  *
  * @param {ReferenceCandidate[]} referenceCandidates - Verfuegbare Referenzkandidaten.
- * @param {View}                 view                - Ziel-View, fuer die ein Referenzpunkt gesucht wird.
- * @returns {?ReferenceCandidate} Bester Kandidat fuer die Ziel-View oder null, wenn keine Kandidaten vorhanden sind.
+ * @param {View} view - Ziel-View, fuer die Referenzpunkte gesucht werden.
+ * @returns {ReferenceCandidate[]} Sortierte Kandidatenliste, bester Kandidat zuerst.
  */
-function selectReferenceCandidateForView(
+function sortReferenceCandidatesForView(
     referenceCandidates,
     view
 ) {
     if (!referenceCandidates || referenceCandidates.length === 0) {
-        return null;
+        return [];
     }
 
     const centerX = (view.minX + view.maxX) / 2;
@@ -758,7 +792,56 @@ function selectReferenceCandidateForView(
         return a.escapeValue - b.escapeValue;
     }
 
-    return [...referenceCandidates].sort(compareCandidates)[0];
+    return [...referenceCandidates].sort(compareCandidates);
+}
+
+/**
+ * Waehlt den besten Referenzkandidaten fuer eine Ziel-View aus.
+ *
+ * @param {ReferenceCandidate[]} referenceCandidates - Verfuegbare Referenzkandidaten.
+ * @param {View} view - Ziel-View, fuer die ein Referenzpunkt gesucht wird.
+ * @returns {?ReferenceCandidate} Bester Kandidat oder null.
+ */
+function selectReferenceCandidateForView(
+    referenceCandidates,
+    view
+) {
+    return sortReferenceCandidatesForView(referenceCandidates, view)[0] ?? null;
+}
+
+/**
+ * Ermittelt einen fuer Perturbation brauchbaren Referenzorbit.
+ *
+ * Die Funktion probiert die nach Ziel-View sortierten Kandidaten der Reihe nach.
+ * Kandidaten, die in der bisherigen Berechnung bereits vor `maxIterations`
+ * escaped sind, werden uebersprungen, weil ihr Orbit sehr wahrscheinlich nicht
+ * lang genug fuer stabile Perturbation ist.
+ *
+ * Nach der Orbitberechnung wird zusaetzlich geprueft, ob der Referenzorbit
+ * mindestens bis zur aktuell benoetigten Iterationstiefe reicht.
+ *
+ * @param {ReferenceCandidate[]} referenceCandidates - Verfuegbare Referenzkandidaten.
+ * @param {View} view - Ziel-View, fuer die ein Referenzorbit gesucht wird.
+ * @param {number} maxIterations - (integer) Benoetigte Iterationstiefe fuer das aktuelle Rendering.
+ * @returns {?MandelbrotReferenceOrbit} Brauchbarer Referenzorbit oder null.
+ */
+function selectMandelbrotPerturbationReferenceOrbit(
+    referenceCandidates,
+    view,
+    maxIterations
+) {
+    const candidates = sortReferenceCandidatesForView(referenceCandidates, view)
+        .filter(candidate => candidate.iterations >= maxIterations);
+
+    for (const candidate of candidates) {
+        const referenceOrbit = computeMandelbrotReferenceOrbit(candidate);
+
+        if (referenceOrbit.escapeIteration < 0) {
+            return referenceOrbit;
+        }
+    }
+
+    return null;
 }
 
 /**
@@ -778,7 +861,8 @@ function finalizeMandelbrot(
     iterationData.referenceCandidates =
         refreshReferenceCandidates(
             iterationData,
-            computationSettings.view
+            computationSettings.view, 
+            computationSettings.maxIterations, 
         );
 
     return iterationData;
