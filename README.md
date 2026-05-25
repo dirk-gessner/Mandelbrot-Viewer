@@ -14,6 +14,8 @@ LMV ist ein Lern- und Experimentierprojekt zur Mandelbrot-Menge. Der Viewer bere
 
 Die Anwendung eignet sich zum Erkunden der Mandelbrot-Menge, zum Experimentieren mit Zoomstufen, Iterationstiefe und Farbpaletten sowie zum Speichern interessanter Ansichten als PNG-Datei.
 
+Die Berechnung kann je nach Ansicht über ein WebGPU-Backend oder über das CPU-Backend mit Web Workern erfolgen. Für Ansichten, bei denen die aktuelle WebGPU-Implementierung wegen `f32`-Präzision nicht mehr sinnvoll eingesetzt werden kann, fällt die Anwendung auf die CPU-Berechnung zurück.
+
 ### Hauptfunktionen
 
 - Interaktive Darstellung der Mandelbrot-Menge im Browser.
@@ -24,6 +26,8 @@ Die Anwendung eignet sich zum Erkunden der Mandelbrot-Menge, zum Experimentieren
 - Auswahl verschiedener Farbpaletten.
 - Steuerung von Gamma-Korrektur, logarithmischer Skalierung, Smooth Coloring und Paletteninvertierung.
 - Anzeige der aktuellen X- und Y-Bereiche sowie des Zoom-Levels.
+- Berechnung der `IterationData` automatisiert über WebGPU oder CPU-Worker.
+- Automatischer CPU-Fallback für zu tiefe Zoomstufen oder WebGPU-Fehler.
 - Speichern der aktuellen Ansicht als PNG.
 - Zurücksetzen auf den initialen Bildausschnitt.
 
@@ -43,6 +47,8 @@ https://unpkg.com/vue@3/dist/vue.global.prod.js
 ```
 
 Eine lokale Installation oder ein Build-Schritt ist aktuell nicht nötig.
+
+Für das WebGPU-Backend wird ein Browser mit WebGPU-Unterstützung benötigt. Ist WebGPU nicht verfügbar oder für die aktuelle Ansicht nicht geeignet, wird die Berechnung über das CPU-Backend ausgeführt.
 
 ### Verwendung der Benutzeroberfläche
 
@@ -106,7 +112,7 @@ Sonstige Funktionen:
 
 ### Farbpaletten
 
-Aktuell sind mehrere Palettentypen vorhanden:
+Aktuell sind mehrere Palettentypen vorhanden.
 
 Cosinus-Paletten:
 
@@ -136,27 +142,15 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 ### Screenshots
 
 ![LMV Startansicht](img/screenshots/lmv-general-view.png)
-
 ![LMV Control-Panel](img/screenshots/lmv-control-panel.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-help-modal.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-color-modes-01.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-color-modes-02.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-color-modes-03.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-01.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-02.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-03.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-detail-view.png)
-
-
-
 
 ---
 
@@ -179,13 +173,22 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 │   └── screenshots/
 │       └── ...
 └── js/
+    ├── core/
+    │   └── worker-rpc-client.js
+    ├── webgpu/
+    │   └── webgpu-worker-runtime.js
+    ├── fractals/
+    │   ├── fractal-gpu-utils.js
+    │   └── mandelbrot/
+    │       ├── mandelbrot.js
+    │       ├── mandelbrot-cpu-worker.js
+    │       ├── mandelbrot-webgpu.js
+    │       └── mandelbrot-webgpu-worker.js
     ├── dom.js
     ├── settings.js
     ├── timing.js
     ├── palettes.js
     ├── iteration-data.js
-    ├── mandelbrot.js
-    ├── mandelbrot-cpu-worker.js
     ├── rendering.js
     ├── layout.js
     ├── interactions.js
@@ -206,8 +209,13 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 - `js/timing.js` enthält die Laufzeitmessung für vollständige Iterationsdaten-Aktualisierungen.
 - `js/palettes.js` definiert Farben und Farbpaletten.
 - `js/iteration-data.js` enthält generische Operationen auf Iterationsdaten, darunter Kopieren von Rechtecken, Dirty-Rect-Ermittlung, Panning- und Resize-Logik.
-- `js/mandelbrot.js` enthält die Mandelbrot-spezifische Orchestrierung, Worker-Aufrufe, Task-Aufteilung und das Zusammenführen der Teilergebnisse.
-- `js/mandelbrot-cpu-worker.js` enthält die eigentliche synchrone Mandelbrot-Berechnung, die im Worker ausgeführt wird.
+- `js/core/worker-rpc-client.js` enthält einen Promise-basierten RPC-Client für Worker-Kommunikation mit Request-IDs und Pending-Request-Verwaltung.
+- `js/webgpu/webgpu-worker-runtime.js` enthält wiederverwendbare WebGPU-Worker-Hilfsfunktionen, darunter Kontext- und Pipeline-Initialisierung sowie Fehlerantworten.
+- `js/fractals/fractal-gpu-utils.js` enthält GPU-nahe Hilfsfunktionen, die nicht direkt Mandelbrot-spezifisch sind, zum Beispiel Float32-Splitting und den Aufbau von `IterationData` aus GPU-Arrays.
+- `js/fractals/mandelbrot/mandelbrot.js` enthält die Mandelbrot-spezifische Orchestrierung, Backend-Auswahl, CPU-Worker-Aufrufe, Task-Aufteilung und das Zusammenführen der Teilergebnisse.
+- `js/fractals/mandelbrot/mandelbrot-cpu-worker.js` enthält die synchrone Mandelbrot-Berechnung für das CPU-Backend.
+- `js/fractals/mandelbrot/mandelbrot-webgpu.js` enthält den Main-Thread-Proxy zum Mandelbrot-WebGPU-Worker.
+- `js/fractals/mandelbrot/mandelbrot-webgpu-worker.js` enthält die WebGPU-Compute-Berechnung der Mandelbrot-Iterations- und Escape-Werte.
 - `js/rendering.js` enthält Rendering-Funktionen, den Aufbau von `ImageData` aus Iterationsdaten, Bildausgabe, Render-Overlay und Panning-Vorschau.
 - `js/layout.js` behandelt Canvas-Größe, initialen View, Seitenverhältnis, Resize-Logik und Reset der Ansicht.
 - `js/interactions.js` enthält Mausinteraktion, Panning, Zoom-Auswahl, Zoom-Out-Schritte, Mausradsteuerung und das Zeichnen des Auswahlrahmens mit Fadenkreuz.
@@ -224,7 +232,7 @@ Die Anwendung trennt drei Ebenen:
 1. **Berechnung**
    - Die Mandelbrot-Menge wird für den aktuell sichtbaren View berechnet.
    - Ergebnis sind Iterationswerte und Escape-Werte.
-   - Die Berechnung wird über Web Worker ausgeführt.
+   - Die Berechnung kann über WebGPU oder CPU-Worker erfolgen.
 
 2. **Iterationsdaten**
    - Die Werte werden in einer Matrix gehalten.
@@ -244,33 +252,43 @@ Die zentrale Datenstruktur enthält:
 
 ```js
 {
-  width,          // Breite der Matrix in Pixeln
-  height,         // Höhe der Matrix in Pixeln
-  iterations,     // Uint16Array(width * height)
-  escapeValues,   // Float32Array(width * height)
-  minIterations   // kleinster Iterationswert im Datensatz
+  width,         // Breite der Matrix in Pixeln
+  height,        // Höhe der Matrix in Pixeln
+  iterations,    // Uint16Array(width * height)
+  escapeValues,  // Float32Array(width * height)
+  minIterations  // kleinster Iterationswert im Datensatz
 }
 ```
 
-`iterations` und `escapeValues` sind parallel aufgebaut.
-
-Der Index eines Pixels ergibt sich aus:
+`iterations` und `escapeValues` sind parallel aufgebaut. Der Index eines Pixels ergibt sich aus:
 
 ```text
 index = y * width + x
 ```
 
-#### Worker-basierte Berechnung
+#### Backend-Auswahl
 
-Die Mandelbrot-Berechnung läuft nicht direkt im Hauptthread, sondern über Web Worker. Die zentrale Einstiegstelle ist die Rechteckberechnung:
+Die zentrale Einstiegstelle ist die Rechteckberechnung:
 
 ```text
 computeMandelbrotRect(rect, imageWidth, imageHeight, computationSettings)
 ```
 
-Für kleine Rechtecke oder eine Worker-Anzahl von `1` wird ein einzelner Worker verwendet. Für größere Rechtecke wird das Rechteck horizontal in mehrere Tasks geteilt. Diese Tasks werden mit einem einfachen Worker-Pool abgearbeitet.
+Diese Funktion entscheidet zwischen WebGPU-Backend und CPU-Backend.
 
-Konfigurierbar sind:
+Das WebGPU-Backend wird verwendet, wenn:
+
+- `USE_WEBGPU_BACKEND` aktiv ist,
+- WebGPU im Browser verfügbar ist,
+- die Ansicht nicht zu tief für die aktuelle `f32`-GPU-Berechnung ist.
+
+Wenn WebGPU fehlschlägt oder die aktuelle Ansicht wegen `f32`-Präzision nicht geeignet ist, wird direkt der CPU-Pfad verwendet. Dadurch nutzt der Fallback weiterhin die vorhandene parallele CPU-Berechnung und fällt nicht auf eine einzelne Worker-Instanz zurück.
+
+#### CPU-basierte Berechnung
+
+Für kleine Rechtecke oder eine Worker-Anzahl von `1` wird ein einzelner CPU-Worker verwendet. Für größere Rechtecke wird das Rechteck horizontal in mehrere Tasks geteilt.
+
+Diese Tasks werden mit einem einfachen Worker-Pool abgearbeitet. Konfigurierbar sind:
 
 - Anzahl der Worker-Threads,
 - Anzahl der Tasks pro Worker.
@@ -283,23 +301,58 @@ taskCount = min(rect.height, workerCount * tasksPerWorker)
 
 Dadurch entstehen in der Regel mehr Tasks als Worker. Das verbessert die Lastverteilung, weil die Rechenzeit innerhalb der Mandelbrot-Menge stark vom Bildbereich abhängt.
 
-Der Ablauf für eine parallele vollständige Neuberechnung ist:
+Der Ablauf für eine parallele vollständige CPU-Neuberechnung ist:
 
 1. Aktuelles Bildrechteck bestimmen.
 2. Rechteck horizontal in mehrere Tasks zerlegen.
 3. Tasks in fester Reihenfolge in eine Queue legen.
-4. Mehrere Worker starten.
+4. Mehrere CPU-Worker starten.
 5. Jeder Worker verarbeitet nacheinander den jeweils nächsten freien Task.
 6. Ergebnisse in Task-Reihenfolge ablegen.
 7. Teilergebnisse in ein gemeinsames `IterationData`-Objekt kopieren.
 8. Aus `IterationData` ein neues `ImageData` erzeugen.
 9. Canvas neu zeichnen.
 
-Die Worker selbst kennen keine Parallelisierungslogik. Sie berechnen nur ein einzelnes übergebenes Rechteck und liefern dessen Iterations- und Escape-Werte zurück.
+Die CPU-Worker selbst kennen keine Parallelisierungslogik. Sie berechnen nur ein einzelnes übergebenes Rechteck und liefern dessen Iterations- und Escape-Werte zurück.
+
+#### WebGPU-basierte Berechnung
+
+Das WebGPU-Backend verwendet einen dauerhaft wiederverwendeten Worker:
+
+```text
+mandelbrot.js
+  -> mandelbrot-webgpu.js
+       -> mandelbrot-webgpu-worker.js
+```
+
+`mandelbrot-webgpu.js` arbeitet als Main-Thread-Proxy. Es verwaltet die Worker-Instanz, Request-IDs und ausstehende Promises.
+
+`mandelbrot-webgpu-worker.js` initialisiert den WebGPU-Kontext und die Compute-Pipeline. Die GPU-Berechnung erzeugt:
+
+- einen `iterations`-Buffer,
+- einen `escapeValues`-Buffer.
+
+Beide Buffer werden nach dem Dispatch zurückgelesen und in eine `IterationData`-Struktur übertragen.
+
+Die WebGPU-Berechnung arbeitet im Shader mit `f32`. Zur Verbesserung der Koordinatenberechnung werden die View-Koordinaten center-relativ aufgebaut. Der Mittelpunkt wird in High-/Low-Float32-Anteile zerlegt. Dadurch wird der Koordinatenaufbau stabiler als bei direkter Berechnung aus `minX`/`maxX`, echte Double-Precision im Mandelbrot-Loop wird dadurch aber nicht ersetzt.
+
+Für tiefe Zoomstufen wird deshalb auf das CPU-Backend zurückgefallen.
+
+#### WebGPU-Dispatch
+
+Der Compute-Shader arbeitet mit zweidimensionalen Workgroups. Die Anwendung protokolliert optional:
+
+- Workgroup-Größe,
+- Anzahl der Workgroups,
+- angeforderte Shader-Invocations,
+- tatsächlich aktive Pixel,
+- inaktive Rand-Invocations.
+
+Diese Werte beschreiben die angeforderten Shader-Invocations. Die tatsächliche Anzahl physischer GPU-Threads wird von WebGPU abstrahiert und ist nicht zuverlässig auslesbar.
 
 #### Laufzeitmessung
 
-Für vollständige Neuberechnungen wird die letzte `IterationData`-Aktualisierung gemessen. Die Messung umfasst die Berechnung der neuen Iterationsdaten inklusive Worker-Verteilung und Zusammenführung der Teilergebnisse.
+Für vollständige Neuberechnungen wird die letzte `IterationData`-Aktualisierung gemessen. Die Messung umfasst die Berechnung der neuen Iterationsdaten inklusive Backend-Aufwand, Worker-Verteilung, GPU-Readback und Zusammenführung der Teilergebnisse.
 
 Nicht gemessen werden reine Render-Änderungen wie Farbpalette, Gamma oder Log-Skalierung, weil diese keine neue Iterationsmatrix erzeugen und deshalb schlecht mit vollständigen Neuberechnungen vergleichbar sind.
 
@@ -318,7 +371,9 @@ Beim Loslassen der Maustaste passiert Folgendes:
 5. Nur diese Dirty Rects werden neu berechnet.
 6. Anschließend wird aus der aktualisierten Iterationsmatrix ein neues `ImageData` erzeugt.
 
-Bei einer kleinen horizontalen Verschiebung wird zum Beispiel nur ein vertikaler Randstreifen neu berechnet. Bei einer kombinierten horizontalen und vertikalen Verschiebung entstehen ein Randstreifen und ein zusätzlicher oberer oder unterer Streifen. Wenn die Verschiebung größer oder gleich der Bildgröße ist, wird das gesamte Bild neu berechnet.
+Bei einer kleinen horizontalen Verschiebung wird zum Beispiel nur ein vertikaler Randstreifen neu berechnet. Bei einer kombinierten horizontalen und vertikalen Verschiebung entstehen ein Randstreifen und ein zusätzlicher oberer oder unterer Streifen.
+
+Wenn die Verschiebung größer oder gleich der Bildgröße ist, wird das gesamte Bild neu berechnet.
 
 #### Resize mit Dirty Rects
 
@@ -366,9 +421,17 @@ Punkte, die durch diese Tests sicher innerhalb der Menge liegen, müssen nicht v
 
 #### Warum Web Worker?
 
-Die Mandelbrot-Berechnung ist rechenintensiv. Durch Web Worker kann sie aus dem Hauptthread ausgelagert und parallelisiert werden. In der aktuellen Version steht nicht primär die UI-Reaktionsfähigkeit im Vordergrund, sondern der Speedup durch parallele Berechnung.
+Die Mandelbrot-Berechnung ist rechenintensiv. Durch Web Worker kann sie aus dem Hauptthread ausgelagert werden. Im CPU-Backend wird dadurch außerdem eine parallele Berechnung über mehrere Worker ermöglicht.
 
-Die Architektur ist darauf ausgelegt, dass die aufrufenden Schichten weiterhin mit einer vollständigen `IterationData`-Struktur arbeiten, während die Zerlegung in Tasks und die Verteilung auf Worker innerhalb der Berechnungsschicht gekapselt bleiben.
+Die Architektur ist darauf ausgelegt, dass die aufrufenden Schichten weiterhin mit einer vollständigen `IterationData`-Struktur arbeiten, während die Backend-Details innerhalb der Berechnungsschicht gekapselt bleiben.
+
+#### Warum WebGPU?
+
+Die Berechnung einzelner Mandelbrot-Pixel ist hochgradig parallelisierbar. WebGPU erlaubt es, viele Pixel gleichzeitig über einen Compute-Shader zu berechnen. In der aktuellen Umsetzung werden sowohl die Iterationswerte als auch die Escape-Werte auf der GPU berechnet und anschließend als Typed Arrays zurück in die bestehende `IterationData`-Pipeline übertragen.
+
+#### Warum CPU-Fallback?
+
+Die aktuelle WebGPU-Implementierung arbeitet mit `f32`. Das ist für viele normale Ansichten schnell und ausreichend genau, stößt bei tieferen Zoomstufen aber an Präzisionsgrenzen. Für solche Fälle wird auf das CPU-Backend zurückgefallen, das weiterhin mit JavaScript-`number` und der vorhandenen parallelen Worker-Aufteilung arbeitet.
 
 #### Warum mehr Tasks als Worker?
 
@@ -388,8 +451,10 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 
 ### Grenzen der aktuellen Lösung
 
-- Die Worker werden aktuell pro Task über die bestehende Worker-Aufruffunktion erzeugt und nach Abschluss beendet; ein dauerhaft wiederverwendeter Worker-Pool wäre ein möglicher nächster Optimierungsschritt.
+- Die CPU-Worker werden aktuell pro Task über die bestehende Worker-Aufruffunktion erzeugt und nach Abschluss beendet; ein dauerhaft wiederverwendeter CPU-Worker-Pool wäre ein möglicher nächster Optimierungsschritt.
 - Die Teilergebnisse werden beim Transfer noch nicht konsequent mit Transferables optimiert.
+- Die WebGPU-Berechnung arbeitet aktuell mit `f32`; für tiefe Zoomstufen ist deshalb ein CPU-Fallback erforderlich.
+- Die center-relative Koordinatenberechnung verbessert die WebGPU-Präzision, ersetzt aber keine echte Double-Precision-Arithmetik im Shader.
 - Verkleinerungen des Canvas werden vollständig neu berechnet.
 - Es gibt noch keine Touch- oder Tastatursteuerung.
 - Es gibt noch keine Persistenz für Bookmarks, Presets oder Zoom-Historie.
@@ -403,6 +468,9 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Auslagerung rechenintensiver Arbeit in Web Worker.
 - Zerlegung großer Rechenbereiche in kleinere Tasks.
 - Einfache Worker-Pool- beziehungsweise Task-Queue-Strategien.
+- Nutzung von WebGPU Compute Shadern für pixelweise parallele Berechnungen.
+- Aufbau und Readback von GPU-Buffern.
+- Umgang mit `f32`-Präzisionsgrenzen in GPU-Shadern.
 - Wiederverwendung berechneter Daten beim Verschieben der Ansicht.
 - Dirty-Rect-Strategien für Panning und Resize.
 - Strukturierung eines einfachen JavaScript-Projekts in kleinere Module.
@@ -413,10 +481,14 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 
 ### Mögliche nächste Schritte
 
-- Worker wiederverwenden statt für jeden Task neu erzeugen.
+- CPU-Worker wiederverwenden statt für jeden Task neu erzeugen.
 - Typed-Array-Buffer mit Transferables übertragen, um Kopieraufwand zu reduzieren.
 - Automatische Worker-Anzahl aus `navigator.hardwareConcurrency` ableiten.
 - Task-Größe dynamisch an Bildgröße und Iterationstiefe anpassen.
+- WebGPU-/CPU-Vergleichstests für kleine Referenzbereiche ergänzen.
+- WebGPU-Backend in der Benutzeroberfläche auswählbar machen, zum Beispiel `Auto`, `CPU`, `WebGPU`.
+- Die `f32`-Grenze für den WebGPU-Fallback empirisch justieren.
+- Experimentell Double-Single-Arithmetik oder Perturbation-Methoden für tiefere GPU-Zoomstufen prüfen.
 - Robustere Merge-Logik für beliebige Teilrechtecke ergänzen.
 - Touch- und Tastaturbedienung verbessern.
 - Presets, Bookmarks oder eine Zoom-History einbauen.
@@ -425,7 +497,6 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Canvas-Verkleinerungen ebenfalls cache-basiert behandeln, sofern sich daraus ein klarer Nutzen ergibt.
 - Weitere Entkopplung der generischen Iterationsdaten-Operationen von der konkreten Mandelbrot-Berechnung.
 - Perspektivisch Julia-Mengen oder andere Escape-Time-Fraktale ergänzen.
-- Perspektivisch ein performanteres Backend oder WebAssembly-Modul für die Berechnung testen.
 
 ---
 
