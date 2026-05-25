@@ -5,23 +5,22 @@
 // Diese Datei läuft in einem separaten Web-Worker-Kontext.
 //
 // -----------------------------------------------------------------------------
-
 import {
     getWorkerContext,
     getComputePipeline,
     postWorkerErrorResponse,
-} from "./webgpu-worker-runtime.js";
+} from "../../webgpu/webgpu-worker-runtime.js";
 
 import {
     splitFloat64ToFloat32Pair,
     createIterationDataFromGpuArrays,
-} from "./fractal-gpu-utils.js";
+} from "../fractal-gpu-utils.js";
 
 // -----------------------------------------------------------------------------
 // Message-Konstanten
 // -----------------------------------------------------------------------------
 const MANDELBROT_COMPUTE_REQUEST = "compute-mandelbrot-rect";
-const MANDELBROT_COMPUTE_RESULT = "compute-mandelbrot-rect-result";
+const MANDELBROT_COMPUTE_RESULT  = "compute-mandelbrot-rect-result";
 
 // -----------------------------------------------------------------------------
 // Pfad zum Shader-Code
@@ -451,7 +450,7 @@ async function handleComputeMandelbrotRectMessage(
     );
 
     const response = {
-        type: "MANDELBROT_COMPUTE_RESULT",
+        type: MANDELBROT_COMPUTE_RESULT,
         requestId: message.requestId,
         ok: true,
         result,

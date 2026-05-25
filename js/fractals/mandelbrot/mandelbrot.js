@@ -39,7 +39,7 @@ const USE_WEBGPU_BACKEND = true;
  *
  * @type {string}
  */
-const MANDELBROT_CPU_WORKER_SCRIPT = "./js/mandelbrot-cpu-worker.js";
+const MANDELBROT_CPU_WORKER_SCRIPT = "./js/fractals/mandelbrot/mandelbrot-cpu-worker.js";
 
 /**
  * Teilt ein Pixelrechteck horizontal in mehrere Teilrechtecke.

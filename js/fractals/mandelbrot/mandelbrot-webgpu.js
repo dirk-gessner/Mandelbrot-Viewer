@@ -18,7 +18,7 @@ const MANDELBROT_COMPUTE_REQUEST = "compute-mandelbrot-rect";
  *
  * @type {string}
  */
-const MANDELBROT_WEBGPU_WORKER_SCRIPT = "./js/mandelbrot-webgpu-worker.js";
+const MANDELBROT_WEBGPU_WORKER_SCRIPT = "./js/fractals/mandelbrot/mandelbrot-webgpu-worker.js";
 
 /**
  * Promise-basierter Client fuer den Mandelbrot-WebGPU-Worker.
