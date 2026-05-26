@@ -74,14 +74,15 @@ const computationSettings = {
  * Einstellungen für das Rendering.
  *
  * @typedef {Object} RenderSettings
- * @property {number}  gamma                    - (decimal) Gamma-Korrekturwert.
- * @property {number}  colorScalingCorrection   - (decimal) Korrekturwert fürs Color-Scaling.
- * @property {string}  paletteKey               - Schlüsselwert einer Palette (siehe palettes.js).
- * @property {string}  innerSetColorKey         - Farbbezeichner für die Darstellung der inneren Menge des Fraktals.
- * @property {boolean} smoothColoringEnabled    - Weiche Farbübergänge ein/aus.
- * @property {boolean} logScalingEnabled        - Logarithmische Farbskalierung ein/aus.
- * @property {number}  logStrength              - (decimal) Anteil logarithmischer vs. linearer Farbskalierung: 0 = komplett linear, 1 = komplett logarithmisch.
- * @property {boolean} invertedPalette          - Farbpalette invertieren ein/aus.
+ * @property {number}  gamma                      - (decimal) Gamma-Korrekturwert.
+ * @property {number}  colorScalingCorrection     - (decimal) Korrekturwert fürs Color-Scaling.
+ * @property {string}  paletteKey                 - Schlüsselwert einer Palette (siehe palettes.js).
+ * @property {string}  innerSetColorKey           - Farbbezeichner für die Darstellung der inneren Menge des Fraktals.
+ * @property {boolean} smoothColoringEnabled      - Weiche Farbübergänge ein/aus.
+ * @property {boolean} logScalingEnabled          - Logarithmische Farbskalierung ein/aus.
+ * @property {number}  logStrength                - (decimal) Anteil logarithmischer vs. linearer Farbskalierung: 0 = komplett linear, 1 = komplett logarithmisch.
+ * @property {boolean} invertedPalette            - Farbpalette invertieren ein/aus.
+ * @property {boolean} showPerturbationReferences - Referenzpunkte für Perturbationsberechnung anzeigen
  */
 
 /**
@@ -90,18 +91,19 @@ const computationSettings = {
  * @type {RenderSettings}
  */
 const renderSettings = {
-    gamma:                  1.0,
-    colorScalingCorrection: 1.0,
-    paletteKey:             'goldBlue',
-    innerSetColorKey:       'schwarz',
-    smoothColoringEnabled:  true,
-    logScalingEnabled:      true,
-    logStrength:            1.0,
-    invertedPalette:        false,
+    gamma:                      1.0,
+    colorScalingCorrection:     1.0,
+    paletteKey:                 'goldBlue',
+    innerSetColorKey:           'schwarz',
+    smoothColoringEnabled:      true,
+    logScalingEnabled:          true,
+    logStrength:                1.0,
+    invertedPalette:            false,
+    showPerturbationReferences: false, 
 };
 
 /**
- * Einstellungen für das MultiThreading.
+ * Einstellungen für das CPU-MultiThreading.
  *
  * @typedef {Object} MultiThreadSettings
  * @property {number}  workerCount      - (integer) Anzahl der Workerthreads
@@ -117,6 +119,35 @@ const multiThreadSettings = {
     workerCount:    12, 
     tasksPerWorker: 3, 
 };
+
+/**
+ * Einstellungen fuer die Auswahl des Mandelbrot-Berechnungsbackends.
+ *
+ * Diese Optionen beeinflussen nicht das mathematische Ergebnis, sondern nur,
+ * welche Implementierungsstrategie verwendet werden darf.
+ *
+ * @typedef {Object} MandelbrotBackendSettings
+ * @property {boolean} useWebGpu - Erlaubt die Berechnung ueber WebGPU.
+ * @property {boolean} usePerturbation - Erlaubt den Perturbation-Shader fuer tiefe Zoomstufen.
+ * @property {boolean} useCpu - Erlaubt Rueckfall auf CPU, wenn GPU/Perturbation nicht geeignet ist.
+ */
+
+/**
+ * Globale Einstellungen für die Backendkonfiguration
+ * 
+ * @type {MandelbrotBackendSettings}
+ */
+const mandelbrotBackendSettings = {
+    useWebGpu: true, 
+    usePerturbation: true, 
+    useCpu: true, 
+}; 
+
+const MANDELBROT_BACKEND_MODE_CPU = "cpu";
+const MANDELBROT_BACKEND_MODE_WEBGPU = "webgpu";
+const MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION = "webgpu-perturbation";
+const MANDELBROT_BACKEND_MODE_WEBGPU_CPU_FALLBACK = "webgpu-cpu-fallback";
+const MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK = "webgpu-perturbation-cpu-fallback";
 
 /**
  * ID des aktuell geplanten Timers für die verzögerte Neuberechnung.

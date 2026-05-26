@@ -517,7 +517,7 @@ function drawScene(pixelDx = 0, pixelDy = 0) {
         drawSelectionFrame(ctx, selection);
     }
 
-    if (DEBUG_DRAW_REFERENCE_CANDIDATES) {
+    if (renderSettings.showPerturbationReferences) {
         drawReferenceCandidateOverlay(
             ctx,
             iterationData,

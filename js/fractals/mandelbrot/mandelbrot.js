@@ -29,16 +29,6 @@
 const WEBGPU_MIN_PIXEL_SIZE = 1e-7;
 
 /**
- * Aktiviert oder deaktiviert das WebGPU-Backend global.
- *
- * Wenn diese Option deaktiviert ist, verwendet die zentrale Berechnungsfassade
- * immer den CPU-Pfad, unabhängig von der aktuellen Zoomstufe.
- *
- * @type {boolean}
- */
-const USE_WEBGPU_BACKEND = true;
-
-/**
  * Pfad zum CPU-Worker-Skript für Mandelbrot-Rechteckberechnungen.
  *
  * @type {string}
@@ -396,76 +386,111 @@ async function computeMandelbrotRect(
     imageHeight,
     computationSettings
 ) {
-    const useStandardWebGpuShader = (
-            USE_WEBGPU_BACKEND && canUseStandardWebGpuShaderForView(
-                computationSettings.view,
-                imageWidth,
-                imageHeight
-            )
-        );
-    const usePerturbationWebGpuShader = ( 
-            USE_WEBGPU_BACKEND && !useStandardWebGpuShader 
-        ); 
-        
-    if (useStandardWebGpuShader) {
-        try {
-            runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_WEBGPU;
-            return await computeMandelbrotRectWebGpu(
-                rect,
-                imageWidth,
-                imageHeight,
-                computationSettings
-            );
-        } catch (error) {
-            console.warn(
-                "WebGPU Mandelbrot backend failed. Falling back to CPU backend.",
-                error
-            );
-        }
-    } else if (usePerturbationWebGpuShader) {
 
-        console.warn(
-            "Resolution limits for Standard WebGPU (Float32) reached. Switching to Perturbation WebGPU backend."
-        );
-
-        const referenceOrbit = selectMandelbrotPerturbationReferenceOrbit(
-            iterationData?.referenceCandidates,
+    const standardWebGpuIsPreciseEnough =
+        canUseStandardWebGpuShaderForView(
             computationSettings.view,
-            computationSettings.maxIterations
+            imageWidth,
+            imageHeight
         );
 
-        if (referenceOrbit) {
-            try {
-                runtimeStats.lastComputationBackend =
-                    `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
+    const useStandardWebGpu =
+        mandelbrotBackendSettings.useWebGpu;
 
+    const usePerturbation =
+        mandelbrotBackendSettings.useWebGpu &&
+        mandelbrotBackendSettings.usePerturbation;
+
+    const useCpu =
+        !mandelbrotBackendSettings.useWebGpu ||
+        mandelbrotBackendSettings.useCpu;
+
+    if (useStandardWebGpu) {
+
+        if (  standardWebGpuIsPreciseEnough ||
+            ( !usePerturbation && !useCpu ) )
+        {
+            try {
+
+                runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_WEBGPU;
                 return await computeMandelbrotRectWebGpu(
                     rect,
                     imageWidth,
                     imageHeight,
-                    computationSettings,
-                    referenceOrbit
+                    computationSettings
                 );
             } catch (error) {
+                
                 console.warn(
-                    "WebGPU Mandelbrot perturbation backend failed. Falling back to CPU backend.",
+                    "WebGPU Mandelbrot backend failed.",
                     error
                 );
+                
+                if(!useCpu) { throw error }; 
+
+                console.warn("Falling back to CPU backend.");
             }
-        } else {
+
+        } else if (usePerturbation) {
+
             console.warn(
-                "WebGPU Mandelbrot perturbation backend can't find a suitable reference orbit. Falling back to CPU backend."
+                "Resolution limits for Standard WebGPU (Float32) reached. Switching to Perturbation WebGPU backend."
             );
+
+            const referenceOrbit = selectMandelbrotPerturbationReferenceOrbit(
+                iterationData?.referenceCandidates,
+                computationSettings.view,
+                computationSettings.maxIterations
+            );
+
+            if (referenceOrbit) {
+                try {
+                    runtimeStats.lastComputationBackend =
+                        `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
+
+                    return await computeMandelbrotRectWebGpu(
+                        rect,
+                        imageWidth,
+                        imageHeight,
+                        computationSettings,
+                        referenceOrbit
+                    );
+                } catch (error) {
+
+                    console.warn(
+                        "WebGPU Mandelbrot perturbation backend failed.",
+                        error
+                    );
+
+                    if(!useCpu) { throw error };
+
+                    console.warn("Falling back to CPU backend.");
+                }
+                
+            } else {
+                
+                const error = new Error (
+                    "WebGPU Mandelbrot perturbation backend can't find a suitable reference orbit."
+                );
+
+                if(!useCpu) { throw error };
+
+                console.warn("Falling back to CPU backend.");
+            }
         }
     }
 
-    runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_CPU;
-    return computeMandelbrotRectCpu(
-        rect,
-        imageWidth,
-        imageHeight,
-        computationSettings
-    );
+    if (useCpu) {
+        runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_CPU;
+        return computeMandelbrotRectCpu(
+            rect,
+            imageWidth,
+            imageHeight,
+            computationSettings
+        );
+    }
+
+    throw new Error("No enabled Mandelbrot backend can compute the current view.");
 }
 
 /**
