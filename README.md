@@ -1,6 +1,6 @@
 # LMV – Lightweight Mandelbrot Viewer
 
-LMV ist ein interaktiver Mandelbrot-Viewer für den Webbrowser. Die Anwendung stellt die Mandelbrot-Menge auf einem HTML5-Canvas dar und erlaubt es, den Ausschnitt, die Berechnungsparameter und die Farbgebung interaktiv zu verändern.
+LMV ist ein interaktiver Mandelbrot-Viewer für den Webbrowser. Die Anwendung stellt die Mandelbrot-Menge auf einem HTML5-Canvas dar und erlaubt es, den Ausschnitt, die Berechnungsparameter, das Berechnungsbackend und die Farbgebung interaktiv zu verändern.
 
 Das Projekt ist bewusst leichtgewichtig gehalten: Es gibt keine Build-Pipeline, keinen Bundler und kein Framework-Setup. Die Anwendung kann direkt über einen lokalen Webserver in einem modernen Browser gestartet werden.
 
@@ -14,7 +14,7 @@ LMV ist ein Lern- und Experimentierprojekt zur Mandelbrot-Menge. Der Viewer bere
 
 Die Anwendung eignet sich zum Erkunden der Mandelbrot-Menge, zum Experimentieren mit Zoomstufen, Iterationstiefe und Farbpaletten sowie zum Speichern interessanter Ansichten als PNG-Datei.
 
-Die Berechnung kann je nach Ansicht über ein WebGPU-Backend oder über das CPU-Backend mit Web Workern erfolgen. Für Ansichten, bei denen die aktuelle WebGPU-Implementierung wegen `f32`-Präzision nicht mehr sinnvoll eingesetzt werden kann, fällt die Anwendung auf die CPU-Berechnung zurück.
+Die Berechnung kann je nach Konfiguration und Ansicht über ein CPU-Backend mit Web Workern, über ein klassisches WebGPU-Backend oder über ein WebGPU-Backend mit Perturbation-Ansatz erfolgen. Für Ansichten, bei denen die aktuelle WebGPU-Implementierung wegen `f32`-Präzision nicht mehr sinnvoll eingesetzt werden kann, kann die Anwendung automatisch auf Perturbation oder auf die CPU-Berechnung zurückfallen.
 
 ### Hauptfunktionen
 
@@ -26,8 +26,18 @@ Die Berechnung kann je nach Ansicht über ein WebGPU-Backend oder über das CPU-
 - Auswahl verschiedener Farbpaletten.
 - Steuerung von Gamma-Korrektur, logarithmischer Skalierung, Smooth Coloring und Paletteninvertierung.
 - Anzeige der aktuellen X- und Y-Bereiche sowie des Zoom-Levels.
-- Berechnung der `IterationData` automatisiert über WebGPU oder CPU-Worker.
-- Automatischer CPU-Fallback für zu tiefe Zoomstufen oder WebGPU-Fehler.
+- Anzeige der zuletzt verwendeten Berechnungszeit und des zuletzt verwendeten Backends.
+- Berechnung der `IterationData` über CPU-Worker, WebGPU oder WebGPU mit Perturbation.
+- Umschaltbare Backend-Konfiguration:
+  - `CPU`
+  - `WebGPU`
+  - `WebGPU + Perturbation`
+  - `WebGPU + CPU-Fallback`
+  - `WebGPU + Perturbation + CPU-Fallback`
+- Automatischer Wechsel vom klassischen WebGPU-Shader zum Perturbation-Shader, wenn die `f32`-Präzision für die aktuelle Zoomstufe nicht mehr ausreicht und Perturbation aktiviert ist.
+- Automatischer CPU-Fallback, sofern die Backend-Konfiguration ihn erlaubt.
+- Sammlung, Priorisierung und optionale Anzeige von Referenzpunkten für die Perturbation-Berechnung.
+- Glitch-Erkennung für Perturbation-Ergebnisse mit Prüfung auf abgelaufene Referenzorbits, zu kleine Orbits, zu große Delta-Orbits und nicht endliche Werte.
 - Speichern der aktuellen Ansicht als PNG.
 - Zurücksetzen auf den initialen Bildausschnitt.
 
@@ -48,7 +58,7 @@ https://unpkg.com/vue@3/dist/vue.global.prod.js
 
 Eine lokale Installation oder ein Build-Schritt ist aktuell nicht nötig.
 
-Für das WebGPU-Backend wird ein Browser mit WebGPU-Unterstützung benötigt. Ist WebGPU nicht verfügbar oder für die aktuelle Ansicht nicht geeignet, wird die Berechnung über das CPU-Backend ausgeführt.
+Für das WebGPU-Backend wird ein Browser mit WebGPU-Unterstützung benötigt. Ist WebGPU nicht verfügbar, kann weder der klassische WebGPU-Pfad noch der WebGPU-Perturbation-Pfad verwendet werden. In diesem Fall ist nur ein CPU-Fallback möglich, sofern er in der Backend-Konfiguration erlaubt ist.
 
 ### Verwendung der Benutzeroberfläche
 
@@ -75,24 +85,34 @@ Das Control-Panel befindet sich als Overlay-Drawer am rechten Fensterrand.
 | PNG speichern | Im Control-Panel unter „Sonstiges“ den Button „Als PNG speichern“ verwenden |
 | Ansicht zurücksetzen | Im Control-Panel unter „Sonstiges“ den Button „Ansicht zurücksetzen“ verwenden |
 
-Das Control-Panel zeigt die aktuelle Ansicht und erlaubt die direkte Änderung von Berechnungs-, Multithreading- und Darstellungsparametern.
+Das Control-Panel zeigt die aktuelle Ansicht und erlaubt die direkte Änderung von Berechnungs-, Multithreading-, Backend- und Darstellungsparametern.
 
 Angezeigt werden:
 
 - X-Bereich,
 - Y-Bereich,
-- Zoom-Level.
+- Zoom-Level,
+- Rechenzeit der letzten vollständigen `IterationData`-Aktualisierung in Sekunden,
+- zuletzt verwendetes Backend.
 
 Berechnungsparameter:
 
 - Iterationstiefe,
 - Escape-Radius.
 
-Multithreading-Parameter:
+Multithreading-Parameter für das CPU-Backend:
 
 - Anzahl Worker-Threads,
-- Tasks pro Worker,
-- Rechenzeit der letzten vollständigen `IterationData`-Aktualisierung in Sekunden.
+- Tasks pro Worker.
+
+Backend-Konfiguration:
+
+- `CPU`,
+- `WebGPU`,
+- `WebGPU + Perturbation`,
+- `WebGPU + CPU-Fallback`,
+- `WebGPU + Perturbation + CPU-Fallback`,
+- Referenzpunkte für Perturbation anzeigen.
 
 Darstellungsparameter:
 
@@ -142,15 +162,24 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 ### Screenshots
 
 ![LMV Startansicht](img/screenshots/lmv-general-view.png)
+
 ![LMV Control-Panel](img/screenshots/lmv-control-panel.png)
-![LMV Zoom-Auswahl](img/screenshots/lmv-help-modal.png)
-![LMV Zoom-Auswahl](img/screenshots/lmv-color-modes-01.png)
-![LMV Zoom-Auswahl](img/screenshots/lmv-color-modes-02.png)
-![LMV Zoom-Auswahl](img/screenshots/lmv-color-modes-03.png)
+
+![LMV Steuerung](img/screenshots/lmv-help-modal.png)
+
+![LMV Farbmodus](img/screenshots/lmv-color-modes-01.png)
+
+![LMV Farbmodus](img/screenshots/lmv-color-modes-02.png)
+
+![LMV Farbmodus](img/screenshots/lmv-color-modes-03.png)
+
 ![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-01.png)
+
 ![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-02.png)
+
 ![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-03.png)
-![LMV Zoom-Auswahl](img/screenshots/lmv-detail-view.png)
+
+![LMV Detailansicht](img/screenshots/lmv-detail-view.png)
 
 ---
 
@@ -192,6 +221,7 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
     ├── rendering.js
     ├── layout.js
     ├── interactions.js
+    ├── help.js
     ├── ui.js
     ├── file.js
     └── main.js
@@ -199,29 +229,30 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 
 ### Wichtige Dateien
 
-- `index.html` enthält Seitenstruktur, Canvas, Render-Overlay, Control-Drawer, Vue-gebundene Controls und die Script-Einbindung.
+- `index.html` enthält Seitenstruktur, Canvas, Render-Overlay, Control-Drawer, Help-Modal, Vue-gebundene Controls und die Script-Einbindung.
 - `css/styles.css` bindet die CSS-Module ein.
 - `css/modules/controls.css` enthält das Styling und die Animationen für den Control-Drawer und den Close-Button.
 - `css/modules/modal.css` enthält das Styling des Help-Modals.
 - `img/definition.svg` wird im Header als Formelgrafik eingebunden.
 - `js/dom.js` sammelt zentrale DOM-Referenzen wie Canvas, Context, Wrapper, Render-Overlay und Control-Drawer.
-- `js/settings.js` enthält Berechnungs-, Rendering- und Multithreading-Einstellungen.
+- `js/settings.js` enthält Berechnungs-, Rendering-, Multithreading- und Backend-Einstellungen.
 - `js/timing.js` enthält die Laufzeitmessung für vollständige Iterationsdaten-Aktualisierungen.
 - `js/palettes.js` definiert Farben und Farbpaletten.
 - `js/iteration-data.js` enthält generische Operationen auf Iterationsdaten, darunter Kopieren von Rechtecken, Dirty-Rect-Ermittlung, Panning- und Resize-Logik.
 - `js/core/worker-rpc-client.js` enthält einen Promise-basierten RPC-Client für Worker-Kommunikation mit Request-IDs und Pending-Request-Verwaltung.
 - `js/webgpu/webgpu-worker-runtime.js` enthält wiederverwendbare WebGPU-Worker-Hilfsfunktionen, darunter Kontext- und Pipeline-Initialisierung sowie Fehlerantworten.
 - `js/fractals/fractal-gpu-utils.js` enthält GPU-nahe Hilfsfunktionen, die nicht direkt Mandelbrot-spezifisch sind, zum Beispiel Float32-Splitting und den Aufbau von `IterationData` aus GPU-Arrays.
-- `js/fractals/mandelbrot/mandelbrot.js` enthält die Mandelbrot-spezifische Orchestrierung, Backend-Auswahl, CPU-Worker-Aufrufe, Task-Aufteilung und das Zusammenführen der Teilergebnisse.
+- `js/fractals/mandelbrot/mandelbrot.js` enthält die Mandelbrot-spezifische Orchestrierung, Backend-Auswahl, CPU-Worker-Aufrufe, Task-Aufteilung, das Zusammenführen der Teilergebnisse, die Referenzorbit-Berechnung und die Auswahl geeigneter Perturbation-Referenzkandidaten.
 - `js/fractals/mandelbrot/mandelbrot-cpu-worker.js` enthält die synchrone Mandelbrot-Berechnung für das CPU-Backend.
 - `js/fractals/mandelbrot/mandelbrot-webgpu.js` enthält den Main-Thread-Proxy zum Mandelbrot-WebGPU-Worker.
-- `js/fractals/mandelbrot/mandelbrot-webgpu-worker.js` enthält die WebGPU-Compute-Berechnung der Mandelbrot-Iterations- und Escape-Werte.
-- `js/rendering.js` enthält Rendering-Funktionen, den Aufbau von `ImageData` aus Iterationsdaten, Bildausgabe, Render-Overlay und Panning-Vorschau.
+- `js/fractals/mandelbrot/mandelbrot-webgpu-worker.js` enthält die klassische WebGPU-Compute-Berechnung sowie die WebGPU-Perturbation-Berechnung der Mandelbrot-Iterations- und Escape-Werte.
+- `js/rendering.js` enthält Rendering-Funktionen, den Aufbau von `ImageData` aus Iterationsdaten, Bildausgabe, Render-Overlay, Panning-Vorschau sowie das optionale Overlay für Perturbation-Referenzpunkte.
 - `js/layout.js` behandelt Canvas-Größe, initialen View, Seitenverhältnis, Resize-Logik und Reset der Ansicht.
 - `js/interactions.js` enthält Mausinteraktion, Panning, Zoom-Auswahl, Zoom-Out-Schritte, Mausradsteuerung und das Zeichnen des Auswahlrahmens mit Fadenkreuz.
-- `js/ui.js` enthält die Vue-App für das Control-Panel und synchronisiert UI-State mit den Settings.
+- `js/help.js` steuert das Help-Modal.
+- `js/ui.js` enthält die Vue-App für das Control-Panel und synchronisiert UI-State mit Settings, Backend-Konfiguration und Laufzeitstatistik.
 - `js/file.js` enthält den PNG-Export des aktuellen Canvas.
-- `js/main.js` initialisiert Canvas, View, Control-Drawer, UI-Info und startet die erste Berechnung.
+- `js/main.js` initialisiert Canvas, View, Control-Drawer, Help-Modal, UI-Info und startet die erste Berechnung.
 
 ### Technische Details
 
@@ -232,19 +263,19 @@ Die Anwendung trennt drei Ebenen:
 1. **Berechnung**
    - Die Mandelbrot-Menge wird für den aktuell sichtbaren View berechnet.
    - Ergebnis sind Iterationswerte und Escape-Werte.
-   - Die Berechnung kann über WebGPU oder CPU-Worker erfolgen.
-
+   - Die Berechnung kann über CPU-Worker, WebGPU oder WebGPU mit Perturbation erfolgen.
 2. **Iterationsdaten**
    - Die Werte werden in einer Matrix gehalten.
    - Die Datenstruktur ist allgemeiner gedacht als die konkrete Mandelbrot-Berechnung.
    - Operationen wie Kopieren, Verschieben und Dirty-Rect-Ermittlung hängen nicht direkt von der Mandelbrot-Formel ab.
-
+   - Mandelbrot-spezifische Metadaten wie Referenzkandidaten werden ergänzend an die fertigen Daten angehängt.
 3. **Rendering**
    - Aus den Iterationsdaten wird ein `ImageData`-Objekt erzeugt.
    - Render-Parameter wie Palette, Gamma, Smooth Coloring, logarithmische Skalierung und Paletteninvertierung werden erst beim Bildaufbau angewendet.
    - Das fertige `ImageData` wird auf den Canvas gezeichnet.
+   - Optional werden Perturbation-Referenzpunkte und ein Diagnose-Raster als Canvas-Overlay angezeigt.
 
-Diese Trennung erlaubt schnelle Aktualisierungen bei reinen Darstellungsänderungen: Farb- und Rendering-Parameter bauen nur das Bild aus den vorhandenen Iterationsdaten neu auf. Eine vollständige Neuberechnung ist nur nötig, wenn sich Berechnungsparameter oder der sichtbare mathematische Ausschnitt ändern.
+Diese Trennung erlaubt schnelle Aktualisierungen bei reinen Darstellungsänderungen: Farb- und Rendering-Parameter bauen nur das Bild aus den vorhandenen Iterationsdaten neu auf. Eine vollständige Neuberechnung ist nur nötig, wenn sich Berechnungsparameter, Backend-Einstellungen oder der sichtbare mathematische Ausschnitt ändern.
 
 #### IterationData
 
@@ -252,11 +283,14 @@ Die zentrale Datenstruktur enthält:
 
 ```js
 {
-  width,         // Breite der Matrix in Pixeln
-  height,        // Höhe der Matrix in Pixeln
-  iterations,    // Uint16Array(width * height)
-  escapeValues,  // Float32Array(width * height)
-  minIterations  // kleinster Iterationswert im Datensatz
+  width,                // Breite der Matrix in Pixeln
+  height,               // Höhe der Matrix in Pixeln
+  iterations,           // Uint16Array(width * height)
+  escapeValues,         // Float32Array(width * height)
+  minIterations,        // kleinster Iterationswert im Datensatz
+  maxObservedIterations,// größter beobachteter Iterationswert im Datensatz
+  referenceCandidates,  // Mandelbrot-Referenzkandidaten für Perturbation
+  perturbationStats     // optionale Diagnosewerte aus dem Perturbation-Shader
 }
 ```
 
@@ -266,6 +300,8 @@ Die zentrale Datenstruktur enthält:
 index = y * width + x
 ```
 
+`referenceCandidates` werden aus fertigen Mandelbrot-Iterationsdaten ermittelt und dienen als Ausgangspunkte für spätere Perturbation-Berechnungen. `perturbationStats` wird nur bei Perturbation-Ergebnissen gesetzt und enthält Diagnosewerte zur Bewertung des verwendeten Referenzorbits.
+
 #### Backend-Auswahl
 
 Die zentrale Einstiegstelle ist die Rechteckberechnung:
@@ -274,21 +310,39 @@ Die zentrale Einstiegstelle ist die Rechteckberechnung:
 computeMandelbrotRect(rect, imageWidth, imageHeight, computationSettings)
 ```
 
-Diese Funktion entscheidet zwischen WebGPU-Backend und CPU-Backend.
+Diese Funktion entscheidet anhand der Backend-Konfiguration und der aktuellen Ansicht zwischen CPU, klassischem WebGPU-Shader und WebGPU-Perturbation.
 
-Das WebGPU-Backend wird verwendet, wenn:
+Die Backend-Konfiguration wird über `mandelbrotBackendSettings` gesteuert:
 
-- `USE_WEBGPU_BACKEND` aktiv ist,
+```js
+{
+  useWebGpu: true,
+  usePerturbation: true,
+  useCpu: true
+}
+```
+
+Die Benutzeroberfläche bildet daraus auswählbare Modi:
+
+- `CPU`
+- `WebGPU`
+- `WebGPU + Perturbation`
+- `WebGPU + CPU-Fallback`
+- `WebGPU + Perturbation + CPU-Fallback`
+
+Der klassische WebGPU-Shader wird verwendet, wenn:
+
+- WebGPU in der Backend-Konfiguration erlaubt ist,
 - WebGPU im Browser verfügbar ist,
-- die Ansicht nicht zu tief für die aktuelle `f32`-GPU-Berechnung ist.
+- die Ansicht noch groß genug für die aktuelle `f32`-GPU-Berechnung ist.
 
-Wenn WebGPU fehlschlägt oder die aktuelle Ansicht wegen `f32`-Präzision nicht geeignet ist, wird direkt der CPU-Pfad verwendet. Dadurch nutzt der Fallback weiterhin die vorhandene parallele CPU-Berechnung und fällt nicht auf eine einzelne Worker-Instanz zurück.
+Wenn die Pixelgröße unter die definierte Grenze für den klassischen `f32`-Shader fällt und Perturbation erlaubt ist, versucht die Anwendung den WebGPU-Perturbation-Pfad. Wenn WebGPU oder Perturbation fehlschlagen und der CPU-Fallback erlaubt ist, wird direkt der CPU-Pfad verwendet.
 
 #### CPU-basierte Berechnung
 
 Für kleine Rechtecke oder eine Worker-Anzahl von `1` wird ein einzelner CPU-Worker verwendet. Für größere Rechtecke wird das Rechteck horizontal in mehrere Tasks geteilt.
 
-Diese Tasks werden mit einem einfachen Worker-Pool abgearbeitet. Konfigurierbar sind:
+Diese Tasks werden mit begrenzter Worker-Parallelität abgearbeitet. Konfigurierbar sind:
 
 - Anzahl der Worker-Threads,
 - Anzahl der Tasks pro Worker.
@@ -306,8 +360,8 @@ Der Ablauf für eine parallele vollständige CPU-Neuberechnung ist:
 1. Aktuelles Bildrechteck bestimmen.
 2. Rechteck horizontal in mehrere Tasks zerlegen.
 3. Tasks in fester Reihenfolge in eine Queue legen.
-4. Mehrere CPU-Worker starten.
-5. Jeder Worker verarbeitet nacheinander den jeweils nächsten freien Task.
+4. Mehrere CPU-Worker-Aufträge starten.
+5. Jeder Worker-Auftrag verarbeitet nacheinander den jeweils nächsten freien Task.
 6. Ergebnisse in Task-Reihenfolge ablegen.
 7. Teilergebnisse in ein gemeinsames `IterationData`-Objekt kopieren.
 8. Aus `IterationData` ein neues `ImageData` erzeugen.
@@ -327,16 +381,57 @@ mandelbrot.js
 
 `mandelbrot-webgpu.js` arbeitet als Main-Thread-Proxy. Es verwaltet die Worker-Instanz, Request-IDs und ausstehende Promises.
 
-`mandelbrot-webgpu-worker.js` initialisiert den WebGPU-Kontext und die Compute-Pipeline. Die GPU-Berechnung erzeugt:
+`mandelbrot-webgpu-worker.js` initialisiert den WebGPU-Kontext und die Compute-Pipeline. Die klassische GPU-Berechnung erzeugt:
 
 - einen `iterations`-Buffer,
 - einen `escapeValues`-Buffer.
 
 Beide Buffer werden nach dem Dispatch zurückgelesen und in eine `IterationData`-Struktur übertragen.
 
-Die WebGPU-Berechnung arbeitet im Shader mit `f32`. Zur Verbesserung der Koordinatenberechnung werden die View-Koordinaten center-relativ aufgebaut. Der Mittelpunkt wird in High-/Low-Float32-Anteile zerlegt. Dadurch wird der Koordinatenaufbau stabiler als bei direkter Berechnung aus `minX`/`maxX`, echte Double-Precision im Mandelbrot-Loop wird dadurch aber nicht ersetzt.
+Die klassische WebGPU-Berechnung arbeitet im Shader mit `f32`. Zur Verbesserung der Koordinatenberechnung werden die View-Koordinaten center-relativ aufgebaut. Der Mittelpunkt wird in High-/Low-Float32-Anteile zerlegt. Dadurch wird der Koordinatenaufbau stabiler als bei direkter Berechnung aus `minX`/`maxX`, echte Double-Precision im Mandelbrot-Loop wird dadurch aber nicht ersetzt.
 
-Für tiefe Zoomstufen wird deshalb auf das CPU-Backend zurückgefallen.
+Für tiefe Zoomstufen wird deshalb je nach Konfiguration der Perturbation-Pfad oder das CPU-Backend verwendet.
+
+#### WebGPU-Perturbation
+
+Der Perturbation-Pfad ist für tiefere Zoomstufen gedacht, bei denen die klassische `f32`-Berechnung benachbarte Pixel nicht mehr zuverlässig auf unterschiedliche komplexe Koordinaten abbilden kann.
+
+Der Ablauf ist:
+
+1. Aus vorhandenen `IterationData` werden Mandelbrot-Referenzkandidaten gesammelt.
+2. Die Kandidaten werden für das zu berechnende Rechteck priorisiert.
+3. Für Kandidaten wird im Hauptthread ein Referenzorbit mit JavaScript-`number` berechnet.
+4. Kandidaten mit zu kurzem Referenzorbit werden verworfen.
+5. Der Referenzorbit wird als Float32-Buffer an den WebGPU-Worker übertragen.
+6. Der Perturbation-Shader berechnet die Pixel relativ zum Referenzorbit.
+7. Zusätzlich zu Iterations- und Escape-Werten schreibt der Shader Statuswerte pro Pixel.
+8. Die Statuswerte werden ausgewertet und als `perturbationStats` an das Ergebnis gehängt.
+9. Nur akzeptable Perturbation-Ergebnisse werden verwendet; andernfalls wird der nächste Referenzkandidat versucht.
+10. Wenn kein geeigneter Referenzkandidat gefunden wird und CPU-Fallback erlaubt ist, wird auf die CPU-Berechnung zurückgefallen.
+
+Die Referenzkandidaten werden über ein Raster aus dem Bild verteilt gesammelt. Pro Rasterzelle werden Kandidaten nahe am lokalen Iterationsmaximum bevorzugt. Dadurch stehen auch bei unterschiedlichen Bildbereichen und Dirty-Rects mehrere mögliche Referenzpunkte zur Verfügung.
+
+#### Glitch-Erkennung bei Perturbation
+
+Der Perturbation-Shader schreibt pro Pixel einen Statuswert. Aus diesen Werten werden Diagnosezähler gebildet:
+
+- `referenceEndedCount`: Der Referenzorbit war für einzelne Pixel zu kurz.
+- `smallOrbitCount`: Der Delta-Orbit wurde im Verhältnis zum Referenzorbit zu klein und damit potenziell instabil.
+- `deltaTooLargeCount`: Der Delta-Orbit wurde zu groß für den gewählten Referenzpunkt.
+- `nonFiniteCount`: Es sind nicht endliche Werte entstanden.
+- `invalidCount`: Summe aller nicht erfolgreichen Statuswerte.
+
+Harte Fehler wie abgelaufene Referenzorbits oder nicht endliche Werte werden nicht akzeptiert. Glitch-Verdacht durch kleine Orbits oder zu große Delta-Orbits wird nur bis zu konfigurierten Anteilsgrenzen toleriert. Die aktuelle Implementierung korrigiert fehlerhafte Pixel nicht einzeln, sondern verwirft das gesamte Perturbation-Ergebnis für den Kandidaten und versucht einen anderen Referenzpunkt.
+
+#### Referenzpunkte und Diagnose-Overlay
+
+Wenn „Referenzpunkte anzeigen“ aktiviert ist, zeichnet das Rendering ein Overlay über das aktuelle Bild:
+
+- ein Raster für die Kandidatensammlung,
+- kleine Markierungen für verfügbare Referenzkandidaten,
+- eine hervorgehobene Markierung für den aktuell passendsten Kandidaten zur View.
+
+Dieses Overlay dient der Diagnose und wird nicht in die eigentlichen `ImageData`-Pixel geschrieben.
 
 #### WebGPU-Dispatch
 
@@ -352,11 +447,11 @@ Diese Werte beschreiben die angeforderten Shader-Invocations. Die tatsächliche 
 
 #### Laufzeitmessung
 
-Für vollständige Neuberechnungen wird die letzte `IterationData`-Aktualisierung gemessen. Die Messung umfasst die Berechnung der neuen Iterationsdaten inklusive Backend-Aufwand, Worker-Verteilung, GPU-Readback und Zusammenführung der Teilergebnisse.
+Für vollständige Neuberechnungen wird die letzte `IterationData`-Aktualisierung gemessen. Die Messung umfasst die Berechnung der neuen Iterationsdaten inklusive Backend-Aufwand, Worker-Verteilung, GPU-Readback, Perturbation-Referenzorbit und Zusammenführung der Teilergebnisse.
 
 Nicht gemessen werden reine Render-Änderungen wie Farbpalette, Gamma oder Log-Skalierung, weil diese keine neue Iterationsmatrix erzeugen und deshalb schlecht mit vollständigen Neuberechnungen vergleichbar sind.
 
-Der zuletzt gemessene Wert wird im Control-Panel im Bereich „Parameter für Multithreading“ in Sekunden mit drei Nachkommastellen angezeigt.
+Der zuletzt gemessene Wert wird im Control-Panel in Sekunden mit drei Nachkommastellen angezeigt. Zusätzlich wird das zuletzt tatsächlich verwendete Backend angezeigt.
 
 #### Panning mit Dirty Rects
 
@@ -369,7 +464,8 @@ Beim Loslassen der Maustaste passiert Folgendes:
 3. Der weiterhin sichtbare Bereich wird aus dem alten Cache übernommen.
 4. Die neu sichtbar gewordenen Randbereiche werden als Dirty Rects bestimmt.
 5. Nur diese Dirty Rects werden neu berechnet.
-6. Anschließend wird aus der aktualisierten Iterationsmatrix ein neues `ImageData` erzeugt.
+6. Die Referenzkandidaten werden passend zur aktualisierten Matrix neu ermittelt.
+7. Anschließend wird aus der aktualisierten Iterationsmatrix ein neues `ImageData` erzeugt.
 
 Bei einer kleinen horizontalen Verschiebung wird zum Beispiel nur ein vertikaler Randstreifen neu berechnet. Bei einer kombinierten horizontalen und vertikalen Verschiebung entstehen ein Randstreifen und ein zusätzlicher oberer oder unterer Streifen.
 
@@ -386,6 +482,7 @@ Canvas-Vergrößerungen werden schrittweise behandelt:
 3. Bereits vorhandene Daten werden an die passende Position im neuen Datenraster kopiert.
 4. Nur die neu entstandenen Randbereiche werden berechnet.
 5. Der zurückgegebene View wird zusammen mit den erzeugten Iterationsdaten übernommen.
+6. Die Referenzkandidaten werden passend zur neuen Matrix aktualisiert.
 
 Bei Canvas-Verkleinerungen wird aktuell vollständig neu berechnet. Das ist einfacher und vermeidet komplizierte Ausschnitts- und Resampling-Fälle.
 
@@ -429,9 +526,17 @@ Die Architektur ist darauf ausgelegt, dass die aufrufenden Schichten weiterhin m
 
 Die Berechnung einzelner Mandelbrot-Pixel ist hochgradig parallelisierbar. WebGPU erlaubt es, viele Pixel gleichzeitig über einen Compute-Shader zu berechnen. In der aktuellen Umsetzung werden sowohl die Iterationswerte als auch die Escape-Werte auf der GPU berechnet und anschließend als Typed Arrays zurück in die bestehende `IterationData`-Pipeline übertragen.
 
+#### Warum Perturbation?
+
+Der klassische WebGPU-Shader arbeitet mit `f32`. Das ist für viele normale Ansichten schnell und ausreichend genau, stößt bei tiefen Zoomstufen aber an Präzisionsgrenzen.
+
+Der Perturbation-Ansatz nutzt einen Referenzorbit und berechnet Pixel relativ zu diesem Orbit. Dadurch können tiefere Ansichten experimentell weiterhin über WebGPU berechnet werden, ohne im Shader echte Double-Precision-Arithmetik vorauszusetzen.
+
 #### Warum CPU-Fallback?
 
-Die aktuelle WebGPU-Implementierung arbeitet mit `f32`. Das ist für viele normale Ansichten schnell und ausreichend genau, stößt bei tieferen Zoomstufen aber an Präzisionsgrenzen. Für solche Fälle wird auf das CPU-Backend zurückgefallen, das weiterhin mit JavaScript-`number` und der vorhandenen parallelen Worker-Aufteilung arbeitet.
+Auch der Perturbation-Pfad ist aktuell ein experimenteller Ansatz. Referenzpunkte können ungeeignet sein, Referenzorbits können zu kurz sein und einzelne Pixel können Glitch-Symptome zeigen.
+
+Der CPU-Fallback sorgt dafür, dass die Anwendung weiterhin ein Ergebnis liefern kann, wenn das klassische WebGPU-Backend oder der Perturbation-Pfad für die aktuelle Ansicht nicht geeignet sind.
 
 #### Warum mehr Tasks als Worker?
 
@@ -453,8 +558,11 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 
 - Die CPU-Worker werden aktuell pro Task über die bestehende Worker-Aufruffunktion erzeugt und nach Abschluss beendet; ein dauerhaft wiederverwendeter CPU-Worker-Pool wäre ein möglicher nächster Optimierungsschritt.
 - Die Teilergebnisse werden beim Transfer noch nicht konsequent mit Transferables optimiert.
-- Die WebGPU-Berechnung arbeitet aktuell mit `f32`; für tiefe Zoomstufen ist deshalb ein CPU-Fallback erforderlich.
+- Die klassische WebGPU-Berechnung arbeitet mit `f32`; für tiefe Zoomstufen ist deshalb Perturbation oder ein CPU-Fallback erforderlich.
 - Die center-relative Koordinatenberechnung verbessert die WebGPU-Präzision, ersetzt aber keine echte Double-Precision-Arithmetik im Shader.
+- Der Perturbation-Pfad ist experimentell und hängt stark von geeigneten Referenzpunkten ab.
+- Die Glitch-Erkennung bewertet aktuell das gesamte Perturbation-Ergebnis eines Referenzkandidaten; einzelne fehlerhafte Pixel werden noch nicht lokal nachberechnet oder korrigiert.
+- Referenzorbits werden aktuell im Hauptthread berechnet.
 - Verkleinerungen des Canvas werden vollständig neu berechnet.
 - Es gibt noch keine Touch- oder Tastatursteuerung.
 - Es gibt noch keine Persistenz für Bookmarks, Presets oder Zoom-Historie.
@@ -471,6 +579,9 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Nutzung von WebGPU Compute Shadern für pixelweise parallele Berechnungen.
 - Aufbau und Readback von GPU-Buffern.
 - Umgang mit `f32`-Präzisionsgrenzen in GPU-Shadern.
+- Grundidee von Perturbation-Berechnungen für tiefere Mandelbrot-Zoomstufen.
+- Auswahl, Bewertung und Visualisierung von Referenzpunkten.
+- Einfache Glitch-Erkennung bei Perturbation-Ergebnissen.
 - Wiederverwendung berechneter Daten beim Verschieben der Ansicht.
 - Dirty-Rect-Strategien für Panning und Resize.
 - Strukturierung eines einfachen JavaScript-Projekts in kleinere Module.
@@ -485,10 +596,11 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Typed-Array-Buffer mit Transferables übertragen, um Kopieraufwand zu reduzieren.
 - Automatische Worker-Anzahl aus `navigator.hardwareConcurrency` ableiten.
 - Task-Größe dynamisch an Bildgröße und Iterationstiefe anpassen.
-- WebGPU-/CPU-Vergleichstests für kleine Referenzbereiche ergänzen.
-- WebGPU-Backend in der Benutzeroberfläche auswählbar machen, zum Beispiel `Auto`, `CPU`, `WebGPU`.
-- Die `f32`-Grenze für den WebGPU-Fallback empirisch justieren.
-- Experimentell Double-Single-Arithmetik oder Perturbation-Methoden für tiefere GPU-Zoomstufen prüfen.
+- WebGPU-/CPU-/Perturbation-Vergleichstests für kleine Referenzbereiche ergänzen.
+- Die `f32`-Grenze für den Wechsel vom klassischen WebGPU-Shader zur Perturbation empirisch justieren.
+- Perturbation-Glitches pixel- oder kachelweise nachberechnen, statt ganze Kandidaten-Ergebnisse zu verwerfen.
+- Referenzorbit-Berechnung in einen Worker auslagern.
+- Double-Single-Arithmetik oder weitere Perturbation-Varianten für tiefere GPU-Zoomstufen prüfen.
 - Robustere Merge-Logik für beliebige Teilrechtecke ergänzen.
 - Touch- und Tastaturbedienung verbessern.
 - Presets, Bookmarks oder eine Zoom-History einbauen.
