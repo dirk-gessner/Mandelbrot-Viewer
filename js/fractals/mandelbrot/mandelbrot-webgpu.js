@@ -81,7 +81,7 @@ async function testMandelbrotWebGpuWorkerProxy() {
                 minY: -1,
                 maxY: 1,
             },
-            maxIterations: 100,
+            iterationLimit: 100,
             escapeRadius: 5,
         }
     );

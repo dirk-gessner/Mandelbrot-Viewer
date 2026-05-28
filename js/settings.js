@@ -15,7 +15,7 @@
  * Zentrale Eingabegrenzen für Berechnungs- und Threading-Parameter.
  */
 const inputConstraints = {
-    maxIterations: {
+    iterationLimit: {
         min: 0,
         max: 50000,
         step: 50,
@@ -51,10 +51,10 @@ const inputConstraints = {
  * Einstellungen für die Mandelbrot-Berechnung.
  *
  * @typedef {Object} ComputationSettings
- * @property {?View}  initialView   - Ursprünglicher Ausschnitt, auf den zurückgezoomt werden kann.
- * @property {?View}  view          - Aktuell dargestellter Ausschnitt.
- * @property {number} maxIterations - (integer) Maximale Iterationstiefe pro Pixel.
- * @property {number} escapeRadius  - (decimal) Radius, ab dem ein Punkt als divergiert gilt.
+ * @property {?View}  initialView    - Ursprünglicher Ausschnitt, auf den zurückgezoomt werden kann.
+ * @property {?View}  view           - Aktuell dargestellter Ausschnitt.
+ * @property {number} iterationLimit - (integer) Maximale Iterationstiefe pro Pixel.
+ * @property {number} escapeRadius   - (decimal) Radius, ab dem ein Punkt als divergiert gilt.
  */
 
 /**
@@ -65,7 +65,7 @@ const inputConstraints = {
 const computationSettings = {
     initialView:    null,
     view:           null,
-    maxIterations:  1000,
+    iterationLimit:  1000,
     escapeRadius:   5,
 };
 

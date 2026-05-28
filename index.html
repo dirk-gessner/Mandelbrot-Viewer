@@ -52,15 +52,15 @@
                         <h3>Parameter für die Berechnung</h3>
                         <!--------------------------------------------------------------------->
                         <div class="control-row">
-                            <label for="maxIterationsInput">Iterationstiefe:&nbsp;</label>
+                            <label for="iterationLimitInput">Iterationstiefe:&nbsp;</label>
                             <input
-                                id="maxIterationsInput"
+                                id="iterationLimitInput"
                                 type="number"
-                                :min="inputConstraints.maxIterations.min"
-                                :max="inputConstraints.maxIterations.max"
-                                :step="inputConstraints.maxIterations.step"
-                                :value="maxIterationsInput"
-                                v-model.number="maxIterationsInput"
+                                :min="inputConstraints.iterationLimit.min"
+                                :max="inputConstraints.iterationLimit.max"
+                                :step="inputConstraints.iterationLimit.step"
+                                :value="iterationLimitInput"
+                                v-model.number="iterationLimitInput"
                                 @change="updateMaxIterations">
                         </div>
 

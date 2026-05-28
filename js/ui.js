@@ -17,7 +17,7 @@ const app = Vue.createApp({
 
             inputTimer: null,
 
-            maxIterationsInput: computationSettings.maxIterations,
+            iterationLimitInput: computationSettings.iterationLimit,
             escapeRadiusInput: computationSettings.escapeRadius,
 
             workerCountInput: multiThreadSettings.workerCount, 
@@ -64,12 +64,12 @@ const app = Vue.createApp({
         },
 
         updateMaxIterations() {
-            const limits = inputConstraints.maxIterations;
-            computationSettings.maxIterations = Math.max(
+            const limits = inputConstraints.iterationLimit;
+            computationSettings.iterationLimit = Math.max(
                 limits.min,
-                Math.min(Number(this.maxIterationsInput), limits.max)
+                Math.min(Number(this.iterationLimitInput), limits.max)
             );
-            this.maxIterationsInput = computationSettings.maxIterations;
+            this.iterationLimitInput = computationSettings.iterationLimit;
             this.updateInfo();
             clearTimeout(this.inputTimer);
             this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
