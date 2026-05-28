@@ -33,12 +33,33 @@
  * Koordinaten in der komplexen Ebene.
  *
  * @typedef {Object} ReferenceCandidate
- * @property {number} pixelX       - (integer) X-Position des Kandidaten in der vollstaendigen Pixelmatrix.
- * @property {number} pixelY       - (integer) Y-Position des Kandidaten in der vollstaendigen Pixelmatrix.
- * @property {number} cx           - (decimal) Realteil der komplexen Koordinate des Kandidaten.
- * @property {number} cy           - (decimal) Imaginaerteil der komplexen Koordinate des Kandidaten.
- * @property {number} iterations   - (integer) Iterationswert des Kandidaten bei der normalen Berechnung.
- * @property {number} escapeValue  - (decimal) Quadratischer Betrag des Orbits beim Abbruch.
+ * @property {number} pixelX                        - (integer) X-Position des Kandidaten in der vollstaendigen Pixelmatrix.
+ * @property {number} pixelY                        - (integer) Y-Position des Kandidaten in der vollstaendigen Pixelmatrix.
+ * @property {number} cx                            - (decimal) Realteil der komplexen Koordinate des Kandidaten.
+ * @property {number} cy                            - (decimal) Imaginaerteil der komplexen Koordinate des Kandidaten.
+ * @property {number} iterations                    - (integer) Iterationswert des Kandidaten bei der normalen Berechnung.
+ * @property {number} escapeValue                   - (decimal) Quadratischer Betrag des Orbits beim Abbruch.
+ * @property {number} [cellMaxObservedIterations]   - (integer) Hoechster beobachteter Iterationswert in der Sammelzelle des Kandidaten.
+ * @property {number} [distanceToCellCenterSquared] - (decimal) Quadratischer Abstand zur Mitte der Sammelzelle in Pixeln.
+ */
+
+/**
+ * Diagnosewerte einer Perturbationsberechnung.
+ *
+ * Die Werte beschreiben, wie viele Pixel vom Perturbation-Shader mit dem
+ * verwendeten Referenzorbit nicht verlaesslich berechnet werden konnten.
+ * Normale CPU- oder Standard-GPU-Berechnungen setzen diese Statistik nicht.
+ *
+ * `invalidCount` ist die Summe aller Statuswerte ungleich OK. Die Einzelzaehler
+ * beschreiben, warum Pixel abgebrochen wurden.
+ *
+ * @typedef {Object} PerturbationStats
+ * @property {number} pixelCount           - (integer) Anzahl der berechneten Pixel.
+ * @property {number} invalidCount         - (integer) Summe aller als unverlaesslich markierten Pixel.
+ * @property {number} referenceEndedCount  - (integer) Pixel, fuer die der Referenzorbit vor dem normalen Abbruch endete.
+ * @property {number} smallOrbitCount      - (integer) Pixel mit Glitch-Verdacht durch auffaellig kleinen perturbierten Orbit.
+ * @property {number} deltaTooLargeCount   - (integer) Pixel, deren Delta-Orbit relativ zum Referenzorbit zu gross wurde.
+ * @property {number} nonFiniteCount       - (integer) Pixel, deren Berechnung NaN, Infinity oder numerisch extreme Werte erzeugte.
  */
 
 /**
@@ -58,8 +79,10 @@
  * @property {IterationArray}       iterations            - (integer) Iterationswert je Pixel.
  * @property {EscapeValueArray}     escapeValues          - (decimal) Escape-Wert je Pixel.
  * @property {number}               minIterations         - (integer) Niedrigster Iterationswert aus `iterations`.
+ * @property {number}               maxObservedIterations - (integer) Höchster Iterationswert aus `iterations`.
  * @property {ReferenceCandidate[]} [referenceCandidates] - Kandidaten fuer Referenzpunkte, typischerweise nach Iterationswert absteigend sortiert.
- */
+ * @property {PerturbationStats}    [perturbationStats]   - Optionale Diagnosewerte einer Perturbationsberechnung.
+ * */
 
 /**
  * Aktuell gecachte Iterationsdaten der dargestellten Fraktalfläche.
@@ -100,28 +123,41 @@ let iterationData = null;
 // -----------------------------------------------------------------------------
 // 
 // -----------------------------------------------------------------------------
+
 /**
- * Ermittelt die minimale Anzahl von Iterationen in einem Datensatz. 
- * 
- * @param {IterationArray} iterations - (integer) Iterationswerte je Pixel
- * @returns {number}                  - (integer) minimaler Iterationswert des Feldes
+ * Ermittelt die minimale und die maximale Anzahl von Iterationen
+ * in einem Datensatz.
+ *
+ * @param {IterationArray} iterations - Iterationswerte je Pixel.
+ * @returns {{minIterations: number, maxObservedIterations: number}}
+ *          Niedrigster und höchster beobachteter Iterationswert.
  */
-function findMinIterations(
+function findIterationRange(
     iterations
 ) {
     if (iterations.length === 0) {
-        return 0;
+        return {
+            minIterations: 0,
+            maxObservedIterations: 0,
+        };
     }
 
     let minIterations = iterations[0];
+    let maxObservedIterations = iterations[0];
 
     for (let i = 1; i < iterations.length; i++) {
-        if (iterations[i] < minIterations) {
-            minIterations = iterations[i];
+        const value = iterations[i];
+
+        if (value < minIterations) {
+            minIterations = value;
+        }
+
+        if (value > maxObservedIterations) {
+            maxObservedIterations = value;
         }
     }
 
-    return minIterations;
+    return { minIterations, maxObservedIterations };
 }
 
 /**
@@ -141,6 +177,7 @@ function createEmptyIterationData(
         iterations: new Uint16Array(width * height),
         escapeValues: new Float32Array(width * height),
         minIterations: 0, 
+        maxObservedIterations: 0, 
         referenceCandidates: [], 
     };
 }
@@ -327,10 +364,13 @@ async function computeShiftedIterationData(
         copyIterationRect(rectData, newData, copyRegion);
     }
 
-    // Aktualisiere die minimale Iterationsanzahl im neuen Cache, 
+    // Aktualisiere die minimale und maximale Iterationsanzahl im neuen Cache, 
     // da sich durch die Verschiebung neue Bereiche mit möglicherweise 
-    // niedrigeren Iterationszahlen ergeben können
-    newData.minIterations = findMinIterations(newData.iterations);
+    // abweichenden Iterationszahlen ergeben können
+    const iterationRange = findIterationRange(newData.iterations); 
+    newData.minIterations = iterationRange.minIterations;
+    newData.maxObservedIterations = iterationRange.maxObservedIterations;
+
     return newData;
 }
 
@@ -536,7 +576,10 @@ async function fillDirtyResizeRects(
         copyIterationRect(rectData, newData, copyRegion); 
     }
 
-    newData.minIterations = findMinIterations(newData.iterations);
+    const iterationRange = findIterationRange(newData.iterations); 
+    newData.minIterations = iterationRange.minIterations;
+    newData.maxObservedIterations = iterationRange.maxObservedIterations;
+
     return newData; 
 }
 
@@ -656,25 +699,12 @@ async function resizeIterationData(
     if ( dx < 0 || dy < 0 ) {
 
         const {width, height} = newSize; 
-        const newData = createEmptyIterationData(width, height); 
         const rect = { x: 0, y: 0, width: width, height: height };
-        const rectData = await computeFn(rect, width, height, computationSettings);
+        const newData = await computeFn(rect, width, height, computationSettings);
 
-        // Translation rect -> newData beschreiben
-        const copyRegion = { 
-            sourceX: 0, 
-            sourceY: 0, 
-            targetX: rect.x,
-            targetY: rect.y,
-            width  : rect.width, 
-            height : rect.height, 
-        };
-
-        // berechnete Daten des Rechtecks in den neuen Cache 
-        // an Stelle (rect.x, rect.y) übernehmen
-        copyIterationRect(rectData, newData, copyRegion);
-
-        newData.minIterations = findMinIterations(newData.iterations);
+        const iterationRange = findIterationRange(newData.iterations); 
+        newData.minIterations = iterationRange.minIterations;
+        newData.maxObservedIterations = iterationRange.maxObservedIterations;
 
         const finalizedData = finalizeFn(
             newData, 

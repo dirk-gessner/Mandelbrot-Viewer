@@ -2,7 +2,8 @@
 // Funktionssammlung für Rendering der Iterations-Matrix
 // -----------------------------------------------------------------------------
 
-const DEBUG_DRAW_REFERENCE_CANDIDATES = true;
+const DEBUG_REFERENCE_CANDIDATE_GRID_COLUMNS = 9;
+const DEBUG_REFERENCE_CANDIDATE_GRID_ROWS = 9;
 
 /**
  * Größe einer Pixelmatrix oder Canvas-Fläche.
@@ -16,7 +17,7 @@ const DEBUG_DRAW_REFERENCE_CANDIDATES = true;
  * Kontextdaten, die für die Umrechnung von Iterationswerten in Farben benötigt werden.
  *
  * @typedef {Object} RenderContext
- * @property {number}                        maxIterations  - (integer) Maximale Iterationstiefe.
+ * @property {number}                        iterationLimit - (integer) Maximale Iterationstiefe.
  * @property {RenderSettings}                renderSettings - Aktuelle Rendering-Einstellungen.
  * @property {Object.<string, RgbColor>}     colors         - Benannte RGB-Farben.
  * @property {Object.<string, ColorPalette>} colorPalettes  - Verfügbare Farbpaletten.
@@ -30,7 +31,7 @@ const DEBUG_DRAW_REFERENCE_CANDIDATES = true;
  */
 function createRenderContext (){
     return {
-        maxIterations: computationSettings.maxIterations, 
+        iterationLimit: computationSettings.iterationLimit, 
         renderSettings, 
         colors, 
         colorPalettes
@@ -199,9 +200,9 @@ function createIterationColorMapper(renderContext) {
         escapeValue, 
         minIterations) {
 
-        const { maxIterations, renderSettings, colors, colorPalettes } = renderContext;                                
+        const { iterationLimit, renderSettings, colors, colorPalettes } = renderContext;                                
         const innerSetColor = colors[renderSettings.innerSetColorKey] || [0, 0, 0];                            
-        if (iterations === maxIterations) {
+        if (iterations === iterationLimit) {
             return innerSetColor;
         }
 
@@ -213,7 +214,7 @@ function createIterationColorMapper(renderContext) {
         } 
 
         t = t - minIterations;
-        const range = maxIterations - minIterations;
+        const range = iterationLimit - minIterations;
         let linearT = ( range > 0) ? t / range : 0;
 
         // Logarithmische Skalierung für bessere Farbverteilung
@@ -311,11 +312,31 @@ function renderImageData(
 // -----------------------------------------------------------------------------
 // Funktionen für das Render-Overlay
 // -----------------------------------------------------------------------------
+
+/**
+ * Blendet das Render-Overlay ein und markiert den Canvas-Bereich als rechnend.
+ *
+ * Die CSS-Klasse am Wrapper kann z.B. Interaktionen, Cursor oder visuelle
+ * Abdunklung steuern. Das Overlay selbst zeigt dem Benutzer, dass gerade eine
+ * Berechnung oder ein Render-Schritt laeuft.
+ *
+ * @returns {void}
+ */
 function showRenderOverlay() {
     canvasWrapper.classList.add('is-rendering');
     renderOverlay.classList.remove('hidden');
 }
 
+/**
+ * Blendet das Render-Overlay aus und entfernt die Rendering-Markierung vom
+ * Canvas-Bereich.
+ *
+ * Diese Funktion ist das Gegenstueck zu `showRenderOverlay()` und sollte auch
+ * nach Fehlern ausgefuehrt werden, damit die UI nicht dauerhaft im Rendering-
+ * Zustand bleibt.
+ *
+ * @returns {void}
+ */
 function hideRenderOverlay() {
     canvasWrapper.classList.remove('is-rendering');
     renderOverlay.classList.add('hidden');
@@ -444,7 +465,18 @@ function drawReferenceCandidateOverlay(
     pixelDx,
     pixelDy
 ) {
+    ctx.save();
+
+    drawReferenceCandidateGridOverlay(
+        ctx,
+        iterationData.width,
+        iterationData.height,
+        pixelDx,
+        pixelDy
+    );
+
     if (!iterationData?.referenceCandidates?.length) {
+        ctx.restore();
         return;
     }
 
@@ -452,8 +484,6 @@ function drawReferenceCandidateOverlay(
         iterationData.referenceCandidates,
         view
     );
-
-    ctx.save();
 
     for (const candidate of iterationData.referenceCandidates) {
         const x = candidate.pixelX + pixelDx;
@@ -481,6 +511,61 @@ function drawReferenceCandidateOverlay(
         ctx.lineTo(x + 4, y);
         ctx.moveTo(x, y - 4);
         ctx.lineTo(x, y + 4);
+        ctx.stroke();
+    }
+
+    ctx.restore();
+}
+
+/**
+ * Zeichnet das Diagnose-Overlay fuer die Referenzkandidaten-Ermittlung auf den Canvas.
+ *
+ * Das Raster entspricht der Zellaufteilung, aus der Mandelbrot-Referenzkandidaten
+ * gesammelt werden. Es ist nur ein Diagnose-Overlay und gehoert nicht zur
+ * eigentlichen Fraktalberechnung oder zum gerenderten Bild.
+ *
+ * `pixelDx` und `pixelDy` verschieben das Raster zusammen mit dem Bild, damit es
+ * auch waehrend einer Panning-Vorschau an den dargestellten Iterationsdaten
+ * ausgerichtet bleibt.
+ *
+ * @param {CanvasRenderingContext2D} ctx     - Zeichenkontext des Fraktal-Canvas.
+ * @param {number}                   width   - (integer) Breite der dargestellten Iterationsmatrix.
+ * @param {number}                   height  - (integer) Hoehe der dargestellten Iterationsmatrix.
+ * @param {number}                   pixelDx - Horizontale Anzeigeverschiebung beim Panning.
+ * @param {number}                   pixelDy - Vertikale Anzeigeverschiebung beim Panning.
+ * @returns {void}
+ */
+function drawReferenceCandidateGridOverlay(
+    ctx,
+    width,
+    height,
+    pixelDx,
+    pixelDy
+) {
+    const columns = DEBUG_REFERENCE_CANDIDATE_GRID_COLUMNS;
+    const rows = DEBUG_REFERENCE_CANDIDATE_GRID_ROWS;
+
+    ctx.save();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+    ctx.lineWidth = 1;
+    // ctx.setLineDash([4, 4]);
+
+    for (let column = 1; column < columns; column++) {
+        const x = pixelDx + (column / columns) * width;
+
+        ctx.beginPath();
+        ctx.moveTo(x, pixelDy);
+        ctx.lineTo(x, pixelDy + height);
+        ctx.stroke();
+    }
+
+    for (let row = 1; row < rows; row++) {
+        const y = pixelDy + (row / rows) * height;
+
+        ctx.beginPath();
+        ctx.moveTo(pixelDx, y);
+        ctx.lineTo(pixelDx + width, y);
         ctx.stroke();
     }
 

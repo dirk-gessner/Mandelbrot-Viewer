@@ -41,7 +41,8 @@ const MANDELBROT_CPU_WORKER_SCRIPT = "./js/fractals/mandelbrot/mandelbrot-cpu-wo
  *
  * @type {number}
  */
-const MANDELBROT_REFERENCE_CANDIDATE_LIMIT = 64;
+const MANDELBROT_REFERENCE_CANDIDATE_LIMIT = 324;
+const MANDELBROT_REFERENCE_CANDIDATES_PER_CELL = 4;
 
 /**
  * Maximalwerte für die Iterationen bei der Ermittlung der Referenz-Orbits.
@@ -125,6 +126,7 @@ function mergeIterationDataParts(
 
     let targetOffset  = 0;
     let minIterations = Number.POSITIVE_INFINITY;
+    let maxObservedIterations = 0;
 
     for (const part of parts) {
         iterations.set(part.iterations, targetOffset);
@@ -135,6 +137,9 @@ function mergeIterationDataParts(
         if (part.minIterations < minIterations) {
             minIterations = part.minIterations;
         }
+        if (part.maxObservedIterations > maxObservedIterations) {
+            maxObservedIterations = part.maxObservedIterations;
+        }
     }
 
     return {
@@ -143,6 +148,7 @@ function mergeIterationDataParts(
         iterations,
         escapeValues,
         minIterations,
+        maxObservedIterations, 
         referenceCandidates: [], 
     };
 }
@@ -366,6 +372,64 @@ function canUseStandardWebGpuShaderForView(view, imageWidth, imageHeight) {
     return Math.min(pixelWidth, pixelHeight) > WEBGPU_MIN_PIXEL_SIZE;
 }
 
+const MANDELBROT_PERTURBATION_MAX_SMALL_ORBIT_RATIO = 0.001;
+const MANDELBROT_PERTURBATION_MAX_DELTA_TOO_LARGE_RATIO = 0.01;
+
+/**
+ * Bewertet, ob ein Perturbation-Ergebnis mit dem verwendeten Referenzorbit
+ * noch als brauchbar akzeptiert werden soll.
+ *
+ * Ergebnisse ohne `perturbationStats` oder mit `pixelCount === 0` gelten als
+ * akzeptabel, weil sie nicht aus dem Perturbation-Diagnosepfad stammen oder
+ * keine Pixel enthalten.
+ *
+ * Harte Fehler (`referenceEndedCount` und `nonFiniteCount`) werden nicht
+ * toleriert. Glitch-Verdacht durch kleine Orbits und zu grosse Delta-Orbits
+ * darf nur bis zu den konfigurierten Anteilsgrenzen auftreten.
+ *
+ * Die Funktion korrigiert keine fehlerhaften Pixel. Sie entscheidet nur, ob das
+ * komplette Ergebnis verwendet oder der naechste Referenzkandidat versucht wird.
+ * 
+ * @param {IterationData} result    - Ergebnis einer Perturbation-Berechnung inklusive optionaler `perturbationStats`.
+ * @returns {boolean}               - `true`, wenn das Ergebnis akzeptiert werden soll, sonst `false`.
+ */
+function isAcceptablePerturbationResult(
+    result
+) {
+    const stats = result.perturbationStats;
+
+    if (!stats || stats.pixelCount === 0) {
+        return true;
+    }
+
+    const hardInvalidCount =
+        stats.referenceEndedCount + stats.nonFiniteCount;
+
+    const smallOrbitRatio =
+        stats.smallOrbitCount / stats.pixelCount;
+
+    const deltaTooLargeRatio =
+        stats.deltaTooLargeCount / stats.pixelCount;
+
+    const acceptable =
+        hardInvalidCount === 0 &&
+        smallOrbitRatio <= MANDELBROT_PERTURBATION_MAX_SMALL_ORBIT_RATIO &&
+        deltaTooLargeRatio <= MANDELBROT_PERTURBATION_MAX_DELTA_TOO_LARGE_RATIO;
+
+    console.info("ReferenceCandidate", {
+        acceptable,
+        pixel: stats.pixelCount,
+        smallOrbit: stats.smallOrbitCount,
+        smallOrbitRatio,
+        deltaTooLarge: stats.deltaTooLargeCount,
+        deltaTooLargeRatio,
+        referenceEnded: stats.referenceEndedCount,
+        nonFinite: stats.nonFiniteCount,
+    });
+
+    return acceptable;
+}
+
 /**
  * Berechnet die Mandelbrot-Iterationsdaten für ein Rechteck.
  *
@@ -407,9 +471,8 @@ async function computeMandelbrotRect(
 
     if (useStandardWebGpu) {
 
-        if (  standardWebGpuIsPreciseEnough ||
-            ( !usePerturbation && !useCpu ) )
-        {
+        if (standardWebGpuIsPreciseEnough ||
+            (!usePerturbation && !useCpu)) {
             try {
 
                 runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_WEBGPU;
@@ -419,14 +482,15 @@ async function computeMandelbrotRect(
                     imageHeight,
                     computationSettings
                 );
+
             } catch (error) {
-                
+
                 console.warn(
                     "WebGPU Mandelbrot backend failed.",
                     error
                 );
-                
-                if(!useCpu) { throw error }; 
+
+                if (!useCpu) { throw error };
 
                 console.warn("Falling back to CPU backend.");
             }
@@ -437,43 +501,75 @@ async function computeMandelbrotRect(
                 "Resolution limits for Standard WebGPU (Float32) reached. Switching to Perturbation WebGPU backend."
             );
 
-            const referenceOrbit = selectMandelbrotPerturbationReferenceOrbit(
-                iterationData?.referenceCandidates,
-                computationSettings.view,
-                computationSettings.maxIterations
-            );
+            try {
+                const candidates = sortMandelbrotPerturbationReferenceCandidates(
+                    iterationData?.referenceCandidates,
+                    rect,
+                    computationSettings.iterationLimit,
+                );              
 
-            if (referenceOrbit) {
-                try {
-                    runtimeStats.lastComputationBackend =
-                        `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
+                for (const candidate of candidates) {
+                    const referenceOrbit = computeMandelbrotReferenceOrbit(candidate);
 
-                    return await computeMandelbrotRectWebGpu(
+                    const requiredIterations =
+                        getRequiredReferenceOrbitIterations(
+                            candidate,
+                            computationSettings.iterationLimit,
+                            iterationData?.maxObservedIterations ?? 0
+                        );
+
+                    if (referenceOrbit.iterations < requiredIterations) {
+                        console.warn("Perturbation reference orbit rejected", {
+                            candidate,
+                            referenceOrbitIterations: referenceOrbit.iterations,
+                            requiredIterations,
+                        });
+                        continue;
+                    }
+
+                    const result = await computeMandelbrotRectWebGpu(
                         rect,
                         imageWidth,
                         imageHeight,
                         computationSettings,
                         referenceOrbit
                     );
-                } catch (error) {
 
-                    console.warn(
-                        "WebGPU Mandelbrot perturbation backend failed.",
-                        error
-                    );
+                    if (!isAcceptablePerturbationResult(result)) {
+                        console.warn("Perturbation reference orbit rejected", {
+                            candidate,
+                            referenceOrbitIterations: referenceOrbit.iterations,
+                            requiredIterations,
+                            perturbationStats: result.perturbationStats, 
+                        });
+                        continue;
+                    }
 
-                    if(!useCpu) { throw error };
+                    if (result.perturbationStats.invalidCount !== 0 ) {
 
-                    console.warn("Falling back to CPU backend.");
-                }
-                
-            } else {
-                
-                const error = new Error (
-                    "WebGPU Mandelbrot perturbation backend can't find a suitable reference orbit."
-                );
+                        console.info("Perturbation reference orbit accepted with minor invalid pixels.", {
+                            perturbationStats: result.perturbationStats,
+                        }); 
+                    }
 
-                if(!useCpu) { throw error };
+                    console.info("Perturbation reference orbit accepted.", {
+                        perturbationStats: result.perturbationStats,
+                    }); 
+
+                    runtimeStats.lastComputationBackend =
+                        `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
+                    return result;
+                }   
+
+                console.warn("No suitable reference candidates found. Falling back to CPU backend.");
+
+            } catch (error) {
+
+                console.warn("WebGPU Mandelbrot perturbation backend failed.", error); 
+
+                if (!useCpu) { 
+                    throw error; 
+                };
 
                 console.warn("Falling back to CPU backend.");
             }
@@ -537,17 +633,17 @@ async function computeMandelbrot(
  * Berechnet den Referenzorbit für einen gegebenen Kandidaten.
  * 
  * @param {ReferenceCandidate} referenceCandidate   - Kandidat, für den der Referenzorbit berechnet werden soll.
- * @param {number} maxIterations                    - (integer) Maximale Anzahl von Iterationen für die Berechnung des Orbits.
+ * @param {number} iterationLimit                    - (integer) Maximale Anzahl von Iterationen für die Berechnung des Orbits.
  * @param {number} escapeRadius                     - (decimal) Radius, bei dem ein Orbit als "escaped" gilt.   
  * @returns {MandelbrotReferenceOrbit}              - Berechneter Referenzorbit mit zugehörigen Informationen.     
  */
 function computeMandelbrotReferenceOrbit(
     referenceCandidate,
-    maxIterations = MANDELBROT_REFERENCE_ORBIT_ITERATIONS,
+    iterationLimit = MANDELBROT_REFERENCE_ORBIT_ITERATIONS,
     escapeRadius  = MANDELBROT_REFERENCE_ORBIT_ESCAPE_RADIUS
 ) {
-    const zx = new Float64Array(maxIterations + 1);
-    const zy = new Float64Array(maxIterations + 1);
+    const zx = new Float64Array(iterationLimit + 1);
+    const zy = new Float64Array(iterationLimit + 1);
 
     const cx = referenceCandidate.cx;
     const cy = referenceCandidate.cy;
@@ -560,7 +656,7 @@ function computeMandelbrotReferenceOrbit(
     zx[0] = 0;
     zy[0] = 0;
 
-    for (iteration = 0; iteration < maxIterations; iteration++) {
+    for (iteration = 0; iteration < iterationLimit; iteration++) {
         const currentZx = zx[iteration];
         const currentZy = zy[iteration];
 
@@ -580,7 +676,7 @@ function computeMandelbrotReferenceOrbit(
 
     const computedIterations = escapeIteration >= 0
         ? escapeIteration
-        : maxIterations;
+        : iterationLimit;
 
     if (escapeIteration < 0) {
         const finalZx = zx[computedIterations];
@@ -596,28 +692,6 @@ function computeMandelbrotReferenceOrbit(
         escapeIteration,
         escapeValue,
     };
-}
-
-/**
- * Vergleicht zwei Referenzkandidaten nach ihrer allgemeinen Qualitaet.
- *
- * Kandidaten mit hoeherem Iterationswert werden bevorzugt. Bei gleichem
- * Iterationswert gewinnt der Kandidat mit kleinerem Escape-Wert, weil sein
- * Orbit zum Abbruchzeitpunkt weniger stark divergiert ist.
- *
- * Die Funktion ist als Sortier-Callback fuer `Array.prototype.sort` gedacht.
- * Ein negativer Rueckgabewert bedeutet, dass `a` vor `b` einsortiert wird.
- *
- * @param {ReferenceCandidate} a - Erster Referenzkandidat.
- * @param {ReferenceCandidate} b - Zweiter Referenzkandidat.
- * @returns {number} Sortierwert fuer absteigende Kandidatenqualitaet.
- */
-function compareReferenceCandidates(a, b) {
-    if (b.iterations !== a.iterations) {
-        return b.iterations - a.iterations;
-    }
-
-    return a.escapeValue - b.escapeValue;
 }
 
 /**
@@ -640,7 +714,6 @@ function compareReferenceCandidates(a, b) {
  * @param {View}             view          - Ausschnitt der komplexen Ebene.
  * @param {IterationArray}   iterations    - Iterationswerte fuer `rect`.
  * @param {EscapeValueArray} escapeValues  - Escape-Werte fuer `rect`.
- * @param {number}           maxIterations - (integer) aktueller Wert für Iterationsabbruch ohne Divergenz
  * @param {number}           [limit=MANDELBROT_REFERENCE_CANDIDATE_LIMIT] - (integer) Maximale Anzahl Kandidaten.
  * @returns {ReferenceCandidate[]} Beste Kandidaten aus dem uebergebenen Rechteck.
  */
@@ -650,19 +723,128 @@ function collectReferenceCandidatesFromArrays(
     view,
     iterations,
     escapeValues,
-    maxIterations, 
     limit = MANDELBROT_REFERENCE_CANDIDATE_LIMIT
 ) {
-    const gridColumns = 8;
-    const gridRows = 8;
-    const candidatesByCell = new Array(gridColumns * gridRows).fill(null);
+    const gridColumns = 9;
+    const gridRows = 9;
+    const cellCount = gridColumns * gridRows;
+
+    const cellWidth = imageWidth / gridColumns;
+    const cellHeight = imageHeight / gridRows;
+    const minCandidateDistance = Math.min(cellWidth, cellHeight) * 0.25;
+    const minCandidateDistanceSquared = minCandidateDistance * minCandidateDistance;
+
+    const candidatesByCell = Array.from(
+        { length: cellCount },
+        () => []
+    );
+    const cellMaxObservedIterations = new Uint32Array(cellCount);
+
     const { minX, maxX, minY, maxY } = view;
 
+    function getCellPosition(pixelX, pixelY) {
+        const cellX = Math.min(
+            gridColumns - 1,
+            Math.floor((pixelX / imageWidth) * gridColumns)
+        );
+
+        const cellY = Math.min(
+            gridRows - 1,
+            Math.floor((pixelY / imageHeight) * gridRows)
+        );
+
+        return { cellX, cellY, cellIndex: cellY * gridColumns + cellX };
+    }
+
+    function getDistanceSquared(ax, ay, bx, by) {
+        const dx = ax - bx;
+        const dy = ay - by;
+
+        return dx * dx + dy * dy;
+    }    
+
+    function getDistanceToCellCenterSquared(pixelX, pixelY, cellX, cellY) {
+        const cellCenterX = ((cellX + 0.5) / gridColumns) * imageWidth;
+        const cellCenterY = ((cellY + 0.5) / gridRows) * imageHeight;
+
+        return getDistanceSquared(
+            pixelX,
+            pixelY,
+            cellCenterX,
+            cellCenterY
+        );
+    }
+
+    function isFarEnoughFromSelectedCandidates(candidate, selectedCandidates) {
+        for (const selectedCandidate of selectedCandidates) {
+            const distanceSquared = getDistanceSquared(
+                candidate.pixelX,
+                candidate.pixelY,
+                selectedCandidate.pixelX,
+                selectedCandidate.pixelY
+            );
+
+            if (distanceSquared < minCandidateDistanceSquared) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function compareCellCandidates(a, b) {
+        if (a.iterations !== b.iterations) {
+            return b.iterations - a.iterations;
+        }
+
+        if (a.distanceToCellCenterSquared !== b.distanceToCellCenterSquared) {
+            return a.distanceToCellCenterSquared - b.distanceToCellCenterSquared;
+        }
+
+        return a.escapeValue - b.escapeValue;
+    }
+
+    // Erster Durchlauf:
+    // Fuer jede Rasterzelle den lokalen Maximalwert der Iterationen bestimmen.
+    // Dadurch koennen spaeter auch Views ohne sichtbare Innenmenge brauchbare
+    // Kandidaten liefern.
     for (let localY = 0; localY < rect.height; localY++) {
         for (let localX = 0; localX < rect.width; localX++) {
             const index = localY * rect.width + localX;
             const pixelX = rect.x + localX;
             const pixelY = rect.y + localY;
+            const { cellIndex } = getCellPosition(pixelX, pixelY);
+
+            if (iterations[index] > cellMaxObservedIterations[cellIndex]) {
+                cellMaxObservedIterations[cellIndex] = iterations[index];
+            }
+        }
+    }
+
+    // Zweiter Durchlauf:
+    // Pro Zelle einen repraesentativen Kandidaten nahe am lokalen Maximum suchen.
+    // Unter aehnlich interessanten Punkten gewinnt derjenige, der naeher an der
+    // Zellmitte liegt. Das reduziert den Bias zur Eintrittskante der Menge.
+    for (let localY = 0; localY < rect.height; localY ++) {
+        for (let localX = 0; localX < rect.width; localX ++ ) {
+
+            const index = localY * rect.width + localX;
+            const pixelX = rect.x + localX;
+            const pixelY = rect.y + localY;
+            const { cellX, cellY, cellIndex } = getCellPosition(pixelX, pixelY);
+
+            const maxObservedIterationsInCell = cellMaxObservedIterations[cellIndex];
+
+            // Punkte, die deutlich unterhalb des lokalen Zellmaximums liegen,
+            // sind als Referenzkandidaten weniger interessant.
+            const iterationTolerance = Math.max(
+                5,
+                Math.floor(maxObservedIterationsInCell * 0.01)
+            );
+
+            if (iterations[index] < maxObservedIterationsInCell - iterationTolerance) {
+                continue;
+            }
 
             const candidate = {
                 pixelX,
@@ -671,34 +853,40 @@ function collectReferenceCandidatesFromArrays(
                 cy: minY + (pixelY / imageHeight) * (maxY - minY),
                 iterations: iterations[index],
                 escapeValue: escapeValues[index],
+                cellMaxObservedIterations: maxObservedIterationsInCell, 
+                distanceToCellCenterSquared:
+                    getDistanceToCellCenterSquared(pixelX, pixelY, cellX, cellY),
             };
 
-            const cellX = Math.min(
-                gridColumns - 1,
-                Math.floor((pixelX / imageWidth) * gridColumns)
-            );
+            const cellCandidates = candidatesByCell[cellIndex];
+            cellCandidates.push(candidate);
 
-            const cellY = Math.min(
-                gridRows - 1,
-                Math.floor((pixelY / imageHeight) * gridRows)
-            );
-
-            const cellIndex = cellY * gridColumns + cellX;
-            const currentCandidate = candidatesByCell[cellIndex];
-            const candidateReachedMax = candidate.iterations >= maxIterations;
-
-            if  ( candidateReachedMax&&
-                    ( !currentCandidate ||
-                      compareReferenceCandidates(candidate, currentCandidate) < 0)) 
-            {
-                candidatesByCell[cellIndex] = candidate;
-            }
         }
     }
 
+    for (const cellCandidates of candidatesByCell) {
+        cellCandidates.sort(compareCellCandidates);
+
+        const selectedCandidates = [];
+
+        for (const candidate of cellCandidates) {
+            if (!isFarEnoughFromSelectedCandidates(candidate, selectedCandidates)) {
+                continue;
+            }
+
+            selectedCandidates.push(candidate);
+
+            if (selectedCandidates.length >= MANDELBROT_REFERENCE_CANDIDATES_PER_CELL) {
+                break;
+            }
+        }
+
+        cellCandidates.length = 0;
+        cellCandidates.push(...selectedCandidates);
+    }
+
     return candidatesByCell
-        .filter(candidate => candidate !== null)
-        .sort(compareReferenceCandidates)
+        .flat()
         .slice(0, limit);
 }
 
@@ -715,13 +903,11 @@ function collectReferenceCandidatesFromArrays(
  *
  * @param {IterationData} iterationData - Vollstaendige Iterationsmatrix, fuer die Kandidaten ermittelt werden sollen.
  * @param {View}          view          - Zur Iterationsmatrix gehoerender Ausschnitt der komplexen Ebene.
- * @param {number}        maxIterations - (integer) aktueller Wert für Iterationsabbruch ohne Divergenz
  * @returns {ReferenceCandidate[]} Neu ermittelte Referenzkandidaten.
  */
 function refreshReferenceCandidates(
     iterationData,
     view, 
-    maxIterations
 ) {
     return collectReferenceCandidatesFromArrays(
         { x: 0, y: 0, width: iterationData.width, height: iterationData.height },
@@ -730,7 +916,6 @@ function refreshReferenceCandidates(
         view,
         iterationData.iterations,
         iterationData.escapeValues, 
-        maxIterations, 
     );
 }
 
@@ -782,7 +967,7 @@ function sortReferenceCandidatesForView(
         );
     }
 
-    function compareCandidates(a, b) {
+    function compareReferenceCandidatesForView(a, b) {
         const aInside = isCandidateInsideView(a);
         const bInside = isCandidateInsideView(b);
 
@@ -817,7 +1002,7 @@ function sortReferenceCandidatesForView(
         return a.escapeValue - b.escapeValue;
     }
 
-    return [...referenceCandidates].sort(compareCandidates);
+    return [...referenceCandidates].sort(compareReferenceCandidatesForView);
 }
 
 /**
@@ -835,38 +1020,140 @@ function selectReferenceCandidateForView(
 }
 
 /**
- * Ermittelt einen fuer Perturbation brauchbaren Referenzorbit.
+ * Bestimmt, wie lang ein Referenzorbit mindestens sein muss, damit er fuer die
+ * aktuelle Perturbation-Berechnung verwendet werden darf.
  *
- * Die Funktion probiert die nach Ziel-View sortierten Kandidaten der Reihe nach.
- * Kandidaten, die in der bisherigen Berechnung bereits vor `maxIterations`
- * escaped sind, werden uebersprungen, weil ihr Orbit sehr wahrscheinlich nicht
- * lang genug fuer stabile Perturbation ist.
+ * Wenn die aktuelle Iterationsmatrix bereits das Iterationslimit erreicht hat, 
+ * muss auch der Referenzorbit bis zum aktuellen `iterationLimit` reichen. 
+ * Andernfalls reicht ein Orbit, der etwas ueber dem beobachteten Zellmaximum 
+ * liegt. Die Sicherheitsmarge verhindert, dass Referenzen zu frueh enden, 
+ * wenn nahe Pixel etwas laenger laufen als der Kandidat selbst.
  *
- * Nach der Orbitberechnung wird zusaetzlich geprueft, ob der Referenzorbit
- * mindestens bis zur aktuell benoetigten Iterationstiefe reicht.
- *
- * @param {ReferenceCandidate[]} referenceCandidates - Verfuegbare Referenzkandidaten.
- * @param {View} view - Ziel-View, fuer die ein Referenzorbit gesucht wird.
- * @param {number} maxIterations - (integer) Benoetigte Iterationstiefe fuer das aktuelle Rendering.
- * @returns {?MandelbrotReferenceOrbit} Brauchbarer Referenzorbit oder null.
+ * @param {ReferenceCandidate}  candidate             - Referenzkandidat, dessen Orbit bewertet wird.
+ * @param {number}              iterationLimit        - (integer) Aktuelles Iterationslimit der Mandelbrot-Berechnung.
+ * @param {number}              maxObservedIterations - (integer) Hoechster beobachteter Iterationswert der aktuellen Iterationsmatrix.
+ * @returns {number}                                  - (integer) Mindestanzahl an Orbit-Iterationen, die der Kandidat liefern muss.
  */
-function selectMandelbrotPerturbationReferenceOrbit(
-    referenceCandidates,
-    view,
-    maxIterations
+function getRequiredReferenceOrbitIterations(
+    candidate,
+    iterationLimit,
+    maxObservedIterations
 ) {
-    const candidates = sortReferenceCandidatesForView(referenceCandidates, view)
-        .filter(candidate => candidate.iterations >= maxIterations);
+    const viewReachedIterationLimit =
+        maxObservedIterations >= iterationLimit;
 
-    for (const candidate of candidates) {
-        const referenceOrbit = computeMandelbrotReferenceOrbit(candidate);
-
-        if (referenceOrbit.escapeIteration < 0) {
-            return referenceOrbit;
-        }
+    if (viewReachedIterationLimit) {
+        return iterationLimit;
     }
 
-    return null;
+    const observedIterations =
+        candidate.cellMaxObservedIterations ?? candidate.iterations;
+
+    const safetyMargin = Math.max(
+        100,
+        Math.floor(observedIterations * 0.1)
+    );
+
+    return Math.min(
+        iterationLimit,
+        observedIterations + safetyMargin
+    );
+}
+
+/**
+ * Sortiert Referenzkandidaten nach ihrer Eignung fuer eine konkrete
+ * Perturbation-Rechteckberechnung.
+ *
+ * Kandidaten innerhalb oder knapp ausserhalb des Zielrechtecks werden bevorzugt,
+ * weil ihr Referenzorbit fuer die dortigen Pixel meist stabiler ist. Danach
+ * werden Kandidaten bevorzugt, die das aktuelle Iterationslimit erreicht haben.
+ * Anschliessend entscheidet die normalisierte Distanz zur Rechteckmitte,
+ * danach das lokale Zellmaximum und zuletzt der Escape-Wert.
+ *
+ * Das Padding um das Rechteck erlaubt Referenzen aus der direkten Umgebung.
+ * Das ist besonders fuer kleine Dirty-Rects nach Panning oder Resize wichtig,
+ * bei denen ein guter Referenzpunkt knapp ausserhalb des neu berechneten
+ * Bereichs liegen kann.
+ *
+ * @param {ReferenceCandidate[]}    referenceCandidates - Verfuegbare Referenzkandidaten.
+ * @param {PixelRect}               rect                - Zielrechteck, das per Perturbation berechnet werden soll.
+ * @param {number}                  iterationLimit      - (integer) Aktuelles Iterationslimit der Mandelbrot-Berechnung.
+ * @returns {ReferenceCandidate[]}                      - Neue Kandidatenliste, bester Kandidat zuerst.
+ */
+function sortMandelbrotPerturbationReferenceCandidates(
+    referenceCandidates,
+    rect,
+    iterationLimit,
+) {
+    if (!referenceCandidates || referenceCandidates.length === 0) {
+        return [];
+    }
+
+    const rectCenterX = rect.x + rect.width / 2;
+    const rectCenterY = rect.y + rect.height / 2;
+
+    // Padding erlaubt Referenzpunkte knapp ausserhalb des Dirty-Rects.
+    // Das ist wichtig bei kleinen neu berechneten Streifen nach Panning/Resize.
+    const padding = Math.max(
+        32,
+        Math.floor(Math.max(rect.width, rect.height) * 0.25)
+    );
+
+    const paddedRect = {
+        minX: rect.x - padding,
+        maxX: rect.x + rect.width + padding,
+        minY: rect.y - padding,
+        maxY: rect.y + rect.height + padding,
+    };
+
+    const safeRectWidth = Math.max(rect.width, 1);
+    const safeRectHeight = Math.max(rect.height, 1);
+
+    function isInsidePaddedRect(candidate) {
+        return candidate.pixelX >= paddedRect.minX &&
+               candidate.pixelX <  paddedRect.maxX &&
+               candidate.pixelY >= paddedRect.minY &&
+               candidate.pixelY <  paddedRect.maxY;
+    }
+
+    function getNormalizedDistanceToRectCenter(candidate) {
+        const dx = (candidate.pixelX - rectCenterX) / safeRectWidth;
+        const dy = (candidate.pixelY - rectCenterY) / safeRectHeight;
+
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    return [...referenceCandidates].sort((a, b) => {
+        const aInside = isInsidePaddedRect(a);
+        const bInside = isInsidePaddedRect(b);
+
+        if (aInside !== bInside) {
+            return aInside ? -1 : 1;
+        }
+
+        const aReachedLimit = a.iterations >= iterationLimit;
+        const bReachedLimit = b.iterations >= iterationLimit;
+
+        if (aReachedLimit !== bReachedLimit) {
+            return aReachedLimit ? -1 : 1;
+        }
+
+        const aDistance = getNormalizedDistanceToRectCenter(a);
+        const bDistance = getNormalizedDistanceToRectCenter(b);
+
+        if (aDistance !== bDistance) {
+            return aDistance - bDistance;
+        }
+
+        const aCellMax = a.cellMaxObservedIterations ?? a.iterations;
+        const bCellMax = b.cellMaxObservedIterations ?? b.iterations;
+
+        if (aCellMax !== bCellMax) {
+            return bCellMax - aCellMax;
+        }
+
+        return a.escapeValue - b.escapeValue;
+    });
 }
 
 /**
@@ -887,7 +1174,6 @@ function finalizeMandelbrot(
         refreshReferenceCandidates(
             iterationData,
             computationSettings.view, 
-            computationSettings.maxIterations, 
         );
 
     return iterationData;
