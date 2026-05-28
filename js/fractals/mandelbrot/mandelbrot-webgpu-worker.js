@@ -317,6 +317,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 // Funktionen
 // -----------------------------------------------------------------------------
 
+
 /**
  * Erstellt den Uniform-Buffer-Inhalt für den Mandelbrot-Compute-Shader.
  *
@@ -382,6 +383,75 @@ function createMandelbrotParamsArrayBuffer(
 }
 
 /**
+ * Erstellt die langlebigen GPU-Buffer fuer eine Perturbation-Berechnung.
+ *
+ * Diese Session enthaelt bewusst nur Ergebnis-, Status- und Readback-Buffer.
+ * Der Referenzorbit wird spaeter getrennt geladen, damit mehrere Orbits gegen
+ * dieselben Ergebnisbuffer laufen koennen.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {number} pixelCount - Anzahl der Pixel im Zielrechteck.
+ * @returns {Object} Buffer-Session fuer Perturbation-Ergebnisse.
+ */
+function createMandelbrotPerturbationSessionBuffers(
+    device,
+    pixelCount
+) {
+    const iterationsBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
+    const escapeValuesBufferSize = pixelCount * Float32Array.BYTES_PER_ELEMENT;
+    const statusBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
+
+    const iterationsBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation iterations storage buffer",
+        size: iterationsBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    const iterationsReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation iterations readback buffer",
+        size: iterationsBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const escapeValuesBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation escape values storage buffer",
+        size: escapeValuesBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    const escapeValuesReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation escape values readback buffer",
+        size: escapeValuesBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const statusBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation status storage buffer",
+        size: statusBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    const statusReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation status readback buffer",
+        size: statusBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    return {
+        pixelCount,
+        iterationsBufferSize,
+        escapeValuesBufferSize,
+        statusBufferSize,
+        iterationsBuffer,
+        iterationsReadbackBuffer,
+        escapeValuesBuffer,
+        escapeValuesReadbackBuffer,
+        statusBuffer,
+        statusReadbackBuffer,
+    };
+}
+
+/**
  * Erstellt den Uniform-Buffer-Inhalt fuer den Perturbation-Compute-Shader.
  *
  * Das Layout entspricht der `Params`-Struktur in
@@ -433,6 +503,39 @@ function createMandelbrotPerturbationParamsArrayBuffer(
     dataView.setFloat32(44, 0, true);
 
     return buffer;
+}
+
+/**
+ * Erstellt GPU-Buffer fuer den Referenzorbit einer Perturbation-Berechnung.
+ *
+ * Dieser erste Schritt kapselt nur den bisherigen Upload. Spaeter kann diese
+ * Funktion durch wiederverwendbare, fest dimensionierte Orbit-Buffer ersetzt
+ * werden, die pro Kandidat nur noch per `queue.writeBuffer` neu befuellt werden.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {MandelbrotReferenceOrbit} referenceOrbit - Vorberechneter Referenzorbit.
+ * @returns {{ referenceZxBuffer: GPUBuffer, referenceZyBuffer: GPUBuffer }}
+ */
+function createMandelbrotReferenceOrbitBuffers(
+    device,
+    referenceOrbit
+) {
+    const referenceZxBuffer = createReadOnlyFloat32StorageBuffer(
+        device,
+        "Mandelbrot perturbation reference zx buffer",
+        new Float32Array(referenceOrbit.zx)
+    );
+
+    const referenceZyBuffer = createReadOnlyFloat32StorageBuffer(
+        device,
+        "Mandelbrot perturbation reference zy buffer",
+        new Float32Array(referenceOrbit.zy)
+    );
+
+    return {
+        referenceZxBuffer,
+        referenceZyBuffer,
+    };
 }
 
 /**
@@ -696,11 +799,23 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         "Mandelbrot perturbation iterations"
     );
 
+    // Die Pixelanzahl bestimmt die Größe der Buffer
     const pixelCount = rect.width * rect.height;
-    const iterationsBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
-    const escapeValuesBufferSize = pixelCount * Float32Array.BYTES_PER_ELEMENT;
-    const statusBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
 
+    // Anlegen der Session-Buffer (Iterationsdaten, EscapeVlaues, Status...)
+    const perturbationSession = createMandelbrotPerturbationSessionBuffers(
+        device,
+        pixelCount
+    );
+
+    const {
+        iterationsBufferSize, escapeValuesBufferSize, statusBufferSize,
+        iterationsBuffer, iterationsReadbackBuffer,
+        escapeValuesBuffer, escapeValuesReadbackBuffer,
+        statusBuffer, statusReadbackBuffer,
+    } = perturbationSession;
+
+    // Parameter inklusive Referenz-Orbit-Informationen (tbc)
     const paramsArrayBuffer = createMandelbrotPerturbationParamsArrayBuffer(
         rect,
         imageWidth,
@@ -715,96 +830,36 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    const iterationsBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation iterations storage buffer",
-        size: iterationsBufferSize,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-
-    const iterationsReadbackBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation iterations readback buffer",
-        size: iterationsBufferSize,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-
-    const escapeValuesBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation escape values storage buffer",
-        size: escapeValuesBufferSize,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-
-    const escapeValuesReadbackBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation escape values readback buffer",
-        size: escapeValuesBufferSize,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-
-    const statusBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation status storage buffer",
-        size: statusBufferSize,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-
-    const statusReadbackBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation status readback buffer",
-        size: statusBufferSize,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-
-    const referenceZxBuffer = createReadOnlyFloat32StorageBuffer(
-        device,
-        "Mandelbrot perturbation reference zx buffer",
-        new Float32Array(referenceOrbit.zx)
-    );
-
-    const referenceZyBuffer = createReadOnlyFloat32StorageBuffer(
-        device,
-        "Mandelbrot perturbation reference zy buffer",
-        new Float32Array(referenceOrbit.zy)
-    );
-
     device.queue.writeBuffer(paramsBuffer, 0, paramsArrayBuffer);
 
+    // die eigentlichen Buffer für den aktuellen Orbit
+    const referenceBuffers = createMandelbrotReferenceOrbitBuffers(
+        device,
+        referenceOrbit
+    );
+
+    const { referenceZxBuffer,
+            referenceZyBuffer, } = referenceBuffers ; 
+
+    // Bindings anlegen  
+    // 
+    //  binding(0): session params
+    //  binding(1): iterations
+    //  binding(2): escapeValues
+    //  binding(3): referenceZx
+    //  binding(4): referenceZy
+    //  binding(5): statuses
+    // 
     const bindGroup = device.createBindGroup({
         label: "Mandelbrot perturbation bind group",
         layout: computePipeline.getBindGroupLayout(0),
         entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: paramsBuffer,
-                },
-            },
-            {
-                binding: 1,
-                resource: {
-                    buffer: iterationsBuffer,
-                },
-            },
-            {
-                binding: 2,
-                resource: {
-                    buffer: escapeValuesBuffer,
-                },
-            },
-            {
-                binding: 3,
-                resource: {
-                    buffer: referenceZxBuffer,
-                },
-            },
-            {
-                binding: 4,
-                resource: {
-                    buffer: referenceZyBuffer,
-                },
-            },
-            {
-                binding: 5,
-                resource: {
-                    buffer: statusBuffer,
-                },
-            },
+            { binding: 0, resource: { buffer: paramsBuffer }},
+            { binding: 1, resource: { buffer: iterationsBuffer }},
+            { binding: 2, resource: { buffer: escapeValuesBuffer }},
+            { binding: 3, resource: { buffer: referenceZxBuffer }},
+            { binding: 4, resource: { buffer: referenceZyBuffer }},
+            { binding: 5, resource: { buffer: statusBuffer }},
         ],
     });
 
