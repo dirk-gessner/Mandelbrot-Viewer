@@ -20,18 +20,69 @@
  */
 
 /**
- * Iterationsdaten für eine vollständig oder teilweise berechnete Fraktalfläche.
+ * Kandidat fuer einen Referenzpunkt bei einer spaeteren
+ * Perturbation-Berechnung.
  *
- * Die Arrays sind linear gespeichert. Der Wert für Pixel (x, y) liegt an Index:
+ * Ein Kandidat beschreibt einen bereits berechneten Bildpunkt, dessen Orbit
+ * lange genug in der Naehe der Mandelbrot-Menge bleibt, um als Referenzorbit
+ * fuer eine tiefere Zoomstufe interessant zu sein. Typischerweise werden die
+ * Kandidaten aus den Pixeln mit den hoechsten Iterationswerten gewonnen.
+ *
+ * `pixelX` und `pixelY` beziehen sich auf die vollstaendige Zielmatrix, nicht
+ * zwingend auf ein Teilrechteck. `cx` und `cy` sind die dazugehoerigen
+ * Koordinaten in der komplexen Ebene.
+ *
+ * @typedef {Object} ReferenceCandidate
+ * @property {number} pixelX                        - (integer) X-Position des Kandidaten in der vollstaendigen Pixelmatrix.
+ * @property {number} pixelY                        - (integer) Y-Position des Kandidaten in der vollstaendigen Pixelmatrix.
+ * @property {number} cx                            - (decimal) Realteil der komplexen Koordinate des Kandidaten.
+ * @property {number} cy                            - (decimal) Imaginaerteil der komplexen Koordinate des Kandidaten.
+ * @property {number} iterations                    - (integer) Iterationswert des Kandidaten bei der normalen Berechnung.
+ * @property {number} escapeValue                   - (decimal) Quadratischer Betrag des Orbits beim Abbruch.
+ * @property {number} [cellMaxObservedIterations]   - (integer) Hoechster beobachteter Iterationswert in der Sammelzelle des Kandidaten.
+ * @property {number} [distanceToCellCenterSquared] - (decimal) Quadratischer Abstand zur Mitte der Sammelzelle in Pixeln.
+ */
+
+/**
+ * Diagnosewerte einer Perturbationsberechnung.
+ *
+ * Die Werte beschreiben, wie viele Pixel vom Perturbation-Shader mit dem
+ * verwendeten Referenzorbit nicht verlaesslich berechnet werden konnten.
+ * Normale CPU- oder Standard-GPU-Berechnungen setzen diese Statistik nicht.
+ *
+ * `invalidCount` ist die Summe aller Statuswerte ungleich OK. Die Einzelzaehler
+ * beschreiben, warum Pixel abgebrochen wurden.
+ *
+ * @typedef {Object} PerturbationStats
+ * @property {number} pixelCount           - (integer) Anzahl der berechneten Pixel.
+ * @property {number} invalidCount         - (integer) Summe aller als unverlaesslich markierten Pixel.
+ * @property {number} referenceEndedCount  - (integer) Pixel, fuer die der Referenzorbit vor dem normalen Abbruch endete.
+ * @property {number} smallOrbitCount      - (integer) Pixel mit Glitch-Verdacht durch auffaellig kleinen perturbierten Orbit.
+ * @property {number} deltaTooLargeCount   - (integer) Pixel, deren Delta-Orbit relativ zum Referenzorbit zu gross wurde.
+ * @property {number} nonFiniteCount       - (integer) Pixel, deren Berechnung NaN, Infinity oder numerisch extreme Werte erzeugte.
+ */
+
+/**
+ * Iterationsdaten fuer eine vollstaendig oder teilweise berechnete Fraktalflaeche.
+ *
+ * Die Arrays sind linear gespeichert. Der Wert fuer Pixel (x, y) liegt an Index:
  * y * width + x.
  *
+ * `referenceCandidates` enthaelt optionale Kandidaten fuer spaetere
+ * Perturbation-Berechnungen. Die Kandidaten sind Metadaten zur Berechnung und
+ * werden vom normalen Rendering nicht benoetigt. Wenn das Feld vorhanden ist,
+ * sollte es bevorzugt absteigend nach `iterations` sortiert sein.
+ *
  * @typedef {Object} IterationData
- * @property {number}           width           - (integer) Breite der Datenmatrix in Pixeln.
- * @property {number}           height          - (integer) Höhe der Datenmatrix in Pixeln.
- * @property {IterationArray}   iterations      - (integer) Iterationswert je Pixel.
- * @property {EscapeValueArray} escapeValues    - (decimal) Escape-Wert je Pixel.
- * @property {number}           minIterations   - (integer) Niedrigster Iterationswert aus iterations.
- */
+ * @property {number}               width                 - (integer) Breite der Datenmatrix in Pixeln.
+ * @property {number}               height                - (integer) Hoehe der Datenmatrix in Pixeln.
+ * @property {IterationArray}       iterations            - (integer) Iterationswert je Pixel.
+ * @property {EscapeValueArray}     escapeValues          - (decimal) Escape-Wert je Pixel.
+ * @property {number}               minIterations         - (integer) Niedrigster Iterationswert aus `iterations`.
+ * @property {number}               maxObservedIterations - (integer) Höchster Iterationswert aus `iterations`.
+ * @property {ReferenceCandidate[]} [referenceCandidates] - Kandidaten fuer Referenzpunkte, typischerweise nach Iterationswert absteigend sortiert.
+ * @property {PerturbationStats}    [perturbationStats]   - Optionale Diagnosewerte einer Perturbationsberechnung.
+ * */
 
 /**
  * Aktuell gecachte Iterationsdaten der dargestellten Fraktalfläche.
@@ -72,28 +123,41 @@ let iterationData = null;
 // -----------------------------------------------------------------------------
 // 
 // -----------------------------------------------------------------------------
+
 /**
- * Ermittelt die minimale Anzahl von Iterationen in einem Datensatz. 
- * 
- * @param {IterationArray} iterations - (integer) Iterationswerte je Pixel
- * @returns {number}                  - (integer) minimaler Iterationswert des Feldes
+ * Ermittelt die minimale und die maximale Anzahl von Iterationen
+ * in einem Datensatz.
+ *
+ * @param {IterationArray} iterations - Iterationswerte je Pixel.
+ * @returns {{minIterations: number, maxObservedIterations: number}}
+ *          Niedrigster und höchster beobachteter Iterationswert.
  */
-function findMinIterations(
+function findIterationRange(
     iterations
 ) {
     if (iterations.length === 0) {
-        return 0;
+        return {
+            minIterations: 0,
+            maxObservedIterations: 0,
+        };
     }
 
     let minIterations = iterations[0];
+    let maxObservedIterations = iterations[0];
 
     for (let i = 1; i < iterations.length; i++) {
-        if (iterations[i] < minIterations) {
-            minIterations = iterations[i];
+        const value = iterations[i];
+
+        if (value < minIterations) {
+            minIterations = value;
+        }
+
+        if (value > maxObservedIterations) {
+            maxObservedIterations = value;
         }
     }
 
-    return minIterations;
+    return { minIterations, maxObservedIterations };
 }
 
 /**
@@ -112,7 +176,9 @@ function createEmptyIterationData(
         height,
         iterations: new Uint16Array(width * height),
         escapeValues: new Float32Array(width * height),
-        minIterations: 0
+        minIterations: 0, 
+        maxObservedIterations: 0, 
+        referenceCandidates: [], 
     };
 }
 
@@ -298,13 +364,28 @@ async function computeShiftedIterationData(
         copyIterationRect(rectData, newData, copyRegion);
     }
 
-    // Aktualisiere die minimale Iterationsanzahl im neuen Cache, 
+    // Aktualisiere die minimale und maximale Iterationsanzahl im neuen Cache, 
     // da sich durch die Verschiebung neue Bereiche mit möglicherweise 
-    // niedrigeren Iterationszahlen ergeben können
-    newData.minIterations = findMinIterations(newData.iterations);
+    // abweichenden Iterationszahlen ergeben können
+    const iterationRange = findIterationRange(newData.iterations); 
+    newData.minIterations = iterationRange.minIterations;
+    newData.maxObservedIterations = iterationRange.maxObservedIterations;
 
     return newData;
 }
+
+/**
+ * Ergaenzt oder aktualisiert abgeleitete Metadaten einer fertigen Iterationsmatrix.
+ *
+ * Die Funktion wird erst aufgerufen, wenn eine vollstaendige Zielmatrix vorliegt.
+ * Fraktalspezifische Implementierungen koennen hier z.B. Referenzkandidaten
+ * fuer spaetere Berechnungen ermitteln.
+ *
+ * @callback FinalizeIterationData
+ * @param {IterationData} iterationData - Vollstaendige Iterationsmatrix.
+ * @param {ComputationSettings} computationSettings - Einstellungen der zugehoerigen Berechnung.
+ * @returns {IterationData} Finalisierte Iterationsmatrix.
+ */
 
 /**
  * Aktualisiert den globalen Iterationsdaten-Cache nach einem Shift (dx, dy).
@@ -313,15 +394,17 @@ async function computeShiftedIterationData(
  * Sie verschiebt den vorhandenen Cache und berechnet nur neu sichtbar gewordene
  * Bereiche nach.
  *
- * @param {number}               dx - (integer) Horizontale Verschiebung in Pixeln.
- * @param {number}               dy - (integer) Vertikale Verschiebung in Pixeln.
- * @param {ComputeIterationRect} [computeFn=computeMandelbrotRect] - Funktion zur Berechnung neu sichtbarer Rechtecke.
- * @throws {Error}                  - Wenn kein Iterationsdaten-Cache vorhanden ist.
+ * @param {number}                dx         - (integer) Horizontale Verschiebung in Pixeln.
+ * @param {number}                dy         - (integer) Vertikale Verschiebung in Pixeln.
+ * @param {ComputeIterationRect}  computeFn  - Funktion zur Berechnung neu sichtbarer Rechtecke.
+ * @param {FinalizeIterationData} finalizeFn - Funktion zur Finalisierung der neuen Iterationsdaten.
+ * @throws {Error}                           - Wenn kein Iterationsdaten-Cache vorhanden ist.
  * @returns {Promise<void>}
  */
 async function updateIterationDataByShift(
     dx, dy, 
-    computeFn = computeMandelbrotRect
+    computeFn = computeMandelbrotRect, 
+    finalizeFn = finalizeMandelbrot,
 ) {
 
     // Wenn kein Cache vorhanden ist, einfach neu berechnen
@@ -332,10 +415,16 @@ async function updateIterationDataByShift(
     // Iterationsdaten verschieben
     // computeMandelbrotRect als Parameter austauschbar
     iterationData = await computeShiftedIterationData(
-                                iterationData, 
-                                dx, dy, 
-                                computeFn, 
-                                computationSettings ); 
+        iterationData, 
+        dx, dy, 
+        computeFn, 
+        computationSettings 
+    ); 
+
+    iterationData = finalizeFn(
+        iterationData, 
+        computationSettings 
+    ); 
 }
 
 // -----------------------------------------------------------------------------
@@ -487,7 +576,10 @@ async function fillDirtyResizeRects(
         copyIterationRect(rectData, newData, copyRegion); 
     }
 
-    newData.minIterations = findMinIterations(newData.iterations);
+    const iterationRange = findIterationRange(newData.iterations); 
+    newData.minIterations = iterationRange.minIterations;
+    newData.maxObservedIterations = iterationRange.maxObservedIterations;
+
     return newData; 
 }
 
@@ -566,12 +658,13 @@ async function expandIterationData(
  * - Vergrößerung: die Matrix wird horizontal und/oder vertikal erweitert,
  *   wobei vorhandene Daten übernommen und nur neue Bereiche berechnet werden
  *
- * @param {IterationData}        oldData             - Bisherige Iterationsdaten.
- * @param {View}                 oldView             - View, die zu `oldData` gehört.
- * @param {View}                 newView             - Gewünschte View für die neue Canvas-Größe.
- * @param {ImageSize}            oldSize             - (integer) Bisherige Canvas-Größe.
- * @param {ImageSize}            newSize             - (integer) Neue Canvas-Größe.
- * @param {ComputeIterationRect} computeFn           - Funktion zur Berechnung einzelner Rechtecke.
+ * @param {IterationData}         oldData            - Bisherige Iterationsdaten.
+ * @param {View}                  oldView            - View, die zu `oldData` gehört.
+ * @param {View}                  newView            - Gewünschte View für die neue Canvas-Größe.
+ * @param {ImageSize}             oldSize            - (integer) Bisherige Canvas-Größe.
+ * @param {ImageSize}             newSize            - (integer) Neue Canvas-Größe.
+ * @param {ComputeIterationRect}  computeFn          - Funktion zur Berechnung einzelner Rechtecke.
+ * @param {FinalizeIterationData} finalizeFn         - Funktion zur Finalisierung der neuen Iterationsdaten.
  * @param {ComputationSettings}  computationSettings - Berechnungseinstellungen.
  * @throws {Error}                                   - Wenn keine alten Iterationsdaten übergeben werden.
  * @returns {Promise<ResizeIterationDataResult>}     - Angepasste Iterationsdaten und die dazu passende View.
@@ -583,6 +676,7 @@ async function resizeIterationData(
     oldSize, 
     newSize,
     computeFn = computeMandelbrotRect,
+    finalizeFn = finalizeMandelbrot, 
     computationSettings 
 ) {
     
@@ -605,28 +699,20 @@ async function resizeIterationData(
     if ( dx < 0 || dy < 0 ) {
 
         const {width, height} = newSize; 
-        const newData = createEmptyIterationData(width, height); 
         const rect = { x: 0, y: 0, width: width, height: height };
-        const rectData = await computeFn(rect, width, height, computationSettings);
+        const newData = await computeFn(rect, width, height, computationSettings);
 
-        // Translation rect -> newData beschreiben
-        const copyRegion = { 
-            sourceX: 0, 
-            sourceY: 0, 
-            targetX: rect.x,
-            targetY: rect.y,
-            width  : rect.width, 
-            height : rect.height, 
-        };
+        const iterationRange = findIterationRange(newData.iterations); 
+        newData.minIterations = iterationRange.minIterations;
+        newData.maxObservedIterations = iterationRange.maxObservedIterations;
 
-        // berechnete Daten des Rechtecks in den neuen Cache 
-        // an Stelle (rect.x, rect.y) übernehmen
-        copyIterationRect(rectData, newData, copyRegion);
-
-        newData.minIterations = findMinIterations(newData.iterations);
-
+        const finalizedData = finalizeFn(
+            newData, 
+            copySettingsWithView(computationSettings, newView)
+        ); 
+    
         return {
-            iterationData:  newData, 
+            iterationData:  finalizedData, 
             view:           newView, 
         }
     }
@@ -681,6 +767,11 @@ async function resizeIterationData(
         currentSize = nextSize;
     }
 
+    currentData = finalizeFn(
+        currentData, 
+        copySettingsWithView(computationSettings, currentView)
+    ); 
+
     return {
         iterationData:  currentData, 
         view:           currentView, 
@@ -709,11 +800,13 @@ async function resizeIterationData(
  * `computationSettings` und schreibt das Ergebnis in den globalen Cache
  * `iterationData`.
  *
- * @param {ComputeIterationData} [computeFn=computeMandelbrot] - Funktion zur vollständigen Berechnung.
+ * @param {ComputeIterationData}  computeFn         - Funktion zur vollständigen Berechnung.
+ * @param {FinalizeIterationData} finalizeFn        - Funktion zur Finalisierung der berechneten Daten.
  * @returns {Promise<void>}
  */
 async function computeIterationData(
-    computeFn = computeMandelbrot
+    computeFn = computeMandelbrot, 
+    finalizeFn = finalizeMandelbrot
 ) {
 
     const imageSize = getCanvasImageSize() 
@@ -726,6 +819,27 @@ async function computeIterationData(
                         imageSize.height, 
                         computationSettings)
     );
+
+    iterationData = finalizeFn (
+        iterationData, 
+        computationSettings, 
+    );
 }
 
 
+// -----------------------------------------------------------------------------
+// Hilfsfunktionen für die Ermittlung der Referenzkandidaten für 
+// Perturbationsberechnungen
+// -----------------------------------------------------------------------------
+
+/**
+ * Standard-Finalisierung fuer Fraktale ohne zusaetzliche Iterationsmetadaten.
+ *
+ * @param {IterationData} iterationData - Fertige Iterationsmatrix.
+ * @returns {IterationData} Unveraenderte Iterationsmatrix.
+ */
+function finalizeIterationDataDefault(
+    iterationData
+) {
+    return iterationData;
+}

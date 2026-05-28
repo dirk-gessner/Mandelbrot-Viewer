@@ -17,11 +17,13 @@ const app = Vue.createApp({
 
             inputTimer: null,
 
-            maxIterationsInput: computationSettings.maxIterations,
+            iterationLimitInput: computationSettings.iterationLimit,
             escapeRadiusInput: computationSettings.escapeRadius,
 
             workerCountInput: multiThreadSettings.workerCount, 
             tasksPerWorkerInput: multiThreadSettings.tasksPerWorker, 
+            backendMode: MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK, 
+
             lastIterationDataUpdateSeconds : runtimeStats.lastIterationDataUpdateSeconds,
             lastComputationBackend: runtimeStats.lastComputationBackend,
 
@@ -39,6 +41,13 @@ const app = Vue.createApp({
             logStrength: renderSettings.logStrength,
 
             invertedPalette: renderSettings.invertedPalette,
+            showPerturbationReferences: renderSettings.showPerturbationReferences, 
+
+            MANDELBROT_BACKEND_MODE_CPU,
+            MANDELBROT_BACKEND_MODE_WEBGPU,
+            MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION,
+            MANDELBROT_BACKEND_MODE_WEBGPU_CPU_FALLBACK,
+            MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK,            
         };
     },
     
@@ -55,12 +64,12 @@ const app = Vue.createApp({
         },
 
         updateMaxIterations() {
-            const limits = inputConstraints.maxIterations;
-            computationSettings.maxIterations = Math.max(
+            const limits = inputConstraints.iterationLimit;
+            computationSettings.iterationLimit = Math.max(
                 limits.min,
-                Math.min(Number(this.maxIterationsInput), limits.max)
+                Math.min(Number(this.iterationLimitInput), limits.max)
             );
-            this.maxIterationsInput = computationSettings.maxIterations;
+            this.iterationLimitInput = computationSettings.iterationLimit;
             this.updateInfo();
             clearTimeout(this.inputTimer);
             this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
@@ -94,6 +103,28 @@ const app = Vue.createApp({
                 limits.min, 
                 Math.min(Number(this.tasksPerWorkerInput), limits.max));
             this.tasksPerWorkerInput = multiThreadSettings.tasksPerWorker;
+
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
+        },
+
+        updateBackendMode() {
+            mandelbrotBackendSettings.useWebGpu =
+                this.backendMode !== MANDELBROT_BACKEND_MODE_CPU;
+
+            mandelbrotBackendSettings.usePerturbation =
+                this.backendMode === MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION ||
+                this.backendMode === MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK;
+
+            mandelbrotBackendSettings.useCpu =
+                this.backendMode === MANDELBROT_BACKEND_MODE_WEBGPU_CPU_FALLBACK ||
+                this.backendMode === MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK;
+
+            if (this.isPerturbationBackendDisabled) {
+                this.showPerturbationReferences = false;
+                renderSettings.showPerturbationReferences = false;
+            }; 
+
             clearTimeout(this.inputTimer);
             this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
         },
@@ -120,6 +151,7 @@ const app = Vue.createApp({
             renderSettings.smoothColoringEnabled = this.smoothColoringEnabled;
             renderSettings.logScalingEnabled = this.logScalingEnabled;
             renderSettings.invertedPalette = this.invertedPalette;
+            renderSettings.showPerturbationReferences = this.showPerturbationReferences; 
             renderAndDrawScene(); 
         },
 
@@ -142,5 +174,17 @@ const app = Vue.createApp({
         }, 
 
     },
+
+    computed: {
+        isPerturbationBackendDisabled() {
+            return this.backendMode !== MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION &&
+                   this.backendMode !== MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK;
+        },
+        isCpuBackendDisabled() {
+            return this.backendMode === MANDELBROT_BACKEND_MODE_WEBGPU ||
+                   this.backendMode === MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION;
+        },
+    },
+
 }).mount('#control-panel');
 

@@ -52,11 +52,11 @@
 let workerContextPromise = null;
 
 /**
- * Zwischengespeicherte WebGPU-Compute-Pipeline.
+ * Zwischengespeicherte WebGPU-Compute-Pipelines nach fachlichem Pipeline-Key.
  *
- * @type {Promise<ComputePipelineContext>|null}
+ * @type {Map<string, Promise<ComputePipelineContext>>}
  */
-let computePipelinePromise = null;
+const computePipelinePromises = new Map();
 
 
 // -----------------------------------------------------------------------------
@@ -116,19 +116,20 @@ export function getComputePipeline(
     shaderSource, 
     label    
 ) {
-    if (!computePipelinePromise) {
-        computePipelinePromise =
-            initializeComputePipeline(
-                pipelineKey, 
-                shaderSource, 
-                label    
-            ).catch((error) => {
-                computePipelinePromise = null;
-                throw error;
-            });
+    if (!computePipelinePromises.has(pipelineKey)) {
+        const computePipelinePromise = initializeComputePipeline(
+            pipelineKey,
+            shaderSource,
+            label
+        ).catch((error) => {
+            computePipelinePromises.delete(pipelineKey);
+            throw error;
+        });
+
+        computePipelinePromises.set(pipelineKey, computePipelinePromise);
     }
 
-    return computePipelinePromise;
+    return computePipelinePromises.get(pipelineKey);
 }
 
 // -----------------------------------------------------------------------------

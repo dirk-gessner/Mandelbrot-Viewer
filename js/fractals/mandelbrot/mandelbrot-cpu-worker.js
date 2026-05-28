@@ -15,29 +15,38 @@
 // -----------------------------------------------------------------------------
 
 /**
- * Ermittelt den kleinsten Iterationswert in einem linearen Iterationsfeld.
- * Worker-lokale Kopie von `findMinIterations` aus `iteration-data.js`.
+ * Ermittelt den kleinsten und groessten beobachteten Iterationswert in einem
+ * linearen Iterationsfeld.
  *
- * Der Worker läuft in einem eigenen Kontext und kann die Hilfsfunktion aus
- * `iteration-data.js` nicht direkt verwenden.
- * 
- * @param {IterationArray} iterations   - zu analysierende Iterationsmatrix
- * @returns {number}                    - (integer) minimaler Wert aus iterations
+ * Worker-lokale Kopie von `findIterationRange` aus `iteration-data.js`.
+ *
+ * @param {IterationArray} iterations - Zu analysierende Iterationsmatrix.
+ * @returns {{minIterations: number, maxObservedIterations: number}} Iterationsbereich.
  */
-function workerFindMinIterations(iterations) {
+function workerFindIterationRange(iterations) {
     if (iterations.length === 0) {
-        return 0;
+        return {
+            minIterations: 0,
+            maxObservedIterations: 0,
+        };
     }
 
     let minIterations = iterations[0];
+    let maxObservedIterations = iterations[0];
 
     for (let i = 1; i < iterations.length; i++) {
-        if (iterations[i] < minIterations) {
-            minIterations = iterations[i];
+        const value = iterations[i];
+
+        if (value < minIterations) {
+            minIterations = value;
+        }
+
+        if (value > maxObservedIterations) {
+            maxObservedIterations = value;
         }
     }
 
-    return minIterations;
+    return { minIterations, maxObservedIterations };
 }
 
 /**
@@ -55,20 +64,20 @@ function workerFindMinIterations(iterations) {
  * 
  * @param {number} cx               - (decimal) Koordinate auf der Real-Achse
  * @param {number} cy               - (decimal) Koordinate auf der Imaginär-Achse
- * @param {number} maxIterations    - (integer) obere Schranke für die Anzahl der Iterationen
+ * @param {number} iterationLimit   - (integer) obere Schranke für die Anzahl der Iterationen
  * @param {number} escapeRadius     - (decimal) Escape-Radius zur Entscheidung auf Divergenz
  * @returns {MandelbrotPointResult} - Ergebnis der Berechnung (Tupel aus iterations und esacapeValue)
  */
 function workerComputeMandelbrotPoint(
     cx, cy, 
-    maxIterations, 
+    iterationLimit, 
     escapeRadius
 ) {
 
     // Schnelle Überprüfung: Periode-2-Glühbirne (Kreis auf der linken Seite)
     if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) { // 1/16 = 0.0625
         return {
-            iterations: maxIterations,
+            iterations: iterationLimit,
             escapeValue: 0,
         };
     }
@@ -77,7 +86,7 @@ function workerComputeMandelbrotPoint(
     const q = (cx - 0.25) * (cx - 0.25) + cy * cy;
     if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) {
         return {
-            iterations: maxIterations,
+            iterations: iterationLimit,
             escapeValue: 0,
         };
     }
@@ -89,7 +98,7 @@ function workerComputeMandelbrotPoint(
     let iteration = 0;
     const escapeRadiusSquared = escapeRadius * escapeRadius;
 
-    while (zx * zx + zy * zy < escapeRadiusSquared && iteration < maxIterations) {
+    while (zx * zx + zy * zy < escapeRadiusSquared && iteration < iterationLimit) {
         const temp = zx * zx - zy * zy + cx;
         zy = 2 * zx * zy + cy;
         zx = temp;
@@ -118,7 +127,7 @@ function workerComputeMandelbrotRect(
     computationSettings
 ) {
     
-    const { view, maxIterations, escapeRadius } = computationSettings;
+    const { view, iterationLimit, escapeRadius } = computationSettings;
     const { minX, maxX, minY, maxY } = view;
 
     const iterations   = new Uint16Array (rect.width * rect.height);
@@ -133,7 +142,7 @@ function workerComputeMandelbrotRect(
             const x = minX + (px / imageWidth)  * (maxX - minX);
             const y = minY + (py / imageHeight) * (maxY - minY);
 
-            const result = workerComputeMandelbrotPoint(x, y, maxIterations, escapeRadius);
+            const result = workerComputeMandelbrotPoint(x, y, iterationLimit, escapeRadius);
 
             const index = localY * rect.width + localX;
             iterations  [index] = result.iterations;
@@ -141,12 +150,15 @@ function workerComputeMandelbrotRect(
         }
     }
 
+    const iterationRange = workerFindIterationRange(iterations); 
+
     return { 
         width : rect.width, 
         height: rect.height, 
         iterations, 
         escapeValues, 
-        minIterations: workerFindMinIterations(iterations),
+        minIterations: iterationRange.minIterations,
+        maxObservedIterations: iterationRange.maxObservedIterations, 
     };
 }
 

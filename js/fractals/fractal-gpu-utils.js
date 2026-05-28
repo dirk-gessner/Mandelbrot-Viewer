@@ -28,38 +28,45 @@ export function splitFloat64ToFloat32Pair(value) {
  * @param {PixelRect}           rect                - Berechneter Pixelbereich.
  * @param {Uint32Array}         gpuIterations       - Von der GPU gelesene Iterationszahlen.
  * @param {Float32Array}        gpuEscapeValues     - Von der GPU gelesene Escape-Werte.
- * @param {number}              maxIterations       - (integer) maximale Iterationszahl.
+ * @param {number}              iterationLimit      - (integer) maximale Iterationszahl.
  * @returns {IterationData} Iterationsdaten im Format der bestehenden Rendering-Pipeline.
  */
 export function createIterationDataFromGpuArrays(
-  rect,
-  gpuIterations,
-  gpuEscapeValues,
-  maxIterations
+    rect,
+    gpuIterations,
+    gpuEscapeValues,
+    iterationLimit
 ) {
-  const pixelCount = rect.width * rect.height;
-  const iterations = new Uint16Array(pixelCount);
-  const escapeValues = new Float32Array(pixelCount);
+    const pixelCount = rect.width * rect.height;
+    const iterations = new Uint16Array(pixelCount);
+    const escapeValues = new Float32Array(pixelCount);
 
-  let minIterations = pixelCount > 0 ? maxIterations : 0;
+    let minIterations = pixelCount > 0 ? iterationLimit : 0;
+    let maxObservedIterations = 0;
 
-  for (let index = 0; index < pixelCount; index++) {
-    const iteration = gpuIterations[index];
+    for (let index = 0; index < pixelCount; index++) {
+        const iteration = gpuIterations[index];
 
-    iterations[index] = iteration;
-    escapeValues[index] = gpuEscapeValues[index];    
+        iterations[index] = iteration;
+        escapeValues[index] = gpuEscapeValues[index];
 
-    if (iteration < minIterations) {
-      minIterations = iteration;
+        if (iteration < minIterations) {
+            minIterations = iteration;
+        }
+
+        if (iteration > maxObservedIterations) {
+            maxObservedIterations = iteration;
+        }
     }
-  }
 
-  return {
-    width: rect.width,
-    height: rect.height,
-    iterations,
-    escapeValues,
-    minIterations,
-  };
+    return {
+        width: rect.width,
+        height: rect.height,
+        iterations,
+        escapeValues,
+        minIterations,
+        maxObservedIterations,
+        referenceCandidates: [],
+    };
 }
 

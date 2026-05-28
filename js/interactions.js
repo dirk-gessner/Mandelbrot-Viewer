@@ -187,7 +187,7 @@ canvas.addEventListener('mousemove', (event) => {
 
 // Mouse-Wheel: Zoomt in oder aus, wenn die Auswahl aktiv ist, 
 // und passt die Größe des Auswahlrahmens an
-// Ansonsten wird das Mausrad verwendet, um maxIterations zu erhöhen 
+// Ansonsten wird das Mausrad verwendet, um iterationLimit zu erhöhen 
 // oder zu verringern
 // -----------------------------------------------------------------------------
 canvas.addEventListener('wheel', (event) => {
@@ -213,17 +213,17 @@ canvas.addEventListener('wheel', (event) => {
 
     } else {
 
-        // Verändere die maxIterations mit dem Mausrad
+        // Verändere die iterationLimit mit dem Mausrad
 
         // Alias für einfacheren Zugriff
         const cs = computationSettings;
-        const limits = inputConstraints.maxIterations;
+        const limits = inputConstraints.iterationLimit;
 
-        cs.maxIterations += event.deltaY < 0 ? 50 : -50;
-        cs.maxIterations = Math.max(limits.min, Math.min(cs.maxIterations, limits.max));
+        cs.iterationLimit += event.deltaY < 0 ? 50 : -50;
+        cs.iterationLimit = Math.max(limits.min, Math.min(cs.iterationLimit, limits.max));
 
         // Synchronisiere mit Vue-Inputfeld
-        app.maxIterationsInput = cs.maxIterations; 
+        app.iterationLimitInput = cs.iterationLimit; 
 
         // Verzögerung von 250ms nach dem letzten Mausrad-Event;
         clearTimeout(inputTimer);

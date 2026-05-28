@@ -143,3 +143,15 @@
     outline: none;
 }
 
+.control-row-disabled label {
+    color: var(--control-disabled-text-color, #888);
+    cursor: not-allowed;
+}
+
+.controls input:disabled,
+.controls select:disabled,
+.controls button:disabled {
+    color: var(--control-disabled-text-color, #888);
+    opacity: 0.55;
+    cursor: not-allowed;
+}

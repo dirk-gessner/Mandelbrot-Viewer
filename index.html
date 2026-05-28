@@ -42,21 +42,25 @@
                             Y: {{ viewInfo.minY.toFixed(6) }} bis {{ viewInfo.maxY.toFixed(6) }}<br>
                             Zoom-Level: {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
                         </div>
+                        <div class="control-row">
+                            Letzte Berechnung: {{ lastIterationDataUpdateSeconds.toFixed(3) }} s<br> 
+                            Backend: {{ lastComputationBackend }}                        
+                        </div>
                     </div>
 
                     <div id="calculation-controls" class="control-group separation-line">
                         <h3>Parameter für die Berechnung</h3>
                         <!--------------------------------------------------------------------->
                         <div class="control-row">
-                            <label for="maxIterationsInput">Iterationstiefe:&nbsp;</label>
+                            <label for="iterationLimitInput">Iterationstiefe:&nbsp;</label>
                             <input
-                                id="maxIterationsInput"
+                                id="iterationLimitInput"
                                 type="number"
-                                :min="inputConstraints.maxIterations.min"
-                                :max="inputConstraints.maxIterations.max"
-                                :step="inputConstraints.maxIterations.step"
-                                :value="maxIterationsInput"
-                                v-model.number="maxIterationsInput"
+                                :min="inputConstraints.iterationLimit.min"
+                                :max="inputConstraints.iterationLimit.max"
+                                :step="inputConstraints.iterationLimit.step"
+                                :value="iterationLimitInput"
+                                v-model.number="iterationLimitInput"
                                 @change="updateMaxIterations">
                         </div>
 
@@ -77,7 +81,7 @@
                     <div id="multithreading" class="control-group separation-line"> 
                         <h3>Parameter für Multithreading (CPU)</h3>
                         <!--------------------------------------------------------------------->
-                        <div class="control-row">
+                        <div class="control-row" :class="{ 'control-row-disabled': isCpuBackendDisabled }">
                             <label for="workerCountInput">Anzahl Worker-Threads:&nbsp;</label>
                             <input
                                 id="workerCountInput"
@@ -86,11 +90,12 @@
                                 :max="inputConstraints.workerCount.max"
                                 :step="inputConstraints.workerCount.step"
                                 :value="workerCountInput"
+                                :disabled="isCpuBackendDisabled"
                                 v-model.number="workerCountInput"
                                 @change="updateWorkerCount">
                         </div>
 
-                        <div class="control-row">
+                        <div class="control-row" :class="{ 'control-row-disabled': isCpuBackendDisabled }">
                             <label for="tasksPerWorkerInput">Tasks pro Worker:&nbsp;</label>
                             <input
                                 id="tasksPerWorkerInput"
@@ -99,14 +104,51 @@
                                 :max="inputConstraints.tasksPerWorker.max"
                                 :step="inputConstraints.tasksPerWorker.step"
                                 :value="tasksPerWorkerInput"
+                                :disabled="isCpuBackendDisabled"
                                 v-model.number="tasksPerWorkerInput"
                                 @change="updateTasksPerWorker">
                         </div>
 
+                    </div>
+
+                    <div id="backendSettings" class="control-group separation-line"> 
+                        <h3>Backend-Konfiguration</h3>
+                        <!--------------------------------------------------------------------->
+
                         <div class="control-row">
-                            Letzte Berechnung: {{ lastIterationDataUpdateSeconds.toFixed(3) }} s<br> 
-                            Backend: {{ lastComputationBackend }}                        
+                            <label for="backendModeSelect">Backend:</label>
+                            <select
+                                id="backendModeSelect"
+                                v-model="backendMode"
+                                @change="updateBackendMode">
+                                <option :value="MANDELBROT_BACKEND_MODE_CPU">
+                                    CPU
+                                </option>
+                                <option :value="MANDELBROT_BACKEND_MODE_WEBGPU">
+                                    WebGPU
+                                </option>
+                                <option :value="MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION">
+                                    WebGPU + Perturbation
+                                </option>
+                                <option :value="MANDELBROT_BACKEND_MODE_WEBGPU_CPU_FALLBACK">
+                                    WebGPU + CPU-Fallback
+                                </option>
+                                <option :value="MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK">
+                                    WebGPU + Perturbation + CPU-Fallback
+                                </option>
+                            </select>
+                        </div>  
+
+                        <div class="control-row" :class="{ 'control-row-disabled': isPerturbationBackendDisabled }">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    v-model="showPerturbationReferences"
+                                    @change="updateRenderOptions">
+                                Referenzpunkte anzeigen
+                            </label>
                         </div>
+                        
                     </div>
 
                     <div id="coloring-controls" class="control-group separation-line">

@@ -124,6 +124,7 @@ function resizeCanvasAndKeepView() {
             oldSize,
             newSize,
             computeMandelbrotRect,
+            finalizeMandelbrot, 
             computationSettings
         );
         iterationData = resizeResult.iterationData;

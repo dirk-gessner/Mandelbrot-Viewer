@@ -37,9 +37,7 @@ struct Params {
   rectWidth: u32,
   rectHeight: u32,
 
-  imageWidth: u32,
-  imageHeight: u32,
-  maxIterations: u32,
+  iterationLimit: u32,
   _pad0: u32,
 
   centerXHigh: f32,
@@ -103,7 +101,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let index = localY * params.rectWidth + localX;
 
   if (isInPeriod2Bulb(cx, cy) || isInMainCardioid(cx, cy)) {
-    iterations[index] = params.maxIterations;
+    iterations[index] = params.iterationLimit;
     escapeValues[index] = 0.0;
     return;
   }
@@ -114,7 +112,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let escapeRadiusSquared = params.escapeRadius * params.escapeRadius;
 
   loop {
-    if (zx * zx + zy * zy >= escapeRadiusSquared || iteration >= params.maxIterations) {
+    if (zx * zx + zy * zy >= escapeRadiusSquared || iteration >= params.iterationLimit) {
       break;
     }
 
@@ -130,6 +128,158 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 }
 `;
 
+const PERTURBATION_STATUS_OK = 0;
+const PERTURBATION_STATUS_REFERENCE_ENDED = 1;
+const PERTURBATION_STATUS_SMALL_ORBIT = 2;
+const PERTURBATION_STATUS_DELTA_TOO_LARGE = 3;
+const PERTURBATION_STATUS_NON_FINITE = 4;
+
+/**
+ * Compute-Shader zur Mandelbrot-Berechnung ueber Perturbation.
+ *
+ * Der Shader verwendet einen auf der CPU vorberechneten Referenzorbit und
+ * iteriert pro Pixel nur die kleine Abweichung `delta z`.
+ *
+ * @type {string}
+ */
+const MANDELBROT_PERTURBATION_SHADER_SOURCE = `
+struct Params {
+  rectX: u32,
+  rectY: u32,
+  rectWidth: u32,
+  rectHeight: u32,
+
+  iterationLimit: u32,
+  referenceOrbitLength: u32,
+
+  pixelScaleX: f32,
+  pixelScaleY: f32,
+
+  escapeRadius: f32,
+  
+  referencePixelX: f32,
+  referencePixelY: f32,
+  _pad0: f32,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read_write> iterations: array<u32>;
+
+@group(0) @binding(2)
+var<storage, read_write> escapeValues: array<f32>;
+
+@group(0) @binding(3)
+var<storage, read> referenceZx: array<f32>;
+
+@group(0) @binding(4)
+var<storage, read> referenceZy: array<f32>;
+
+@group(0) @binding(5)
+var<storage, read_write> statuses: array<u32>;
+
+@compute @workgroup_size(16, 16)
+
+fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
+
+  let localX = globalId.x;
+  let localY = globalId.y;
+
+  if (localX >= params.rectWidth || localY >= params.rectHeight) {
+    return;
+  }
+
+  let px = params.rectX + localX;
+  let py = params.rectY + localY;
+
+  let dcx = (f32(px) - params.referencePixelX) * params.pixelScaleX;
+  let dcy = (f32(py) - params.referencePixelY) * params.pixelScaleY;
+
+  let index = localY * params.rectWidth + localX;
+
+  var dzx = 0.0;
+  var dzy = 0.0;
+  var zx = referenceZx[0];
+  var zy = referenceZy[0];
+  var iteration = 0u;
+  let escapeRadiusSquared = params.escapeRadius * params.escapeRadius;
+  var status = 0u;
+
+  loop {
+
+    if (zx * zx + zy * zy >= escapeRadiusSquared ||
+        iteration >= params.iterationLimit
+    ) {
+      break;
+    }
+
+    // Der naechste Referenzorbit-Wert muss existieren, weil wir nach dem
+    // Perturbationsschritt referenceZ[iteration] lesen.
+    if (iteration + 1u >= params.referenceOrbitLength) {
+        status = 1u;
+        break;
+    }
+
+    let refX = referenceZx[iteration];
+    let refY = referenceZy[iteration];
+
+    let dz2x = dzx * dzx - dzy * dzy;
+    let dz2y = 2.0 * dzx * dzy;
+
+    let twoRefDzX = 2.0 * (refX * dzx - refY * dzy);
+    let twoRefDzY = 2.0 * (refX * dzy + refY * dzx);
+
+    dzx = twoRefDzX + dz2x + dcx;
+    dzy = twoRefDzY + dz2y + dcy;
+
+    iteration = iteration + 1u;
+
+    zx = referenceZx[iteration] + dzx;
+    zy = referenceZy[iteration] + dzy;
+
+    let currentRefX = referenceZx[iteration];
+    let currentRefY = referenceZy[iteration];
+
+    let refMag2 = currentRefX * currentRefX + currentRefY * currentRefY;
+    let dzMag2 = dzx * dzx + dzy * dzy;
+    let zMag2 = zx * zx + zy * zy;
+
+    // NaN/Explosion: numerisch nicht mehr sinnvoll.
+    if (dzx != dzx || dzy != dzy || zx != zx || zy != zy ||
+        abs(dzx) > 1.0e20 || abs(dzy) > 1.0e20 ||
+        abs(zx) > 1.0e20 || abs(zy) > 1.0e20
+    ) {
+      status = 4u;
+      break;
+    }
+
+    // Klassischer Glitch-Verdacht: perturbierter Orbit wird relativ zum
+    // Referenzorbit verdaechtig klein.
+    if (iteration > 0u && refMag2 > 0.0 && zMag2 < 1.0e-6 * refMag2) {
+      status = 2u;
+      break;
+    }
+
+    // Der Delta-Orbit ist nicht mehr "klein". Dann ist diese Referenz fuer
+    // diesen Pixel wahrscheinlich ungeeignet.
+    if (
+        iteration > 0u &&
+        refMag2 > 1.0e-12 &&
+        dzMag2 > 1.0e6 * refMag2
+    ) {
+        status = 3u;
+        break;
+    }
+  }
+
+  iterations[index] = iteration;
+  escapeValues[index] = zx * zx + zy * zy;
+  statuses[index] = status;
+}
+`;
+
 // -----------------------------------------------------------------------------
 // Message-Typen
 // -----------------------------------------------------------------------------
@@ -138,12 +288,13 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
  * Nachricht an den WebGPU-Mandelbrot-Worker zur Berechnung eines Rechtecks.
  *
  * @typedef {Object} ComputeRequestMessage
- * @property {"compute-mandelbrot-rect"} type - Nachrichtentyp.
- * @property {number} requestId - (integer) Eindeutige Anfrage-ID.
- * @property {PixelRect} rect - Zu berechnender Pixelbereich.
- * @property {number} imageWidth - (integer) Breite der vollständigen Zielmatrix.
- * @property {number} imageHeight - (integer) Höhe der vollständigen Zielmatrix.
- * @property {ComputationSettings} computationSettings - Einstellungen für die Berechnung.
+ * @property {"compute-mandelbrot-rect"}    type                - Nachrichtentyp.
+ * @property {number}                       requestId           - (integer) Eindeutige Anfrage-ID.
+ * @property {PixelRect}                    rect                - Zu berechnender Pixelbereich.
+ * @property {number}                       imageWidth          - (integer) Breite der vollständigen Zielmatrix.
+ * @property {number}                       imageHeight         - (integer) Höhe der vollständigen Zielmatrix.
+ * @property {ComputationSettings}          computationSettings - Einstellungen für die Berechnung.
+ * @property {?MandelbrotReferenceOrbit}    referenceOrbit      - Optionaler Referenzorbit für die Perturbationsberechnung
  */
 
 /**
@@ -186,7 +337,7 @@ function createMandelbrotParamsArrayBuffer(
     imageHeight,
     computationSettings
 ) {
-    const { view, maxIterations, escapeRadius } = computationSettings;
+    const { view, iterationLimit, escapeRadius } = computationSettings;
     const { minX, maxX, minY, maxY } = view;
 
     const centerX = (minX + maxX) / 2;
@@ -209,25 +360,101 @@ function createMandelbrotParamsArrayBuffer(
     dataView.setUint32(8, rect.width, true);
     dataView.setUint32(12, rect.height, true);
 
-    dataView.setUint32(16, imageWidth, true);
-    dataView.setUint32(20, imageHeight, true);
-    dataView.setUint32(24, maxIterations, true);
-    dataView.setUint32(28, 0, true);
+    dataView.setUint32(16, iterationLimit, true);
+    dataView.setUint32(20, 0, true);
 
-    dataView.setFloat32(32, centerXParts.high, true);
-    dataView.setFloat32(36, centerXParts.low, true);
-    dataView.setFloat32(40, centerYParts.high, true);
-    dataView.setFloat32(44, centerYParts.low, true);
+    dataView.setFloat32(24, centerXParts.high, true);
+    dataView.setFloat32(28, centerXParts.low, true);
+    dataView.setFloat32(32, centerYParts.high, true);
+    dataView.setFloat32(36, centerYParts.low, true);
 
-    dataView.setFloat32(48, pixelScaleX, true);
-    dataView.setFloat32(52, pixelScaleY, true);
-    dataView.setFloat32(56, imageCenterX, true);
-    dataView.setFloat32(60, imageCenterY, true);
+    dataView.setFloat32(40, pixelScaleX, true);
+    dataView.setFloat32(44, pixelScaleY, true);
+    dataView.setFloat32(48, imageCenterX, true);
+    dataView.setFloat32(52, imageCenterY, true);
 
-    dataView.setFloat32(64, escapeRadius, true);
+    dataView.setFloat32(56, escapeRadius, true);
+    dataView.setFloat32(60, 0, true);
+    dataView.setFloat32(64, 0, true);
     dataView.setFloat32(68, 0, true);
-    dataView.setFloat32(72, 0, true);
-    dataView.setFloat32(76, 0, true);
+
+    return buffer;
+}
+
+/**
+ * Erstellt den Uniform-Buffer-Inhalt fuer den Perturbation-Compute-Shader.
+ *
+ * Das Layout entspricht der `Params`-Struktur in
+ * `MANDELBROT_PERTURBATION_SHADER_SOURCE`.
+ *
+ * @param {PixelRect} rect - Zu berechnender Pixelbereich.
+ * @param {number} imageWidth - Breite der vollstaendigen Zielmatrix in Pixeln.
+ * @param {number} imageHeight - Hoehe der vollstaendigen Zielmatrix in Pixeln.
+ * @param {ComputationSettings} computationSettings - Einstellungen fuer die Mandelbrot-Berechnung.
+ * @param {MandelbrotReferenceOrbit} referenceOrbit - Vorberechneter Referenzorbit.
+ * @returns {ArrayBuffer} Binaerer Uniform-Buffer-Inhalt fuer den Shader.
+ */
+function createMandelbrotPerturbationParamsArrayBuffer(
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings,
+    referenceOrbit
+) {
+    const { view, iterationLimit, escapeRadius } = computationSettings;
+    const { minX, maxX, minY, maxY } = view;
+
+    const pixelScaleX = Math.fround((maxX - minX) / imageWidth);
+    const pixelScaleY = Math.fround((maxY - minY) / imageHeight);
+
+    const buffer = new ArrayBuffer(56);
+    const dataView = new DataView(buffer);
+
+    dataView.setUint32(0, rect.x, true);
+    dataView.setUint32(4, rect.y, true);
+    dataView.setUint32(8, rect.width, true);
+    dataView.setUint32(12, rect.height, true);
+
+    dataView.setUint32(16, iterationLimit, true);
+    dataView.setUint32(20, referenceOrbit.zx.length, true);
+
+    dataView.setFloat32(24, pixelScaleX, true);
+    dataView.setFloat32(28, pixelScaleY, true);
+    dataView.setFloat32(32, escapeRadius, true);
+
+    const referenceCandidate = referenceOrbit.referenceCandidate;
+    const referencePixelX =
+        ((referenceCandidate.cx - minX) / (maxX - minX)) * imageWidth;
+    const referencePixelY =
+        ((referenceCandidate.cy - minY) / (maxY - minY)) * imageHeight;
+
+    dataView.setFloat32(36, Math.fround(referencePixelX), true);
+    dataView.setFloat32(40, Math.fround(referencePixelY), true);
+    dataView.setFloat32(44, 0, true);
+
+    return buffer;
+}
+
+/**
+ * Erstellt einen Storage-Buffer und schreibt die uebergebenen Float32-Daten.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {string} label - Diagnose-Label fuer den Buffer.
+ * @param {Float32Array} values - Zu schreibende Werte.
+ * @returns {GPUBuffer} Gefuellter Storage-Buffer.
+ */
+function createReadOnlyFloat32StorageBuffer(
+    device,
+    label,
+    values
+) {
+    const buffer = device.createBuffer({
+        label,
+        size: values.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    device.queue.writeBuffer(buffer, 0, values);
 
     return buffer;
 }
@@ -417,7 +644,7 @@ async function computeMandelbrotRectOnGpu(
         rect,
         gpuIterations,
         gpuEscapeValues,
-        computationSettings.maxIterations
+        computationSettings.iterationLimit
     );
 
     console.log("computeMandelbrotRectOnGpu (done)", {
@@ -425,6 +652,274 @@ async function computeMandelbrotRectOnGpu(
         minIterations: result.minIterations,
         iterations_sample: result.iterations.slice(0, 16),
         escapeValues_sample: result.escapeValues.slice(0, 16),
+    });
+
+    return result;
+}
+
+/**
+ * Berechnet einen Pixelbereich der Mandelbrot-Menge per Perturbation auf der GPU.
+ *
+ * @param {PixelRect} rect - Zu berechnender Pixelbereich.
+ * @param {number} imageWidth - Breite der vollstaendigen Zielmatrix in Pixeln.
+ * @param {number} imageHeight - Hoehe der vollstaendigen Zielmatrix in Pixeln.
+ * @param {ComputationSettings} computationSettings - Einstellungen fuer die Mandelbrot-Berechnung.
+ * @param {MandelbrotReferenceOrbit} referenceOrbit - Vorberechneter Referenzorbit.
+ * @returns {Promise<IterationData>} Berechnete Iterationsdaten fuer den Pixelbereich.
+ */
+async function computeMandelbrotRectWithPerturbationOnGpu(
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings,
+    referenceOrbit
+) {
+    console.log("computeMandelbrotRectWithPerturbationOnGpu (start)", {
+        rect,
+        imageWidth,
+        imageHeight,
+        referenceOrbitLength: referenceOrbit.zx.length,
+        referenceCandidate  : referenceOrbit.referenceCandidate,
+        ref_iterations: referenceOrbit.iterations, 
+        ref_escape_iteration: referenceOrbit.escapeIteration, 
+        iterationLimit: computationSettings.iterationLimit,   
+    });
+
+    if (!referenceOrbit || referenceOrbit.zx.length < 2 || referenceOrbit.zy.length < 2) {
+        throw new Error("Perturbation requires a reference orbit with at least two points.");
+    }
+
+    const { device } = await getWorkerContext();
+    const { computePipeline } = await getComputePipeline(
+        "mandelbrot-perturbation",
+        MANDELBROT_PERTURBATION_SHADER_SOURCE,
+        "Mandelbrot perturbation iterations"
+    );
+
+    const pixelCount = rect.width * rect.height;
+    const iterationsBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
+    const escapeValuesBufferSize = pixelCount * Float32Array.BYTES_PER_ELEMENT;
+    const statusBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
+
+    const paramsArrayBuffer = createMandelbrotPerturbationParamsArrayBuffer(
+        rect,
+        imageWidth,
+        imageHeight,
+        computationSettings,
+        referenceOrbit
+    );
+
+    const paramsBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation params uniform buffer",
+        size: paramsArrayBuffer.byteLength,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const iterationsBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation iterations storage buffer",
+        size: iterationsBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    const iterationsReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation iterations readback buffer",
+        size: iterationsBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const escapeValuesBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation escape values storage buffer",
+        size: escapeValuesBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    const escapeValuesReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation escape values readback buffer",
+        size: escapeValuesBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const statusBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation status storage buffer",
+        size: statusBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    const statusReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation status readback buffer",
+        size: statusBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const referenceZxBuffer = createReadOnlyFloat32StorageBuffer(
+        device,
+        "Mandelbrot perturbation reference zx buffer",
+        new Float32Array(referenceOrbit.zx)
+    );
+
+    const referenceZyBuffer = createReadOnlyFloat32StorageBuffer(
+        device,
+        "Mandelbrot perturbation reference zy buffer",
+        new Float32Array(referenceOrbit.zy)
+    );
+
+    device.queue.writeBuffer(paramsBuffer, 0, paramsArrayBuffer);
+
+    const bindGroup = device.createBindGroup({
+        label: "Mandelbrot perturbation bind group",
+        layout: computePipeline.getBindGroupLayout(0),
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: paramsBuffer,
+                },
+            },
+            {
+                binding: 1,
+                resource: {
+                    buffer: iterationsBuffer,
+                },
+            },
+            {
+                binding: 2,
+                resource: {
+                    buffer: escapeValuesBuffer,
+                },
+            },
+            {
+                binding: 3,
+                resource: {
+                    buffer: referenceZxBuffer,
+                },
+            },
+            {
+                binding: 4,
+                resource: {
+                    buffer: referenceZyBuffer,
+                },
+            },
+            {
+                binding: 5,
+                resource: {
+                    buffer: statusBuffer,
+                },
+            },
+        ],
+    });
+
+    const commandEncoder = device.createCommandEncoder({
+        label: "Mandelbrot perturbation command encoder",
+    });
+
+    const computePass = commandEncoder.beginComputePass({
+        label: "Mandelbrot perturbation compute pass",
+    });
+
+    computePass.setPipeline(computePipeline);
+    computePass.setBindGroup(0, bindGroup);
+
+    const workgroupSizeX = 16;
+    const workgroupSizeY = 16;
+    const workgroupCountX = Math.ceil(rect.width / workgroupSizeX);
+    const workgroupCountY = Math.ceil(rect.height / workgroupSizeY);
+
+    computePass.dispatchWorkgroups(workgroupCountX, workgroupCountY);
+    computePass.end();
+
+    commandEncoder.copyBufferToBuffer(
+        iterationsBuffer,
+        0,
+        iterationsReadbackBuffer,
+        0,
+        iterationsBufferSize
+    );
+
+    commandEncoder.copyBufferToBuffer(
+        escapeValuesBuffer,
+        0,
+        escapeValuesReadbackBuffer,
+        0,
+        escapeValuesBufferSize
+    );
+
+    commandEncoder.copyBufferToBuffer(
+        statusBuffer,
+        0,
+        statusReadbackBuffer,
+        0,
+        statusBufferSize
+    );
+
+    device.queue.submit([commandEncoder.finish()]);
+
+    await Promise.all([
+        iterationsReadbackBuffer.mapAsync(GPUMapMode.READ),
+        escapeValuesReadbackBuffer.mapAsync(GPUMapMode.READ),
+        statusReadbackBuffer.mapAsync(GPUMapMode.READ),
+    ]);
+
+    const mappedIterationsRange = iterationsReadbackBuffer.getMappedRange();
+    const mappedEscapeValuesRange = escapeValuesReadbackBuffer.getMappedRange();
+    const mappedStatusRange = statusReadbackBuffer.getMappedRange();
+
+    const gpuIterations = new Uint32Array(mappedIterationsRange.slice(0));
+    const gpuEscapeValues = new Float32Array(mappedEscapeValuesRange.slice(0));
+    const gpuStatus = new Uint32Array(mappedStatusRange.slice(0));
+
+    iterationsReadbackBuffer.unmap();
+    escapeValuesReadbackBuffer.unmap();
+    statusReadbackBuffer.unmap();
+
+    const result = createIterationDataFromGpuArrays(
+        rect,
+        gpuIterations,
+        gpuEscapeValues,
+        computationSettings.iterationLimit,
+    );
+
+    // ungültige Pixel zählen und in IterationData aufnehmen
+    let referenceEndedCount = 0;
+    let smallOrbitCount = 0;
+    let deltaTooLargeCount = 0;
+    let nonFiniteCount = 0;
+    let invalidCount = 0;
+
+    for (let i = 0; i < gpuStatus.length; i++) {
+        const status = gpuStatus[i];
+
+        if (status === PERTURBATION_STATUS_OK) {
+            continue;
+        }
+
+        invalidCount++;
+
+        if (status === PERTURBATION_STATUS_REFERENCE_ENDED) {
+            referenceEndedCount++;
+        } else if (status === PERTURBATION_STATUS_SMALL_ORBIT) {
+            smallOrbitCount++;
+        } else if (status === PERTURBATION_STATUS_DELTA_TOO_LARGE) {
+            deltaTooLargeCount++;
+        } else if (status === PERTURBATION_STATUS_NON_FINITE) {
+            nonFiniteCount++;
+        }
+    }
+
+    result.perturbationStats = {
+        pixelCount,
+        referenceEndedCount,
+        smallOrbitCount,
+        deltaTooLargeCount,
+        nonFiniteCount,
+        invalidCount,
+    };
+
+    console.log("computeMandelbrotRectWithPerturbationOnGpu (done)", {
+        pixelCount,
+        minIterations: result.minIterations,
+        iterations_sample: result.iterations.slice(0, 16),
+        escapeValues_sample: result.escapeValues.slice(0, 16),
+        perturbationStats: result.perturbationStats, 
     });
 
     return result;
@@ -442,12 +937,20 @@ async function computeMandelbrotRectOnGpu(
 async function handleComputeMandelbrotRectMessage(
     message
 ) {
-    const result = await computeMandelbrotRectOnGpu(
-        message.rect, 
-        message.imageWidth, 
-        message.imageHeight, 
-        message.computationSettings
-    );
+    const result = message.referenceOrbit
+        ? await computeMandelbrotRectWithPerturbationOnGpu(
+            message.rect,
+            message.imageWidth,
+            message.imageHeight,
+            message.computationSettings,
+            message.referenceOrbit
+        )
+        : await computeMandelbrotRectOnGpu(
+            message.rect,
+            message.imageWidth,
+            message.imageHeight,
+            message.computationSettings
+        );
 
     const response = {
         type: MANDELBROT_COMPUTE_RESULT,
