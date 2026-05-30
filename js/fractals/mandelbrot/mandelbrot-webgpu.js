@@ -40,7 +40,7 @@ const mandelbrotWebGpuClient = createWorkerRpcClient(
  * @param {number} imageWidth - Breite der vollständigen Zielmatrix in Pixeln.
  * @param {number} imageHeight - Höhe der vollständigen Zielmatrix in Pixeln.
  * @param {ComputationSettings} computationSettings - Mandelbrot-Berechnungseinstellungen.
- * @param {ReferenceCandidate|null} referenceCandidate - Optionaler Referenzkandidat fuer Perturbation.
+ * @param {ReferenceCandidates[]|null} referenceCandidates - Optional: Referenzkandidaten fuer Perturbation.
  * @param {number} maxObservedIterations - Hoechster beobachteter Iterationswert der aktuellen Matrix.
  * @returns {Promise<IterationData>} Berechnete Iterationsdaten für den Pixelbereich.
  */
@@ -49,7 +49,7 @@ async function computeMandelbrotRectWebGpu(
     imageWidth,
     imageHeight,
     computationSettings,
-    referenceCandidate = null,
+    referenceCandidates = null,
     maxObservedIterations = 0
 ) {
     return  await mandelbrotWebGpuClient.request({
@@ -58,36 +58,8 @@ async function computeMandelbrotRectWebGpu(
         imageWidth,
         imageHeight,
         computationSettings,
-        referenceCandidate,
+        referenceCandidates,
         maxObservedIterations,
     });
 }
 
-/**
- * Führt einen einfachen manuellen Test des WebGPU-Worker-Proxys aus.
- *
- * Diese Funktion ist nur für die Entwicklungsphase gedacht und sollte nicht
- * dauerhaft Teil der öffentlichen App-Logik bleiben.
- *
- * @returns {Promise<void>}
- */
-async function testMandelbrotWebGpuWorkerProxy() {
-    const result = await computeMandelbrotRectWebGpu(
-        { x: 0, y: 0, width: 8, height: 4 },
-        8,
-        4,
-        {
-            initialView: null,
-            view: {
-                minX: -2,
-                maxX: 1,
-                minY: -1,
-                maxY: 1,
-            },
-            iterationLimit: 100,
-            escapeRadius: 5,
-        }
-    );
-
-    console.log("WebGPU worker proxy test result", result);
-}

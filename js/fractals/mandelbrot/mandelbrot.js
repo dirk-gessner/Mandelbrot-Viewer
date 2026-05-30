@@ -508,48 +508,48 @@ async function computeMandelbrotRect(
                     computationSettings.iterationLimit,
                 );              
 
-                for (const candidate of candidates) {
+                if (candidates.length > 0) {
 
                     const result = await computeMandelbrotRectWebGpu(
                         rect,
                         imageWidth,
                         imageHeight,
                         computationSettings,
-                        candidate,
+                        candidates,
                         iterationData?.maxObservedIterations ?? 0
                     );
 
-                    if (result.perturbationReferenceRejected) {
-                        console.warn("Perturbation reference orbit rejected", result);
-                        continue;
-                    }
-
-                    if (!isAcceptablePerturbationResult(result)) {
-                        console.warn("Perturbation reference orbit rejected", {
-                            candidate,
+                    if (result.perturbationReferenceRejected ||
+                        !isAcceptablePerturbationResult(result)) 
+                    {
+                        console.warn("Perturbation reference orbits rejected. Falling back to CPU backend.", {
                             perturbationStats: result.perturbationStats, 
                         });
-                        continue;
                     }
-
-                    if (result.perturbationStats.invalidCount !== 0 ) {
+                    else if (result.perturbationStats.invalidCount !== 0 ) {
 
                         console.info("Perturbation reference orbit accepted with minor invalid pixels.", {
                             perturbationStats: result.perturbationStats,
                         }); 
+
+                        runtimeStats.lastComputationBackend =
+                            `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
+                        return result;
+
                     } else {
 
                         console.info("Perturbation reference orbit accepted.", {
                             perturbationStats: result.perturbationStats,
                         }); 
+
+                        runtimeStats.lastComputationBackend =
+                            `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
+                        return result;
                     }
+                } else {
 
-                    runtimeStats.lastComputationBackend =
-                        `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
-                    return result;
-                }   
-
-                console.warn("No suitable reference candidates found. Falling back to CPU backend.");
+                    console.warn("No suitable reference candidates found. Falling back to CPU backend.");
+                }
 
             } catch (error) {
 
@@ -565,6 +565,7 @@ async function computeMandelbrotRect(
     }
 
     if (useCpu) {
+        
         runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_CPU;
         return computeMandelbrotRectCpu(
             rect,

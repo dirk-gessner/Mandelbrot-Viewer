@@ -340,13 +340,13 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
  * Nachricht an den WebGPU-Mandelbrot-Worker zur Berechnung eines Rechtecks.
  *
  * @typedef {Object} ComputeRequestMessage
- * @property {"compute-mandelbrot-rect"}    type                - Nachrichtentyp.
- * @property {number}                       requestId           - (integer) Eindeutige Anfrage-ID.
- * @property {PixelRect}                    rect                - Zu berechnender Pixelbereich.
- * @property {number}                       imageWidth          - (integer) Breite der vollständigen Zielmatrix.
- * @property {number}                       imageHeight         - (integer) Höhe der vollständigen Zielmatrix.
- * @property {ComputationSettings}          computationSettings - Einstellungen für die Berechnung.
- * @property {?ReferenceCandidate}          referenceCandidate  - Optionaler Referenzkandidat fuer die Perturbationsberechnung.
+ * @property {"compute-mandelbrot-rect"}    type                  - Nachrichtentyp.
+ * @property {number}                       requestId             - (integer) Eindeutige Anfrage-ID.
+ * @property {PixelRect}                    rect                  - Zu berechnender Pixelbereich.
+ * @property {number}                       imageWidth            - (integer) Breite der vollständigen Zielmatrix.
+ * @property {number}                       imageHeight           - (integer) Höhe der vollständigen Zielmatrix.
+ * @property {ComputationSettings}          computationSettings   - Einstellungen für die Berechnung.
+ * @property {?ReferenceCandidates[]}       referenceCandidates   - Optional: Referenzkandidaten fuer die Perturbationsberechnung.
  * @property {number}                       maxObservedIterations - Hoechster beobachteter Iterationswert der aktuellen Matrix.
  */
 
@@ -1294,20 +1294,16 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
     imageWidth,
     imageHeight,
     computationSettings,
-    referenceCandidate,
+    referenceCandidates,
     maxObservedIterations = 0
 ) {
-    console.log("computeMandelbrotRectWithPerturbationOnGpu (start)", {
-        rect,
-        imageWidth,
-        imageHeight,
-        referenceCandidate,
-        maxObservedIterations, 
-        iterationLimit: computationSettings.iterationLimit,   
-    });
+    console.log("computeMandelbrotRectWithPerturbationOnGpu (start)");
 
-    if (!referenceCandidate) {
-        throw new Error("Perturbation requires a reference candidate.");
+    if (!referenceCandidates || referenceCandidates.length === 0) {
+        return {
+            perturbationReferenceRejected: true,
+            reason: "no-reference-candidates",
+        };
     }
 
     const { device } = await getWorkerContext();
@@ -1369,38 +1365,77 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         ],
     });
 
-    // hier wird der Orbit für den aktuellen Kandidaten ermittelt
-    // das passiert innerhalb der Schleife über alle Referenzkandidaten
-    const referenceOrbit = computeMandelbrotReferenceOrbit(referenceCandidate);
+    let perturbationCounters = null;
+    let acceptedCandidateCount = 0;
+    let rejectedCandidateCount = 0;
+    let lastRejectedReference = null;
 
-    const requiredIterations = getRequiredReferenceOrbitIterations(
-        referenceCandidate,
-        computationSettings.iterationLimit,
-        maxObservedIterations
-    );
+    const totalReferenceCandidates = referenceCandidates.length;
 
-    if (referenceOrbit.iterations < requiredIterations) {
-        return {
-            perturbationReferenceRejected: true,
+    for (let candidateIndex = 0; candidateIndex < totalReferenceCandidates; candidateIndex++) {
+
+        const referenceCandidate = referenceCandidates[candidateIndex];
+
+        const referenceOrbit = computeMandelbrotReferenceOrbit(referenceCandidate);
+
+        const requiredIterations = getRequiredReferenceOrbitIterations(
             referenceCandidate,
-            referenceOrbitIterations: referenceOrbit.iterations,
-            requiredIterations,
-        };
+            computationSettings.iterationLimit,
+            maxObservedIterations
+        );
+
+        if (referenceOrbit.iterations < requiredIterations) {
+            rejectedCandidateCount++;
+            lastRejectedReference = {
+                reason: "reference-orbit-too-short",
+                referenceCandidate,
+                referenceOrbitIterations: referenceOrbit.iterations,
+                requiredIterations,
+            };
+            continue;
+        }
+
+        acceptedCandidateCount++;
+
+        console.info("Applying next reference orbit", {
+            candidate: `${candidateIndex + 1} / ${totalReferenceCandidates}`,
+            pixelX: referenceCandidate.pixelX,
+            pixelY: referenceCandidate.pixelY,
+            iterations: referenceCandidate.iterations,
+            cellMaxObservedIterations: referenceCandidate.cellMaxObservedIterations,
+        });
+
+
+        // einen Pass auf den Sessiondaten mit einem einzelnen Orbit ausführen
+        perturbationCounters = await runMandelbrotPerturbationPass(
+            device,
+            computePipeline,
+            bindGroup,
+            rect,
+            orbitBuffers,
+            referenceOrbit,
+            imageWidth,
+            imageHeight,
+            computationSettings,
+            statusInfoBuffers
+        );
+
+        console.info("Perturbation stats after computation.", { perturbationCounters });
+
+
+        if (perturbationCounters.invalidCount < 10) {
+            break;
+        }
     }
 
-    // einen Pass auf den Sessiondaten mit einem einzelnen Orbit ausführen
-    const perturbationCounters = await runMandelbrotPerturbationPass(
-        device,
-        computePipeline,
-        bindGroup,
-        rect,
-        orbitBuffers,
-        referenceOrbit,
-        imageWidth,
-        imageHeight,
-        computationSettings,
-        statusInfoBuffers
-    ); 
+    if (!perturbationCounters) {
+        return {
+            perturbationReferenceRejected: true,
+            reason: "no-usable-reference-orbit",
+            rejectedCandidateCount,
+            lastRejectedReference,
+        };
+    }
 
     // Result-Array zurücklesen
     const gpuResult = await readMandelbrotPerturbationSessionBuffers(
@@ -1447,13 +1482,13 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
 async function handleComputeMandelbrotRectMessage(
     message
 ) {
-    const result = message.referenceCandidate
+    const result = message.referenceCandidates
         ? await computeMandelbrotRectWithPerturbationOnGpu(
             message.rect,
             message.imageWidth,
             message.imageHeight,
             message.computationSettings,
-            message.referenceCandidate,
+            message.referenceCandidates,
             message.maxObservedIterations ?? 0
         )
         : await computeMandelbrotRectOnGpu(
