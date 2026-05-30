@@ -46,15 +46,20 @@
 /**
  * Diagnosewerte einer Perturbationsberechnung.
  *
- * Die Werte beschreiben, wie viele Pixel vom Perturbation-Shader mit dem
- * verwendeten Referenzorbit nicht verlaesslich berechnet werden konnten.
+ * Die Werte werden vom Perturbation-Shader in einen kompakten Counterbuffer
+ * geschrieben und nach dem Dispatch ausgelesen. Sie beschreiben das Ergebnis
+ * des letzten Perturbation-Laufs fuer den berechneten Pixelbereich.
+ *
  * Normale CPU- oder Standard-GPU-Berechnungen setzen diese Statistik nicht.
  *
- * `invalidCount` ist die Summe aller Statuswerte ungleich OK. Die Einzelzaehler
- * beschreiben, warum Pixel abgebrochen wurden.
+ * `pixelCount` ist die Anzahl der betrachteten Pixel. `okCount` zaehlt die
+ * erfolgreich berechneten Pixel. `invalidCount` ist die Summe aller Pixel mit
+ * Status ungleich OK. Die Einzelzaehler beschreiben, warum Pixel als nicht
+ * verlaesslich markiert wurden.
  *
  * @typedef {Object} PerturbationStats
- * @property {number} pixelCount           - (integer) Anzahl der berechneten Pixel.
+ * @property {number} pixelCount           - (integer) Anzahl der betrachteten Pixel.
+ * @property {number} okCount              - (integer) Erfolgreich berechnete Pixel.
  * @property {number} invalidCount         - (integer) Summe aller als unverlaesslich markierten Pixel.
  * @property {number} referenceEndedCount  - (integer) Pixel, fuer die der Referenzorbit vor dem normalen Abbruch endete.
  * @property {number} smallOrbitCount      - (integer) Pixel mit Glitch-Verdacht durch auffaellig kleinen perturbierten Orbit.

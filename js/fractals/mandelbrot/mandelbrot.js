@@ -550,11 +550,12 @@ async function computeMandelbrotRect(
                         console.info("Perturbation reference orbit accepted with minor invalid pixels.", {
                             perturbationStats: result.perturbationStats,
                         }); 
-                    }
+                    } else {
 
-                    console.info("Perturbation reference orbit accepted.", {
-                        perturbationStats: result.perturbationStats,
-                    }); 
+                        console.info("Perturbation reference orbit accepted.", {
+                            perturbationStats: result.perturbationStats,
+                        }); 
+                    }
 
                     runtimeStats.lastComputationBackend =
                         `${COMPUTATION_BACKEND_WEBGPU} perturbation`;

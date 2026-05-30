@@ -17,10 +17,23 @@ import {
 } from "../fractal-gpu-utils.js";
 
 // -----------------------------------------------------------------------------
-// Message-Konstanten
+// Konstanten
 // -----------------------------------------------------------------------------
 const MANDELBROT_COMPUTE_REQUEST = "compute-mandelbrot-rect";
 const MANDELBROT_COMPUTE_RESULT  = "compute-mandelbrot-rect-result";
+
+const MANDELBROT_WEBGPU_MAX_REFERENCE_ORBIT_LENGTH = 50001;
+const MANDELBROT_ITERATION_SENTINEL = 0xffffffff;
+
+const PERTURBATION_STATUS_OK = 0;
+const PERTURBATION_STATUS_REFERENCE_ENDED = 1;
+const PERTURBATION_STATUS_SMALL_ORBIT = 2;
+const PERTURBATION_STATUS_DELTA_TOO_LARGE = 3;
+const PERTURBATION_STATUS_NON_FINITE = 4;
+
+const MANDELBROT_PERTURBATION_COUNTER_COUNT = 7;
+const MANDELBROT_PERTURBATION_COUNTER_BUFFER_SIZE =
+    MANDELBROT_PERTURBATION_COUNTER_COUNT * Uint32Array.BYTES_PER_ELEMENT;
 
 // -----------------------------------------------------------------------------
 // Pfad zum Shader-Code
@@ -128,12 +141,6 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 }
 `;
 
-const PERTURBATION_STATUS_OK = 0;
-const PERTURBATION_STATUS_REFERENCE_ENDED = 1;
-const PERTURBATION_STATUS_SMALL_ORBIT = 2;
-const PERTURBATION_STATUS_DELTA_TOO_LARGE = 3;
-const PERTURBATION_STATUS_NON_FINITE = 4;
-
 /**
  * Compute-Shader zur Mandelbrot-Berechnung ueber Perturbation.
  *
@@ -148,18 +155,28 @@ struct Params {
   rectY: u32,
   rectWidth: u32,
   rectHeight: u32,
-
   iterationLimit: u32,
-  referenceOrbitLength: u32,
-
   pixelScaleX: f32,
   pixelScaleY: f32,
-
   escapeRadius: f32,
-  
+  _pad0: f32,
+};
+
+struct OrbitParams {
+  referenceOrbitLength: u32,
   referencePixelX: f32,
   referencePixelY: f32,
   _pad0: f32,
+};
+
+struct PerturbationCounters {
+  pixelCount: atomic<u32>,
+  okCount: atomic<u32>,
+  invalidCount: atomic<u32>,
+  referenceEndedCount: atomic<u32>,
+  smallOrbitCount: atomic<u32>,
+  deltaTooLargeCount: atomic<u32>,
+  nonFiniteCount: atomic<u32>,
 };
 
 @group(0) @binding(0)
@@ -180,9 +197,17 @@ var<storage, read> referenceZy: array<f32>;
 @group(0) @binding(5)
 var<storage, read_write> statuses: array<u32>;
 
+@group(0) @binding(6)
+var<uniform> orbitParams: OrbitParams;
+
+@group(0) @binding(7)
+var<storage, read_write> counters: PerturbationCounters;
+
 @compute @workgroup_size(16, 16)
 
 fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
+
+  const MANDELBROT_ITERATION_SENTINEL: u32 = 0xffffffffu;
 
   let localX = globalId.x;
   let localY = globalId.y;
@@ -194,10 +219,15 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let px = params.rectX + localX;
   let py = params.rectY + localY;
 
-  let dcx = (f32(px) - params.referencePixelX) * params.pixelScaleX;
-  let dcy = (f32(py) - params.referencePixelY) * params.pixelScaleY;
+  let dcx = (f32(px) - orbitParams.referencePixelX) * params.pixelScaleX;
+  let dcy = (f32(py) - orbitParams.referencePixelY) * params.pixelScaleY;
 
   let index = localY * params.rectWidth + localX;
+
+  if (iterations[index] != MANDELBROT_ITERATION_SENTINEL) {
+    atomicAdd(&counters.pixelCount, 1u);
+    return;
+  }
 
   var dzx = 0.0;
   var dzy = 0.0;
@@ -217,7 +247,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
     // Der naechste Referenzorbit-Wert muss existieren, weil wir nach dem
     // Perturbationsschritt referenceZ[iteration] lesen.
-    if (iteration + 1u >= params.referenceOrbitLength) {
+    if (iteration + 1u >= orbitParams.referenceOrbitLength) {
         status = 1u;
         break;
     }
@@ -264,19 +294,39 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
     // Der Delta-Orbit ist nicht mehr "klein". Dann ist diese Referenz fuer
     // diesen Pixel wahrscheinlich ungeeignet.
-    if (
-        iteration > 0u &&
+    if (iteration > 0u &&
         refMag2 > 1.0e-12 &&
         dzMag2 > 1.0e6 * refMag2
     ) {
-        status = 3u;
-        break;
+      status = 3u;
+      break;
     }
   }
 
-  iterations[index] = iteration;
-  escapeValues[index] = zx * zx + zy * zy;
   statuses[index] = status;
+  escapeValues[index] = zx * zx + zy * zy;
+  atomicAdd(&counters.pixelCount, 1u);
+
+  if (status == 0u) {
+
+    iterations[index] = iteration;
+    atomicAdd(&counters.okCount, 1u);
+
+  } else {
+
+    iterations[index] = MANDELBROT_ITERATION_SENTINEL;
+    atomicAdd(&counters.invalidCount, 1u);
+
+    if (status == 1u) {
+      atomicAdd(&counters.referenceEndedCount, 1u);
+    } else if (status == 2u) {
+      atomicAdd(&counters.smallOrbitCount, 1u);
+    } else if (status == 3u) {
+      atomicAdd(&counters.deltaTooLargeCount, 1u);
+    } else if (status == 4u) {
+      atomicAdd(&counters.nonFiniteCount, 1u);
+    }
+  }
 }
 `;
 
@@ -313,10 +363,34 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
  * @typedef {WorkerSuccessMessage|WorkerErrorMessage} WorkerResponseMessage
  */
 
-// -----------------------------------------------------------------------------
-// Funktionen
-// -----------------------------------------------------------------------------
+/**
+ * Erstellt einen Storage-Buffer und schreibt die uebergebenen Float32-Daten.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {string} label - Diagnose-Label fuer den Buffer.
+ * @param {Float32Array} values - Zu schreibende Werte.
+ * @returns {GPUBuffer} Gefuellter Storage-Buffer.
+ */
+function createReadOnlyFloat32StorageBuffer(
+    device,
+    label,
+    values
+) {
+    const buffer = device.createBuffer({
+        label,
+        size: values.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
 
+    device.queue.writeBuffer(buffer, 0, values);
+
+    return buffer;
+}
+
+
+// -----------------------------------------------------------------------------
+// Funktionen für die WebGPU-Standard-Berechnung
+// -----------------------------------------------------------------------------
 
 /**
  * Erstellt den Uniform-Buffer-Inhalt für den Mandelbrot-Compute-Shader.
@@ -378,186 +452,6 @@ function createMandelbrotParamsArrayBuffer(
     dataView.setFloat32(60, 0, true);
     dataView.setFloat32(64, 0, true);
     dataView.setFloat32(68, 0, true);
-
-    return buffer;
-}
-
-/**
- * Erstellt die langlebigen GPU-Buffer fuer eine Perturbation-Berechnung.
- *
- * Diese Session enthaelt bewusst nur Ergebnis-, Status- und Readback-Buffer.
- * Der Referenzorbit wird spaeter getrennt geladen, damit mehrere Orbits gegen
- * dieselben Ergebnisbuffer laufen koennen.
- *
- * @param {GPUDevice} device - WebGPU-Device des Workers.
- * @param {number} pixelCount - Anzahl der Pixel im Zielrechteck.
- * @returns {Object} Buffer-Session fuer Perturbation-Ergebnisse.
- */
-function createMandelbrotPerturbationSessionBuffers(
-    device,
-    pixelCount
-) {
-    const iterationsBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
-    const escapeValuesBufferSize = pixelCount * Float32Array.BYTES_PER_ELEMENT;
-    const statusBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
-
-    const iterationsBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation iterations storage buffer",
-        size: iterationsBufferSize,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-
-    const iterationsReadbackBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation iterations readback buffer",
-        size: iterationsBufferSize,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-
-    const escapeValuesBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation escape values storage buffer",
-        size: escapeValuesBufferSize,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-
-    const escapeValuesReadbackBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation escape values readback buffer",
-        size: escapeValuesBufferSize,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-
-    const statusBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation status storage buffer",
-        size: statusBufferSize,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-
-    const statusReadbackBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation status readback buffer",
-        size: statusBufferSize,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-
-    return {
-        pixelCount,
-        iterationsBufferSize,
-        escapeValuesBufferSize,
-        statusBufferSize,
-        iterationsBuffer,
-        iterationsReadbackBuffer,
-        escapeValuesBuffer,
-        escapeValuesReadbackBuffer,
-        statusBuffer,
-        statusReadbackBuffer,
-    };
-}
-
-/**
- * Erstellt den Uniform-Buffer-Inhalt fuer den Perturbation-Compute-Shader.
- *
- * Das Layout entspricht der `Params`-Struktur in
- * `MANDELBROT_PERTURBATION_SHADER_SOURCE`.
- *
- * @param {PixelRect} rect - Zu berechnender Pixelbereich.
- * @param {number} imageWidth - Breite der vollstaendigen Zielmatrix in Pixeln.
- * @param {number} imageHeight - Hoehe der vollstaendigen Zielmatrix in Pixeln.
- * @param {ComputationSettings} computationSettings - Einstellungen fuer die Mandelbrot-Berechnung.
- * @param {MandelbrotReferenceOrbit} referenceOrbit - Vorberechneter Referenzorbit.
- * @returns {ArrayBuffer} Binaerer Uniform-Buffer-Inhalt fuer den Shader.
- */
-function createMandelbrotPerturbationParamsArrayBuffer(
-    rect,
-    imageWidth,
-    imageHeight,
-    computationSettings,
-    referenceOrbit
-) {
-    const { view, iterationLimit, escapeRadius } = computationSettings;
-    const { minX, maxX, minY, maxY } = view;
-
-    const pixelScaleX = Math.fround((maxX - minX) / imageWidth);
-    const pixelScaleY = Math.fround((maxY - minY) / imageHeight);
-
-    const buffer = new ArrayBuffer(56);
-    const dataView = new DataView(buffer);
-
-    dataView.setUint32(0, rect.x, true);
-    dataView.setUint32(4, rect.y, true);
-    dataView.setUint32(8, rect.width, true);
-    dataView.setUint32(12, rect.height, true);
-
-    dataView.setUint32(16, iterationLimit, true);
-    dataView.setUint32(20, referenceOrbit.zx.length, true);
-
-    dataView.setFloat32(24, pixelScaleX, true);
-    dataView.setFloat32(28, pixelScaleY, true);
-    dataView.setFloat32(32, escapeRadius, true);
-
-    const referenceCandidate = referenceOrbit.referenceCandidate;
-    const referencePixelX =
-        ((referenceCandidate.cx - minX) / (maxX - minX)) * imageWidth;
-    const referencePixelY =
-        ((referenceCandidate.cy - minY) / (maxY - minY)) * imageHeight;
-
-    dataView.setFloat32(36, Math.fround(referencePixelX), true);
-    dataView.setFloat32(40, Math.fround(referencePixelY), true);
-    dataView.setFloat32(44, 0, true);
-
-    return buffer;
-}
-
-/**
- * Erstellt GPU-Buffer fuer den Referenzorbit einer Perturbation-Berechnung.
- *
- * Dieser erste Schritt kapselt nur den bisherigen Upload. Spaeter kann diese
- * Funktion durch wiederverwendbare, fest dimensionierte Orbit-Buffer ersetzt
- * werden, die pro Kandidat nur noch per `queue.writeBuffer` neu befuellt werden.
- *
- * @param {GPUDevice} device - WebGPU-Device des Workers.
- * @param {MandelbrotReferenceOrbit} referenceOrbit - Vorberechneter Referenzorbit.
- * @returns {{ referenceZxBuffer: GPUBuffer, referenceZyBuffer: GPUBuffer }}
- */
-function createMandelbrotReferenceOrbitBuffers(
-    device,
-    referenceOrbit
-) {
-    const referenceZxBuffer = createReadOnlyFloat32StorageBuffer(
-        device,
-        "Mandelbrot perturbation reference zx buffer",
-        new Float32Array(referenceOrbit.zx)
-    );
-
-    const referenceZyBuffer = createReadOnlyFloat32StorageBuffer(
-        device,
-        "Mandelbrot perturbation reference zy buffer",
-        new Float32Array(referenceOrbit.zy)
-    );
-
-    return {
-        referenceZxBuffer,
-        referenceZyBuffer,
-    };
-}
-
-/**
- * Erstellt einen Storage-Buffer und schreibt die uebergebenen Float32-Daten.
- *
- * @param {GPUDevice} device - WebGPU-Device des Workers.
- * @param {string} label - Diagnose-Label fuer den Buffer.
- * @param {Float32Array} values - Zu schreibende Werte.
- * @returns {GPUBuffer} Gefuellter Storage-Buffer.
- */
-function createReadOnlyFloat32StorageBuffer(
-    device,
-    label,
-    values
-) {
-    const buffer = device.createBuffer({
-        label,
-        size: values.byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-
-    device.queue.writeBuffer(buffer, 0, values);
 
     return buffer;
 }
@@ -760,6 +654,523 @@ async function computeMandelbrotRectOnGpu(
     return result;
 }
 
+// -----------------------------------------------------------------------------
+// Funktionen für die WebGPU-Perturbations-Berechnung
+// -----------------------------------------------------------------------------
+
+/**
+ * Erstellt die langlebigen GPU-Buffer fuer eine Perturbation-Berechnung.
+ *
+ * Diese Session enthaelt bewusst nur Ergebnis-, Status- und Readback-Buffer.
+ * Der Referenzorbit wird spaeter getrennt geladen, damit mehrere Orbits gegen
+ * dieselben Ergebnisbuffer laufen koennen.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {number} pixelCount - Anzahl der Pixel im Zielrechteck.
+ * @returns {Object} Buffer-Session fuer Perturbation-Ergebnisse.
+ */
+function createMandelbrotPerturbationSessionBuffers(
+    device,
+    pixelCount
+) {
+    const iterationsBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
+    const escapeValuesBufferSize = pixelCount * Float32Array.BYTES_PER_ELEMENT;
+    const statusBufferSize = pixelCount * Uint32Array.BYTES_PER_ELEMENT;
+
+    const iterationsBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation iterations storage buffer",
+        size: iterationsBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+
+    const iterationsReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation iterations readback buffer",
+        size: iterationsBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const escapeValuesBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation escape values storage buffer",
+        size: escapeValuesBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    const escapeValuesReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation escape values readback buffer",
+        size: escapeValuesBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const statusBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation status storage buffer",
+        size: statusBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    const statusReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation status readback buffer",
+        size: statusBufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    return {
+        pixelCount,
+        iterationsBufferSize,
+        escapeValuesBufferSize,
+        statusBufferSize,
+        iterationsBuffer,
+        iterationsReadbackBuffer,
+        escapeValuesBuffer,
+        escapeValuesReadbackBuffer,
+        statusBuffer,
+        statusReadbackBuffer,
+    };
+}
+
+function initializeMandelbrotPerturbationIterationSentinels(
+    device, 
+    session
+) {
+    const sentinelIterations = new Uint32Array(session.pixelCount);
+    sentinelIterations.fill(MANDELBROT_ITERATION_SENTINEL);
+
+    device.queue.writeBuffer(
+        session.iterationsBuffer, 0,
+        sentinelIterations
+    );
+}
+
+/**
+ * Liest die finalen Buffer einer Perturbation-Session aus.
+ *
+ * Diese Funktion liest die grossen Ergebnisdaten erst am Ende der
+ * Perturbation-Berechnung. Wiederholte Zwischenentscheidungen sollen ueber den
+ * kleinen Counterbuffer erfolgen, nicht ueber diese finalen Session-Buffer.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {Object} session - Buffer-Session der Perturbation-Berechnung.
+ * @returns {Promise<{
+ *   gpuIterations: Uint32Array,
+ *   gpuEscapeValues: Float32Array,
+ *   gpuStatus: Uint32Array
+ * }>}
+ */
+async function readMandelbrotPerturbationSessionBuffers(
+    device,
+    session
+) {
+    const commandEncoder = device.createCommandEncoder({
+        label: "Mandelbrot perturbation session readback command encoder",
+    });
+
+    commandEncoder.copyBufferToBuffer(
+        session.iterationsBuffer, 0,
+        session.iterationsReadbackBuffer, 0,
+        session.iterationsBufferSize
+    );
+
+    commandEncoder.copyBufferToBuffer(
+        session.escapeValuesBuffer, 0,
+        session.escapeValuesReadbackBuffer, 0,
+        session.escapeValuesBufferSize
+    );
+
+    commandEncoder.copyBufferToBuffer(
+        session.statusBuffer, 0,
+        session.statusReadbackBuffer, 0,
+        session.statusBufferSize
+    );
+
+    device.queue.submit([commandEncoder.finish()]);
+
+    await Promise.all([
+        session.iterationsReadbackBuffer.mapAsync(GPUMapMode.READ),
+        session.escapeValuesReadbackBuffer.mapAsync(GPUMapMode.READ),
+        session.statusReadbackBuffer.mapAsync(GPUMapMode.READ),
+    ]);
+
+    const mappedIterationsRange = session.iterationsReadbackBuffer.getMappedRange();
+    const mappedEscapeValuesRange = session.escapeValuesReadbackBuffer.getMappedRange();
+    const mappedStatusRange = session.statusReadbackBuffer.getMappedRange();
+
+    const gpuIterations = new Uint32Array(mappedIterationsRange.slice(0));
+    const gpuEscapeValues = new Float32Array(mappedEscapeValuesRange.slice(0));
+    const gpuStatus = new Uint32Array(mappedStatusRange.slice(0));
+
+    session.iterationsReadbackBuffer.unmap();
+    session.escapeValuesReadbackBuffer.unmap();
+    session.statusReadbackBuffer.unmap();
+
+    return {
+        gpuIterations,
+        gpuEscapeValues,
+        gpuStatus,
+    };
+}
+
+/**
+ * Erstellt den Uniform-Buffer-Inhalt fuer den Perturbation-Compute-Shader.
+ *
+ * Das Layout entspricht der `Params`-Struktur in
+ * `MANDELBROT_PERTURBATION_SHADER_SOURCE`.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @returns {ArrayBuffer} Binaerer Uniform-Buffer-Inhalt fuer den Shader.
+ */
+function createMandelbrotPerturbationParamsBuffer(
+    device
+) {
+    return device.createBuffer({
+        label: "Mandelbrot perturbation params uniform buffer",
+        size: 40, 
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+}
+
+/**
+ * Erstellt den Uniform-Buffer fuer die initialen Perturbation-Parameter.
+ *
+ * Dieser Buffer enthaelt aktuell noch dieselben Daten wie bisher. Im naechsten
+ * Schritt wird `createMandelbrotPerturbationParamsArrayBuffer` dann so
+ * verschlankt, dass hier nur noch orbit-unabhaengige Werte landen.
+ *
+ * Ziel-Lebensdauer:
+ * - einmal pro Perturbation-Berechnung anlegen
+ * - einmal initial schreiben
+ * - fuer alle Referenzorbit-Laeufe wiederverwenden
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {ArrayBuffer} paramsBuffer - Buffer für die Parameter-Daten
+ * @param {PixelRect} rect - Zu berechnender Pixelbereich.
+ * @param {number} imageWidth - Breite der vollstaendigen Zielmatrix in Pixeln.
+ * @param {number} imageHeight - Hoehe der vollstaendigen Zielmatrix in Pixeln.
+ * @param {ComputationSettings} computationSettings - Einstellungen fuer die Mandelbrot-Berechnung.
+ * @param {MandelbrotReferenceOrbit} referenceOrbit - Aktuell noch enthalten; wird spaeter entfernt.
+ * @returns {{ paramsBuffer: GPUBuffer, paramsArrayBuffer: ArrayBuffer }}
+ */
+function writeMandelbrotPerturbationParamsBuffer(
+    device,
+    paramsBuffer, 
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings,
+) {
+
+    const { view, iterationLimit, escapeRadius } = computationSettings;
+    const { minX, maxX, minY, maxY } = view;
+
+    const pixelScaleX = Math.fround((maxX - minX) / imageWidth);
+    const pixelScaleY = Math.fround((maxY - minY) / imageHeight);
+
+    const buffer = new ArrayBuffer(40);
+    const dataView = new DataView(buffer);
+ 
+    dataView.setUint32 ( 0, rect.x, true);
+    dataView.setUint32 ( 4, rect.y, true);
+    dataView.setUint32 ( 8, rect.width, true);
+    dataView.setUint32 (12, rect.height, true);
+    dataView.setUint32 (16, iterationLimit, true);
+    dataView.setFloat32(20, pixelScaleX, true);
+    dataView.setFloat32(24, pixelScaleY, true);
+    dataView.setFloat32(28, escapeRadius, true);
+    dataView.setFloat32(32, 0, true);    
+
+    device.queue.writeBuffer(paramsBuffer, 0, buffer);
+}
+
+/**
+ * Erstellt die wiederverwendbaren GPU-Buffer fuer Referenzorbits.
+ *
+ * Die Buffer werden einmal fuer eine Perturbation-Session angelegt und koennen
+ * danach fuer mehrere Referenzorbits neu beschrieben werden. Die tatsaechlich
+ * gueltige Orbit-Laenge wird spaeter im Orbit-Parameterbuffer uebergeben.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {number} maxReferenceOrbitLength - Maximale Anzahl gespeicherter Orbit-Punkte.
+ * @returns {{
+ *   referenceZxBuffer: GPUBuffer,
+ *   referenceZyBuffer: GPUBuffer,
+ *   maxReferenceOrbitLength: number
+ * }}
+ */
+function createMandelbrotReferenceOrbitBuffers(
+    device,
+    maxReferenceOrbitLength = MANDELBROT_WEBGPU_MAX_REFERENCE_ORBIT_LENGTH
+) {
+
+    // ein Buffer für die Orbit-Parameter
+    const orbitParamsBufferSize = 16;
+
+    const orbitParamsBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation reference orbit params uniform buffer",
+        size: orbitParamsBufferSize,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });    
+
+
+    // zwei Buffer für die Orbit-Datenfelder
+    const referenceOrbitBufferSize =
+        maxReferenceOrbitLength * Float32Array.BYTES_PER_ELEMENT;
+
+    const referenceZxBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation reference zx buffer",
+        size: referenceOrbitBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    const referenceZyBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation reference zy buffer",
+        size: referenceOrbitBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    return {
+        referenceZxBuffer,
+        referenceZyBuffer,
+        maxReferenceOrbitLength,
+        orbitParamsBuffer, 
+    };
+}
+
+/**
+ * Schreibt einen konkreten Referenzorbit in vorhandene GPU-Buffer.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {Object} referenceOrbitBuffers - Wiederverwendbare Orbit-Buffer.
+ * @param {MandelbrotReferenceOrbit} referenceOrbit - Vorberechneter Referenzorbit.
+ * @returns {void}
+ */
+function writeMandelbrotReferenceOrbitBuffers(
+    device,
+    referenceOrbitBuffers,
+    referenceOrbit,
+    imageWidth,
+    imageHeight,
+    computationSettings,
+) {
+
+    if (referenceOrbit.zx.length > referenceOrbitBuffers.maxReferenceOrbitLength ||
+        referenceOrbit.zy.length > referenceOrbitBuffers.maxReferenceOrbitLength) {
+        throw new Error("Reference orbit exceeds allocated WebGPU reference buffers.");
+    }
+
+    // Parameterwerte für den Refernz-Orbit
+    const { view } = computationSettings;
+    const { minX, maxX, minY, maxY } = view;
+    const referenceCandidate = referenceOrbit.referenceCandidate;
+    const referencePixelX =
+        ((referenceCandidate.cx - minX) / (maxX - minX)) * imageWidth;
+    const referencePixelY =
+        ((referenceCandidate.cy - minY) / (maxY - minY)) * imageHeight;
+        
+    const buffer = new ArrayBuffer(16);
+    const dataView = new DataView(buffer);
+    dataView.setUint32 ( 0, referenceOrbit.zx.length, true);
+    dataView.setFloat32( 4, Math.fround(referencePixelX), true);
+    dataView.setFloat32( 8, Math.fround(referencePixelY), true);
+    dataView.setFloat32(12, 0, true);
+
+    device.queue.writeBuffer(
+        referenceOrbitBuffers.orbitParamsBuffer,
+        0,
+        buffer
+    );
+
+    // Buffer für die Referenz-Orbits
+    device.queue.writeBuffer(
+        referenceOrbitBuffers.referenceZxBuffer,
+        0,
+        new Float32Array(referenceOrbit.zx)
+    );
+
+    device.queue.writeBuffer(
+        referenceOrbitBuffers.referenceZyBuffer,
+        0,
+        new Float32Array(referenceOrbit.zy)
+    );
+}
+
+/**
+ * Erstellt die Buffer fuer wiederholt lesbare Perturbation-Statusinformationen.
+ *
+ * Der Counterbuffer wird vom Shader pro Dispatch atomisch beschrieben. Der
+ * Readback-Buffer erlaubt dem Host, nach einem Dispatch nur die kompakten
+ * Zaehler auszulesen, ohne Iterations- oder Statusarrays zu kopieren.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @returns {{
+ *   counterBuffer: GPUBuffer,
+ *   counterReadbackBuffer: GPUBuffer,
+ *   counterBufferSize: number
+ * }}
+ */
+function createMandelbrotPerturbationCounterBuffers(
+    device
+) {
+    const counterBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation counter storage buffer",
+        size: MANDELBROT_PERTURBATION_COUNTER_BUFFER_SIZE,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+    });
+
+    const counterReadbackBuffer = device.createBuffer({
+        label: "Mandelbrot perturbation counter readback buffer",
+        size: MANDELBROT_PERTURBATION_COUNTER_BUFFER_SIZE,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    return {
+        counterBuffer,
+        counterReadbackBuffer,
+        counterBufferSize: MANDELBROT_PERTURBATION_COUNTER_BUFFER_SIZE,
+    };
+}
+
+/**
+ * Setzt die Perturbation-Zaehler vor einem Dispatch auf null.
+ *
+ * Der Counterbuffer beschreibt immer nur den naechsten Dispatch. Ohne Reset
+ * wuerden sich die Werte ueber mehrere Referenzorbit-Laeufe aufsummieren.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {GPUBuffer} counterBuffer - Storage-Buffer mit atomischen Zaehlern.
+ * @returns {void}
+ */
+function resetMandelbrotPerturbationCounterBuffer(
+    device,
+    counterBuffer
+) {
+    const zeroCounters = new Uint32Array(MANDELBROT_PERTURBATION_COUNTER_COUNT);
+
+    device.queue.writeBuffer(
+        counterBuffer,
+        0,
+        zeroCounters
+    );
+}
+
+/**
+ * Liest die kompakten Perturbation-Zaehler aus.
+ *
+ * @param {GPUDevice} device - WebGPU-Device des Workers.
+ * @param {GPUBuffer} counterBuffer - Storage-Buffer mit atomischen Zaehlern.
+ * @param {GPUBuffer} counterReadbackBuffer - Readback-Buffer fuer die Zaehler.
+ * @param {number} counterBufferSize - Groesse des Counterbuffers in Byte.
+ * @returns {Promise<Object>} Ausgelesene Zaehler als Objekt.
+ */
+async function readMandelbrotPerturbationCounterBuffer(
+    device,
+    counterBuffer,
+    counterReadbackBuffer,
+    counterBufferSize
+) {
+    const commandEncoder = device.createCommandEncoder({
+        label: "Mandelbrot perturbation counter readback command encoder",
+    });
+
+    commandEncoder.copyBufferToBuffer(
+        counterBuffer,
+        0,
+        counterReadbackBuffer,
+        0,
+        counterBufferSize
+    );
+
+    device.queue.submit([commandEncoder.finish()]);
+
+    await counterReadbackBuffer.mapAsync(GPUMapMode.READ);
+
+    const mappedRange = counterReadbackBuffer.getMappedRange();
+    const counters = new Uint32Array(mappedRange.slice(0));
+
+    counterReadbackBuffer.unmap();
+
+    return {
+        pixelCount: counters[0],
+        okCount: counters[1],
+        invalidCount: counters[2],
+        referenceEndedCount: counters[3],
+        smallOrbitCount: counters[4],
+        deltaTooLargeCount: counters[5],
+        nonFiniteCount: counters[6],
+    };
+}
+
+function dispatchMandelbrotPerturbationPass(
+    device,
+    computePipeline,
+    bindGroup,
+    rect
+) {
+    const commandEncoder = device.createCommandEncoder({
+        label: "Mandelbrot perturbation command encoder",
+    });
+
+    const computePass = commandEncoder.beginComputePass({
+        label: "Mandelbrot perturbation compute pass",
+    });
+
+    computePass.setPipeline(computePipeline);
+    computePass.setBindGroup(0, bindGroup);
+
+    const workgroupSizeX = 16;
+    const workgroupSizeY = 16;
+    const workgroupCountX = Math.ceil(rect.width / workgroupSizeX);
+    const workgroupCountY = Math.ceil(rect.height / workgroupSizeY);
+
+    computePass.dispatchWorkgroups(workgroupCountX, workgroupCountY);
+    computePass.end();
+
+    device.queue.submit([commandEncoder.finish()]);
+}
+
+async function runMandelbrotPerturbationPass(
+    device,
+    computePipeline,
+    bindGroup,
+    rect,
+    orbitBuffers,
+    referenceOrbit,
+    imageWidth,
+    imageHeight,
+    computationSettings,
+    statusInfoBuffers
+) {
+
+    // aktuellen Orbit an die GPU senden
+    writeMandelbrotReferenceOrbitBuffers(
+        device,
+        orbitBuffers,
+        referenceOrbit, 
+        imageWidth, 
+        imageHeight, 
+        computationSettings
+    );
+
+    // Counter zurücksetzen
+    resetMandelbrotPerturbationCounterBuffer(
+        device,
+        statusInfoBuffers.counterBuffer
+    );    
+
+    // einen Pass auf der GPU ausführen
+    dispatchMandelbrotPerturbationPass(
+        device, 
+        computePipeline, 
+        bindGroup, 
+        rect, 
+    ); 
+
+    // Counter aus der GPU zurücklesen
+    return await readMandelbrotPerturbationCounterBuffer(
+                device,
+                statusInfoBuffers.counterBuffer,
+                statusInfoBuffers.counterReadbackBuffer,
+                statusInfoBuffers.counterBufferSize
+            );
+}
+
 /**
  * Berechnet einen Pixelbereich der Mandelbrot-Menge per Perturbation auf der GPU.
  *
@@ -803,171 +1214,85 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
     const pixelCount = rect.width * rect.height;
 
     // Anlegen der Session-Buffer (Iterationsdaten, EscapeVlaues, Status...)
-    const perturbationSession = createMandelbrotPerturbationSessionBuffers(
+    const session = createMandelbrotPerturbationSessionBuffers(
         device,
         pixelCount
     );
+    
+    initializeMandelbrotPerturbationIterationSentinels(
+        device, 
+        session, 
+    ); 
 
-    const {
-        iterationsBufferSize, escapeValuesBufferSize, statusBufferSize,
-        iterationsBuffer, iterationsReadbackBuffer,
-        escapeValuesBuffer, escapeValuesReadbackBuffer,
-        statusBuffer, statusReadbackBuffer,
-    } = perturbationSession;
+    // Parameter-Buffer für die Session 
+    // wird nur einmal initial geschrieben
+    const paramsBuffer = createMandelbrotPerturbationParamsBuffer(device); 
 
-    // Parameter inklusive Referenz-Orbit-Informationen (tbc)
-    const paramsArrayBuffer = createMandelbrotPerturbationParamsArrayBuffer(
+    writeMandelbrotPerturbationParamsBuffer( 
+        device, 
+        paramsBuffer, 
         rect,
         imageWidth,
         imageHeight,
-        computationSettings,
-        referenceOrbit
-    );
-
-    const paramsBuffer = device.createBuffer({
-        label: "Mandelbrot perturbation params uniform buffer",
-        size: paramsArrayBuffer.byteLength,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    device.queue.writeBuffer(paramsBuffer, 0, paramsArrayBuffer);
+        computationSettings
+    ); 
 
     // die eigentlichen Buffer für den aktuellen Orbit
-    const referenceBuffers = createMandelbrotReferenceOrbitBuffers(
-        device,
-        referenceOrbit
-    );
+    // wird bei jedem Pass geschrieben
+    const orbitBuffers = createMandelbrotReferenceOrbitBuffers(device);
 
-    const { referenceZxBuffer,
-            referenceZyBuffer, } = referenceBuffers ; 
+    // Buffer für Status-Info, 
+    // wird vor jedem Run zurückgesetzt und nach jedem Run gelesen
+    const statusInfoBuffers = createMandelbrotPerturbationCounterBuffers(device);
+
 
     // Bindings anlegen  
-    // 
-    //  binding(0): session params
-    //  binding(1): iterations
-    //  binding(2): escapeValues
-    //  binding(3): referenceZx
-    //  binding(4): referenceZy
-    //  binding(5): statuses
-    // 
     const bindGroup = device.createBindGroup({
         label: "Mandelbrot perturbation bind group",
         layout: computePipeline.getBindGroupLayout(0),
         entries: [
             { binding: 0, resource: { buffer: paramsBuffer }},
-            { binding: 1, resource: { buffer: iterationsBuffer }},
-            { binding: 2, resource: { buffer: escapeValuesBuffer }},
-            { binding: 3, resource: { buffer: referenceZxBuffer }},
-            { binding: 4, resource: { buffer: referenceZyBuffer }},
-            { binding: 5, resource: { buffer: statusBuffer }},
+            { binding: 1, resource: { buffer: session.iterationsBuffer }},
+            { binding: 2, resource: { buffer: session.escapeValuesBuffer }},
+            { binding: 3, resource: { buffer: orbitBuffers.referenceZxBuffer }},
+            { binding: 4, resource: { buffer: orbitBuffers.referenceZyBuffer }},
+            { binding: 5, resource: { buffer: session.statusBuffer }},
+            { binding: 6, resource: { buffer: orbitBuffers.orbitParamsBuffer }},
+            { binding: 7, resource: { buffer: statusInfoBuffers.counterBuffer }},
         ],
     });
 
-    const commandEncoder = device.createCommandEncoder({
-        label: "Mandelbrot perturbation command encoder",
-    });
+    // einen Pass auf den Sessiondaten mit einem einzelnen Orbit ausführen
+    const perturbationCounters = await runMandelbrotPerturbationPass(
+        device,
+        computePipeline,
+        bindGroup,
+        rect,
+        orbitBuffers,
+        referenceOrbit,
+        imageWidth,
+        imageHeight,
+        computationSettings,
+        statusInfoBuffers
+    ); 
 
-    const computePass = commandEncoder.beginComputePass({
-        label: "Mandelbrot perturbation compute pass",
-    });
-
-    computePass.setPipeline(computePipeline);
-    computePass.setBindGroup(0, bindGroup);
-
-    const workgroupSizeX = 16;
-    const workgroupSizeY = 16;
-    const workgroupCountX = Math.ceil(rect.width / workgroupSizeX);
-    const workgroupCountY = Math.ceil(rect.height / workgroupSizeY);
-
-    computePass.dispatchWorkgroups(workgroupCountX, workgroupCountY);
-    computePass.end();
-
-    commandEncoder.copyBufferToBuffer(
-        iterationsBuffer,
-        0,
-        iterationsReadbackBuffer,
-        0,
-        iterationsBufferSize
+    // Result-Array zurücklesen
+    const gpuResult = await readMandelbrotPerturbationSessionBuffers(
+        device,
+        session
     );
 
-    commandEncoder.copyBufferToBuffer(
-        escapeValuesBuffer,
-        0,
-        escapeValuesReadbackBuffer,
-        0,
-        escapeValuesBufferSize
-    );
-
-    commandEncoder.copyBufferToBuffer(
-        statusBuffer,
-        0,
-        statusReadbackBuffer,
-        0,
-        statusBufferSize
-    );
-
-    device.queue.submit([commandEncoder.finish()]);
-
-    await Promise.all([
-        iterationsReadbackBuffer.mapAsync(GPUMapMode.READ),
-        escapeValuesReadbackBuffer.mapAsync(GPUMapMode.READ),
-        statusReadbackBuffer.mapAsync(GPUMapMode.READ),
-    ]);
-
-    const mappedIterationsRange = iterationsReadbackBuffer.getMappedRange();
-    const mappedEscapeValuesRange = escapeValuesReadbackBuffer.getMappedRange();
-    const mappedStatusRange = statusReadbackBuffer.getMappedRange();
-
-    const gpuIterations = new Uint32Array(mappedIterationsRange.slice(0));
-    const gpuEscapeValues = new Float32Array(mappedEscapeValuesRange.slice(0));
-    const gpuStatus = new Uint32Array(mappedStatusRange.slice(0));
-
-    iterationsReadbackBuffer.unmap();
-    escapeValuesReadbackBuffer.unmap();
-    statusReadbackBuffer.unmap();
-
+    // iterationData aus gpuResult erzeugen
     const result = createIterationDataFromGpuArrays(
         rect,
-        gpuIterations,
-        gpuEscapeValues,
+        gpuResult.gpuIterations,
+        gpuResult.gpuEscapeValues,
         computationSettings.iterationLimit,
+        MANDELBROT_ITERATION_SENTINEL, 
     );
 
-    // ungültige Pixel zählen und in IterationData aufnehmen
-    let referenceEndedCount = 0;
-    let smallOrbitCount = 0;
-    let deltaTooLargeCount = 0;
-    let nonFiniteCount = 0;
-    let invalidCount = 0;
-
-    for (let i = 0; i < gpuStatus.length; i++) {
-        const status = gpuStatus[i];
-
-        if (status === PERTURBATION_STATUS_OK) {
-            continue;
-        }
-
-        invalidCount++;
-
-        if (status === PERTURBATION_STATUS_REFERENCE_ENDED) {
-            referenceEndedCount++;
-        } else if (status === PERTURBATION_STATUS_SMALL_ORBIT) {
-            smallOrbitCount++;
-        } else if (status === PERTURBATION_STATUS_DELTA_TOO_LARGE) {
-            deltaTooLargeCount++;
-        } else if (status === PERTURBATION_STATUS_NON_FINITE) {
-            nonFiniteCount++;
-        }
-    }
-
-    result.perturbationStats = {
-        pixelCount,
-        referenceEndedCount,
-        smallOrbitCount,
-        deltaTooLargeCount,
-        nonFiniteCount,
-        invalidCount,
-    };
+    // das Zähler-Objekt zum result hinzufügen
+    result.perturbationStats = perturbationCounters; 
 
     console.log("computeMandelbrotRectWithPerturbationOnGpu (done)", {
         pixelCount,
@@ -979,6 +1304,10 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
 
     return result;
 }
+
+// -----------------------------------------------------------------------------
+// Messagehandler
+// -----------------------------------------------------------------------------
 
 /**
  * Behandelt eine Berechnungsanfrage an den WebGPU-Mandelbrot-Worker.

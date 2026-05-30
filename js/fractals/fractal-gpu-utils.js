@@ -35,7 +35,8 @@ export function createIterationDataFromGpuArrays(
     rect,
     gpuIterations,
     gpuEscapeValues,
-    iterationLimit
+    iterationLimit,
+    sentinel, 
 ) {
     const pixelCount = rect.width * rect.height;
     const iterations = new Uint16Array(pixelCount);
@@ -45,10 +46,18 @@ export function createIterationDataFromGpuArrays(
     let maxObservedIterations = 0;
 
     for (let index = 0; index < pixelCount; index++) {
-        const iteration = gpuIterations[index];
+        const gpuIteration = gpuIterations[index];
+
+        const iteration =
+            gpuIteration === sentinel
+                ? iterationLimit
+                : gpuIteration;
 
         iterations[index] = iteration;
-        escapeValues[index] = gpuEscapeValues[index];
+        escapeValues[index] =
+            gpuIteration === sentinel
+                ? 0
+                : gpuEscapeValues[index];
 
         if (iteration < minIterations) {
             minIterations = iteration;
@@ -69,4 +78,3 @@ export function createIterationDataFromGpuArrays(
         referenceCandidates: [],
     };
 }
-
