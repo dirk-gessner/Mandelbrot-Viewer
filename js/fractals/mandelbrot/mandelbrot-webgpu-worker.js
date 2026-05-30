@@ -23,6 +23,8 @@ const MANDELBROT_COMPUTE_REQUEST = "compute-mandelbrot-rect";
 const MANDELBROT_COMPUTE_RESULT  = "compute-mandelbrot-rect-result";
 
 const MANDELBROT_WEBGPU_MAX_REFERENCE_ORBIT_LENGTH = 50001;
+const MANDELBROT_REFERENCE_ORBIT_ITERATIONS = 50000;
+const MANDELBROT_REFERENCE_ORBIT_ESCAPE_RADIUS = 1256;
 const MANDELBROT_ITERATION_SENTINEL = 0xffffffff;
 
 const PERTURBATION_STATUS_OK = 0;
@@ -344,7 +346,8 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
  * @property {number}                       imageWidth          - (integer) Breite der vollständigen Zielmatrix.
  * @property {number}                       imageHeight         - (integer) Höhe der vollständigen Zielmatrix.
  * @property {ComputationSettings}          computationSettings - Einstellungen für die Berechnung.
- * @property {?MandelbrotReferenceOrbit}    referenceOrbit      - Optionaler Referenzorbit für die Perturbationsberechnung
+ * @property {?ReferenceCandidate}          referenceCandidate  - Optionaler Referenzkandidat fuer die Perturbationsberechnung.
+ * @property {number}                       maxObservedIterations - Hoechster beobachteter Iterationswert der aktuellen Matrix.
  */
 
 /**
@@ -659,6 +662,113 @@ async function computeMandelbrotRectOnGpu(
 // -----------------------------------------------------------------------------
 
 /**
+ * Berechnet den Referenzorbit fuer einen Perturbation-Referenzkandidaten.
+ *
+ * Diese Funktion laeuft im WebGPU-Worker, damit Referenzorbits spaeter lazy
+ * fuer einzelne Kandidaten berechnet werden koennen, ohne den Main Thread zu
+ * blockieren oder ungenutzte Orbits vorab zu erzeugen.
+ *
+ * @param {ReferenceCandidate} referenceCandidate - Kandidat mit komplexen Koordinaten.
+ * @param {number} iterationLimit - Maximale Anzahl von Iterationen fuer den Orbit.
+ * @param {number} escapeRadius - Escape-Radius fuer den Referenzorbit.
+ * @returns {MandelbrotReferenceOrbit} Berechneter Referenzorbit.
+ */
+function computeMandelbrotReferenceOrbit(
+    referenceCandidate,
+    iterationLimit = MANDELBROT_REFERENCE_ORBIT_ITERATIONS,
+    escapeRadius = MANDELBROT_REFERENCE_ORBIT_ESCAPE_RADIUS
+) {
+    const zx = new Float64Array(iterationLimit + 1);
+    const zy = new Float64Array(iterationLimit + 1);
+
+    const cx = referenceCandidate.cx;
+    const cy = referenceCandidate.cy;
+    const escapeRadiusSquared = escapeRadius * escapeRadius;
+
+    let escapeIteration = -1;
+    let escapeValue = 0;
+    let iteration = 0;
+
+    zx[0] = 0;
+    zy[0] = 0;
+
+    for (iteration = 0; iteration < iterationLimit; iteration++) {
+        const currentZx = zx[iteration];
+        const currentZy = zy[iteration];
+
+        escapeValue = currentZx * currentZx + currentZy * currentZy;
+
+        if (escapeValue >= escapeRadiusSquared) {
+            escapeIteration = iteration;
+            break;
+        }
+
+        const nextZx = currentZx * currentZx - currentZy * currentZy + cx;
+        const nextZy = 2 * currentZx * currentZy + cy;
+
+        zx[iteration + 1] = nextZx;
+        zy[iteration + 1] = nextZy;
+    }
+
+    const computedIterations = escapeIteration >= 0
+        ? escapeIteration
+        : iterationLimit;
+
+    if (escapeIteration < 0) {
+        const finalZx = zx[computedIterations];
+        const finalZy = zy[computedIterations];
+        escapeValue = finalZx * finalZx + finalZy * finalZy;
+    }
+
+    return {
+        referenceCandidate,
+        zx: zx.slice(0, computedIterations + 1),
+        zy: zy.slice(0, computedIterations + 1),
+        iterations: computedIterations,
+        escapeIteration,
+        escapeValue,
+    };
+}
+
+/**
+ * Bestimmt, wie lang ein Referenzorbit mindestens sein muss.
+ *
+ * Die Logik entspricht der bisherigen Main-Thread-Pruefung. Sie liegt nun im
+ * Worker, weil der Worker den Referenzorbit selbst erzeugt und deshalb auch
+ * entscheiden kann, ob der Kandidat fuer die aktuelle Berechnung reicht.
+ *
+ * @param {ReferenceCandidate} candidate - Referenzkandidat, dessen Orbit bewertet wird.
+ * @param {number} iterationLimit - Aktuelles Iterationslimit der Mandelbrot-Berechnung.
+ * @param {number} maxObservedIterations - Hoechster beobachteter Iterationswert der aktuellen Matrix.
+ * @returns {number} Mindestanzahl an Orbit-Iterationen.
+ */
+function getRequiredReferenceOrbitIterations(
+    candidate,
+    iterationLimit,
+    maxObservedIterations
+) {
+    const viewReachedIterationLimit =
+        maxObservedIterations >= iterationLimit;
+
+    if (viewReachedIterationLimit) {
+        return iterationLimit;
+    }
+
+    const observedIterations =
+        candidate.cellMaxObservedIterations ?? candidate.iterations;
+
+    const safetyMargin = Math.max(
+        100,
+        Math.floor(observedIterations * 0.1)
+    );
+
+    return Math.min(
+        iterationLimit,
+        observedIterations + safetyMargin
+    );
+}
+
+/**
  * Erstellt die langlebigen GPU-Buffer fuer eine Perturbation-Berechnung.
  *
  * Diese Session enthaelt bewusst nur Ergebnis-, Status- und Readback-Buffer.
@@ -809,13 +919,13 @@ async function readMandelbrotPerturbationSessionBuffers(
 }
 
 /**
- * Erstellt den Uniform-Buffer-Inhalt fuer den Perturbation-Compute-Shader.
+ * Erstellt den GPU-Uniform-Buffer fuer die initialen Perturbation-Parameter.
  *
- * Das Layout entspricht der `Params`-Struktur in
- * `MANDELBROT_PERTURBATION_SHADER_SOURCE`.
+ * Der Buffer wird einmal pro Perturbation-Session angelegt und anschliessend
+ * mit `writeMandelbrotPerturbationParamsBuffer` beschrieben.
  *
  * @param {GPUDevice} device - WebGPU-Device des Workers.
- * @returns {ArrayBuffer} Binaerer Uniform-Buffer-Inhalt fuer den Shader.
+ * @returns {GPUBuffer} Uniform-Buffer fuer die sessionweiten Perturbation-Parameter.
  */
 function createMandelbrotPerturbationParamsBuffer(
     device
@@ -828,25 +938,18 @@ function createMandelbrotPerturbationParamsBuffer(
 }
 
 /**
- * Erstellt den Uniform-Buffer fuer die initialen Perturbation-Parameter.
+ * Schreibt die sessionweiten Perturbation-Parameter in den Uniform-Buffer.
  *
- * Dieser Buffer enthaelt aktuell noch dieselben Daten wie bisher. Im naechsten
- * Schritt wird `createMandelbrotPerturbationParamsArrayBuffer` dann so
- * verschlankt, dass hier nur noch orbit-unabhaengige Werte landen.
- *
- * Ziel-Lebensdauer:
- * - einmal pro Perturbation-Berechnung anlegen
- * - einmal initial schreiben
- * - fuer alle Referenzorbit-Laeufe wiederverwenden
+ * Diese Werte sind fuer alle Referenzorbit-Passes derselben Rechteckberechnung
+ * konstant. Orbit-spezifische Werte werden getrennt in den Orbit-Buffer geschrieben.
  *
  * @param {GPUDevice} device - WebGPU-Device des Workers.
- * @param {ArrayBuffer} paramsBuffer - Buffer für die Parameter-Daten
+ * @param {GPUBuffer} paramsBuffer - Uniform-Buffer fuer die Parameter-Daten.
  * @param {PixelRect} rect - Zu berechnender Pixelbereich.
  * @param {number} imageWidth - Breite der vollstaendigen Zielmatrix in Pixeln.
  * @param {number} imageHeight - Hoehe der vollstaendigen Zielmatrix in Pixeln.
  * @param {ComputationSettings} computationSettings - Einstellungen fuer die Mandelbrot-Berechnung.
- * @param {MandelbrotReferenceOrbit} referenceOrbit - Aktuell noch enthalten; wird spaeter entfernt.
- * @returns {{ paramsBuffer: GPUBuffer, paramsArrayBuffer: ArrayBuffer }}
+ * @returns {void}
  */
 function writeMandelbrotPerturbationParamsBuffer(
     device,
@@ -1174,33 +1277,37 @@ async function runMandelbrotPerturbationPass(
 /**
  * Berechnet einen Pixelbereich der Mandelbrot-Menge per Perturbation auf der GPU.
  *
+ * Der Worker berechnet den Referenzorbit aus dem uebergebenen Kandidaten und
+ * lehnt den Kandidaten als normales Ergebnisobjekt ab, wenn der Orbit fuer die
+ * aktuelle Berechnung nicht lang genug ist.
+ *
  * @param {PixelRect} rect - Zu berechnender Pixelbereich.
  * @param {number} imageWidth - Breite der vollstaendigen Zielmatrix in Pixeln.
  * @param {number} imageHeight - Hoehe der vollstaendigen Zielmatrix in Pixeln.
  * @param {ComputationSettings} computationSettings - Einstellungen fuer die Mandelbrot-Berechnung.
- * @param {MandelbrotReferenceOrbit} referenceOrbit - Vorberechneter Referenzorbit.
- * @returns {Promise<IterationData>} Berechnete Iterationsdaten fuer den Pixelbereich.
+ * @param {ReferenceCandidate} referenceCandidate - Referenzkandidat, aus dem der Worker den Orbit berechnet.
+ * @param {number} maxObservedIterations - Hoechster beobachteter Iterationswert der aktuellen Matrix.
+ * @returns {Promise<IterationData|Object>} Berechnete Iterationsdaten oder Kandidaten-Ablehnung.
  */
 async function computeMandelbrotRectWithPerturbationOnGpu(
     rect,
     imageWidth,
     imageHeight,
     computationSettings,
-    referenceOrbit
+    referenceCandidate,
+    maxObservedIterations = 0
 ) {
     console.log("computeMandelbrotRectWithPerturbationOnGpu (start)", {
         rect,
         imageWidth,
         imageHeight,
-        referenceOrbitLength: referenceOrbit.zx.length,
-        referenceCandidate  : referenceOrbit.referenceCandidate,
-        ref_iterations: referenceOrbit.iterations, 
-        ref_escape_iteration: referenceOrbit.escapeIteration, 
+        referenceCandidate,
+        maxObservedIterations, 
         iterationLimit: computationSettings.iterationLimit,   
     });
 
-    if (!referenceOrbit || referenceOrbit.zx.length < 2 || referenceOrbit.zy.length < 2) {
-        throw new Error("Perturbation requires a reference orbit with at least two points.");
+    if (!referenceCandidate) {
+        throw new Error("Perturbation requires a reference candidate.");
     }
 
     const { device } = await getWorkerContext();
@@ -1262,6 +1369,25 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         ],
     });
 
+    // hier wird der Orbit für den aktuellen Kandidaten ermittelt
+    // das passiert innerhalb der Schleife über alle Referenzkandidaten
+    const referenceOrbit = computeMandelbrotReferenceOrbit(referenceCandidate);
+
+    const requiredIterations = getRequiredReferenceOrbitIterations(
+        referenceCandidate,
+        computationSettings.iterationLimit,
+        maxObservedIterations
+    );
+
+    if (referenceOrbit.iterations < requiredIterations) {
+        return {
+            perturbationReferenceRejected: true,
+            referenceCandidate,
+            referenceOrbitIterations: referenceOrbit.iterations,
+            requiredIterations,
+        };
+    }
+
     // einen Pass auf den Sessiondaten mit einem einzelnen Orbit ausführen
     const perturbationCounters = await runMandelbrotPerturbationPass(
         device,
@@ -1321,13 +1447,14 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
 async function handleComputeMandelbrotRectMessage(
     message
 ) {
-    const result = message.referenceOrbit
+    const result = message.referenceCandidate
         ? await computeMandelbrotRectWithPerturbationOnGpu(
             message.rect,
             message.imageWidth,
             message.imageHeight,
             message.computationSettings,
-            message.referenceOrbit
+            message.referenceCandidate,
+            message.maxObservedIterations ?? 0
         )
         : await computeMandelbrotRectOnGpu(
             message.rect,
@@ -1335,7 +1462,7 @@ async function handleComputeMandelbrotRectMessage(
             message.imageHeight,
             message.computationSettings
         );
-
+        
     const response = {
         type: MANDELBROT_COMPUTE_RESULT,
         requestId: message.requestId,

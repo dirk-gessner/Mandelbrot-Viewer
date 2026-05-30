@@ -509,37 +509,24 @@ async function computeMandelbrotRect(
                 );              
 
                 for (const candidate of candidates) {
-                    const referenceOrbit = computeMandelbrotReferenceOrbit(candidate);
-
-                    const requiredIterations =
-                        getRequiredReferenceOrbitIterations(
-                            candidate,
-                            computationSettings.iterationLimit,
-                            iterationData?.maxObservedIterations ?? 0
-                        );
-
-                    if (referenceOrbit.iterations < requiredIterations) {
-                        console.warn("Perturbation reference orbit rejected", {
-                            candidate,
-                            referenceOrbitIterations: referenceOrbit.iterations,
-                            requiredIterations,
-                        });
-                        continue;
-                    }
 
                     const result = await computeMandelbrotRectWebGpu(
                         rect,
                         imageWidth,
                         imageHeight,
                         computationSettings,
-                        referenceOrbit
+                        candidate,
+                        iterationData?.maxObservedIterations ?? 0
                     );
+
+                    if (result.perturbationReferenceRejected) {
+                        console.warn("Perturbation reference orbit rejected", result);
+                        continue;
+                    }
 
                     if (!isAcceptablePerturbationResult(result)) {
                         console.warn("Perturbation reference orbit rejected", {
                             candidate,
-                            referenceOrbitIterations: referenceOrbit.iterations,
-                            requiredIterations,
                             perturbationStats: result.perturbationStats, 
                         });
                         continue;
