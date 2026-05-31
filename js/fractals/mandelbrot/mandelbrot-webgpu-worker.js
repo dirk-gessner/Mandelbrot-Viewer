@@ -889,6 +889,34 @@ async function readMandelbrotPerturbationSessionBuffers(
     };
 }
 
+function destroyGpuBuffer(buffer) {
+    if (!buffer) {
+        return;
+    }
+
+    try {
+        buffer.destroy();
+    } catch (error) {
+        console.warn("Failed to destroy GPUBuffer.", error);
+    }
+}
+
+function destroyMandelbrotPerturbationSession(session) {
+    
+    destroyGpuBuffer(session.iterationsBuffer);
+    destroyGpuBuffer(session.escapeValuesBuffer);
+    destroyGpuBuffer(session.statusBuffer);
+    destroyGpuBuffer(session.counterBuffer);
+
+    destroyGpuBuffer(session.iterationsReadBuffer);
+    destroyGpuBuffer(session.escapeValuesReadBuffer);
+    destroyGpuBuffer(session.statusReadBuffer);
+    destroyGpuBuffer(session.counterReadBuffer);
+
+    destroyGpuBuffer(session.referenceOrbitBuffer);
+    destroyGpuBuffer(session.paramsBuffer);
+}
+
 /**
  * Erstellt den GPU-Uniform-Buffer fuer die initialen Perturbation-Parameter.
  *
@@ -1469,189 +1497,193 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         pixelCount
     );
     
-    initializeMandelbrotPerturbationIterationSentinels(
-        device, 
-        session, 
-    ); 
+    try {
+        initializeMandelbrotPerturbationIterationSentinels(
+            device, 
+            session, 
+        ); 
 
-    // Parameter-Buffer für die Session 
-    // wird nur einmal initial geschrieben
-    const paramsBuffer = createMandelbrotPerturbationParamsBuffer(device); 
+        // Parameter-Buffer für die Session 
+        // wird nur einmal initial geschrieben
+        const paramsBuffer = createMandelbrotPerturbationParamsBuffer(device); 
 
-    writeMandelbrotPerturbationParamsBuffer( 
-        device, 
-        paramsBuffer, 
-        rect,
-        imageWidth,
-        imageHeight,
-        computationSettings
-    ); 
-
-    // die eigentlichen Buffer für den aktuellen Orbit
-    // wird bei jedem Pass geschrieben
-    const orbitBuffers = createMandelbrotReferenceOrbitBuffers(device);
-
-    // Buffer für Status-Info, 
-    // wird vor jedem Run zurückgesetzt und nach jedem Run gelesen
-    const statusInfoBuffers = createMandelbrotPerturbationCounterBuffers(device);
-
-
-    // Bindings anlegen  
-    const bindGroup = device.createBindGroup({
-        label: "Mandelbrot perturbation bind group",
-        layout: computePipeline.getBindGroupLayout(0),
-        entries: [
-            { binding: 0, resource: { buffer: paramsBuffer }},
-            { binding: 1, resource: { buffer: session.iterationsBuffer }},
-            { binding: 2, resource: { buffer: session.escapeValuesBuffer }},
-            { binding: 3, resource: { buffer: orbitBuffers.referenceZxBuffer }},
-            { binding: 4, resource: { buffer: orbitBuffers.referenceZyBuffer }},
-            { binding: 5, resource: { buffer: session.statusBuffer }},
-            { binding: 6, resource: { buffer: orbitBuffers.orbitParamsBuffer }},
-            { binding: 7, resource: { buffer: statusInfoBuffers.counterBuffer }},
-        ],
-    });
-
-    let perturbationCounters = null;
-    let acceptedCandidateCount = 0;
-    let rejectedCandidateCount = 0;
-    let lastRejectedReference = null;
-
-    const referenceCandidateResults = referenceCandidates.map((candidate, candidateIndex) => ({
-        ...candidate,
-        source: candidate.source ?? "original",
-        status: candidate.status ?? "not-used",
-    }));
-
-    const totalReferenceCandidates = referenceCandidateResults.length;
-    let perturbationAcceptable = false ; 
-
-    for (let candidateIndex = 0; candidateIndex < totalReferenceCandidates; candidateIndex++) {
-
-        const referenceCandidate = referenceCandidateResults[candidateIndex];
-
-        const referenceOrbit = computeMandelbrotReferenceOrbit(referenceCandidate);
-
-        acceptedCandidateCount++;
-
-        console.info("Applying next reference orbit", {
-            candidate: `${candidateIndex + 1} / ${totalReferenceCandidates}`,
-            pixelX: referenceCandidate.pixelX,
-            pixelY: referenceCandidate.pixelY,
-            iterations: referenceCandidate.iterations,
-            cellMaxObservedIterations: referenceCandidate.cellMaxObservedIterations,
-        });
-
-        const invalidBefore = perturbationCounters?.invalidCount ?? pixelCount;
-
-        // einen Pass auf den Sessiondaten mit einem einzelnen Orbit ausführen
-        perturbationCounters = await runMandelbrotPerturbationPass(
-            device,
-            computePipeline,
-            bindGroup,
+        writeMandelbrotPerturbationParamsBuffer( 
+            device, 
+            paramsBuffer, 
             rect,
-            orbitBuffers,
-            referenceOrbit,
             imageWidth,
             imageHeight,
-            computationSettings,
-            statusInfoBuffers
+            computationSettings
+        ); 
+
+        // die eigentlichen Buffer für den aktuellen Orbit
+        // wird bei jedem Pass geschrieben
+        const orbitBuffers = createMandelbrotReferenceOrbitBuffers(device);
+
+        // Buffer für Status-Info, 
+        // wird vor jedem Run zurückgesetzt und nach jedem Run gelesen
+        const statusInfoBuffers = createMandelbrotPerturbationCounterBuffers(device);
+
+
+        // Bindings anlegen  
+        const bindGroup = device.createBindGroup({
+            label: "Mandelbrot perturbation bind group",
+            layout: computePipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: paramsBuffer }},
+                { binding: 1, resource: { buffer: session.iterationsBuffer }},
+                { binding: 2, resource: { buffer: session.escapeValuesBuffer }},
+                { binding: 3, resource: { buffer: orbitBuffers.referenceZxBuffer }},
+                { binding: 4, resource: { buffer: orbitBuffers.referenceZyBuffer }},
+                { binding: 5, resource: { buffer: session.statusBuffer }},
+                { binding: 6, resource: { buffer: orbitBuffers.orbitParamsBuffer }},
+                { binding: 7, resource: { buffer: statusInfoBuffers.counterBuffer }},
+            ],
+        });
+
+        let perturbationCounters = null;
+        let acceptedCandidateCount = 0;
+        let rejectedCandidateCount = 0;
+        let lastRejectedReference = null;
+
+        const referenceCandidateResults = referenceCandidates.map((candidate, candidateIndex) => ({
+            ...candidate,
+            source: candidate.source ?? "original",
+            status: candidate.status ?? "not-used",
+        }));
+
+        const totalReferenceCandidates = referenceCandidateResults.length;
+        let perturbationAcceptable = false ; 
+
+        for (let candidateIndex = 0; candidateIndex < totalReferenceCandidates; candidateIndex++) {
+
+            const referenceCandidate = referenceCandidateResults[candidateIndex];
+
+            const referenceOrbit = computeMandelbrotReferenceOrbit(referenceCandidate);
+
+            acceptedCandidateCount++;
+
+            console.info("Applying next reference orbit", {
+                candidate: `${candidateIndex + 1} / ${totalReferenceCandidates}`,
+                pixelX: referenceCandidate.pixelX,
+                pixelY: referenceCandidate.pixelY,
+                iterations: referenceCandidate.iterations,
+                cellMaxObservedIterations: referenceCandidate.cellMaxObservedIterations,
+            });
+
+            const invalidBefore = perturbationCounters?.invalidCount ?? pixelCount;
+
+            // einen Pass auf den Sessiondaten mit einem einzelnen Orbit ausführen
+            perturbationCounters = await runMandelbrotPerturbationPass(
+                device,
+                computePipeline,
+                bindGroup,
+                rect,
+                orbitBuffers,
+                referenceOrbit,
+                imageWidth,
+                imageHeight,
+                computationSettings,
+                statusInfoBuffers
+            );
+
+            const invalidAfter = perturbationCounters.invalidCount;
+            const improvement = Math.max(0, invalidBefore - invalidAfter);
+
+            referenceCandidate.status = improvement > 0
+                ? "used-improved"
+                : "used-no-improvement";
+
+            console.info("Perturbation stats after computation.", { perturbationCounters });
+
+            if (isAcceptableMandelbrotPerturbationStats(perturbationCounters)) {
+                perturbationAcceptable = true ; 
+                break;
+            }
+        }
+
+        if (!perturbationCounters) {
+            return {
+                perturbationReferenceRejected: true,
+                reason: "no-usable-reference-orbit",
+                rejectedCandidateCount,
+                lastRejectedReference,
+            };
+        }
+
+        // Result-Array zurücklesen
+        const gpuResult = await readMandelbrotPerturbationSessionBuffers(
+            device,
+            session
         );
 
-        const invalidAfter = perturbationCounters.invalidCount;
-        const improvement = Math.max(0, invalidBefore - invalidAfter);
-
-        referenceCandidate.status = improvement > 0
-            ? "used-improved"
-            : "used-no-improvement";
-
-        console.info("Perturbation stats after computation.", { perturbationCounters });
-
-        if (isAcceptableMandelbrotPerturbationStats(perturbationCounters)) {
-            perturbationAcceptable = true ; 
-            break;
-        }
-    }
-
-    if (!perturbationCounters) {
-        return {
-            perturbationReferenceRejected: true,
-            reason: "no-usable-reference-orbit",
-            rejectedCandidateCount,
-            lastRejectedReference,
+        let cpuRepairStats = {
+            repairedCount: 0,
+            referenceEndedCount: 0,
+            smallOrbitCount: 0,
+            deltaTooLargeCount: 0,
+            nonFiniteCount: 0,
+            unknownStatusCount: 0,
         };
-    }
 
-    // Result-Array zurücklesen
-    const gpuResult = await readMandelbrotPerturbationSessionBuffers(
-        device,
-        session
-    );
+        if (perturbationAcceptable && perturbationCounters.invalidCount > 0) {
+            console.warn("Repairing invalid perturbation results on CPU.", {
+                cpuRepairStats,
+                perturbationCounters,
+            });
 
-    let cpuRepairStats = {
-        repairedCount: 0,
-        referenceEndedCount: 0,
-        smallOrbitCount: 0,
-        deltaTooLargeCount: 0,
-        nonFiniteCount: 0,
-        unknownStatusCount: 0,
-    };
+            cpuRepairStats = repairMandelbrotPerturbationSentinelPixelsOnCpu(
+                rect,
+                imageWidth,
+                imageHeight,
+                computationSettings,
+                gpuResult.gpuIterations,
+                gpuResult.gpuEscapeValues,
+                gpuResult.gpuStatus
+            );
 
-    if (perturbationAcceptable && perturbationCounters.invalidCount > 0) {
-        console.warn("Repairing invalid perturbation results on CPU.", {
-            cpuRepairStats,
-            perturbationCounters,
-        });
+            console.info("Repaired accepted Mandelbrot perturbation result on CPU.", {
+                cpuRepairStats,
+                perturbationCounters,
+            });
+        }
 
-        cpuRepairStats = repairMandelbrotPerturbationSentinelPixelsOnCpu(
+        if (perturbationAcceptable) {
+            assertNoMandelbrotPerturbationSentinelsRemain(
+                gpuResult.gpuIterations
+            );
+        }
+
+        // iterationData aus gpuResult erzeugen
+        const result = createIterationDataFromGpuArrays(
             rect,
-            imageWidth,
-            imageHeight,
-            computationSettings,
             gpuResult.gpuIterations,
             gpuResult.gpuEscapeValues,
-            gpuResult.gpuStatus
+            computationSettings.iterationLimit,
+            MANDELBROT_ITERATION_SENTINEL,
+            computationSettings.view
         );
 
-        console.info("Repaired accepted Mandelbrot perturbation result on CPU.", {
-            cpuRepairStats,
-            perturbationCounters,
+        // das Zähler-Objekt und die annotierten Referenzkandidaten zum result hinzufügen
+        result.perturbationStats = perturbationCounters;
+        result.perturbationAcceptable = perturbationAcceptable;
+        result.referenceCandidates = referenceCandidateResults;
+        result.cpuRepairStats = cpuRepairStats;
+        result.cpuRepairedPixelCount = cpuRepairStats.repairedCount;
+        result.status = gpuResult.gpuStatus;
+
+        console.log("computeMandelbrotRectWithPerturbationOnGpu (done)", {
+            pixelCount,
+            minIterations: result.minIterations,
+            iterations_sample: result.iterations.slice(0, 16),
+            escapeValues_sample: result.escapeValues.slice(0, 16),
+            perturbationStats: result.perturbationStats, 
         });
+
+        return result;
+    } finally {
+        destroyMandelbrotPerturbationSession(session);
     }
-
-    if (perturbationAcceptable) {
-        assertNoMandelbrotPerturbationSentinelsRemain(
-            gpuResult.gpuIterations
-        );
-    }
-
-    // iterationData aus gpuResult erzeugen
-    const result = createIterationDataFromGpuArrays(
-        rect,
-        gpuResult.gpuIterations,
-        gpuResult.gpuEscapeValues,
-        computationSettings.iterationLimit,
-        MANDELBROT_ITERATION_SENTINEL,
-        computationSettings.view
-    );
-
-    // das Zähler-Objekt und die annotierten Referenzkandidaten zum result hinzufügen
-    result.perturbationStats = perturbationCounters;
-    result.perturbationAcceptable = perturbationAcceptable;
-    result.referenceCandidates = referenceCandidateResults;
-    result.cpuRepairStats = cpuRepairStats;
-    result.cpuRepairedPixelCount = cpuRepairStats.repairedCount;
-    result.status = gpuResult.gpuStatus;
-
-    console.log("computeMandelbrotRectWithPerturbationOnGpu (done)", {
-        pixelCount,
-        minIterations: result.minIterations,
-        iterations_sample: result.iterations.slice(0, 16),
-        escapeValues_sample: result.escapeValues.slice(0, 16),
-        perturbationStats: result.perturbationStats, 
-    });
-
-    return result;
 }
 
 // -----------------------------------------------------------------------------
