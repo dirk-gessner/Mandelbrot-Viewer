@@ -231,6 +231,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   if (iterations[index] != MANDELBROT_ITERATION_SENTINEL) {
     atomicAdd(&counters.pixelCount, 1u);
+    atomicAdd(&counters.okCount, 1u);
     return;
   }
 
