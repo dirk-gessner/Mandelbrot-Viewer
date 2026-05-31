@@ -37,8 +37,8 @@ const MANDELBROT_PERTURBATION_COUNTER_COUNT = 7;
 const MANDELBROT_PERTURBATION_COUNTER_BUFFER_SIZE =
     MANDELBROT_PERTURBATION_COUNTER_COUNT * Uint32Array.BYTES_PER_ELEMENT;
 
-const MANDELBROT_PERTURBATION_MAX_SMALL_ORBIT_RATIO = 0.001;
-const MANDELBROT_PERTURBATION_MAX_DELTA_TOO_LARGE_RATIO = 0.001;
+const MANDELBROT_PERTURBATION_MAX_SMALL_ORBIT_RATIO = 0.005;
+const MANDELBROT_PERTURBATION_MAX_DELTA_TOO_LARGE_RATIO = 0.005;
 
 // -----------------------------------------------------------------------------
 // Pfad zum Shader-Code
@@ -213,6 +213,9 @@ var<storage, read_write> counters: PerturbationCounters;
 fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   const MANDELBROT_ITERATION_SENTINEL: u32 = 0xffffffffu;
+  const GLITCH_THRESHOLD: f32 = 1.0e-6;
+  const DELTA_TOO_LARGE_THRESHOLD: f32 = 1.0e6;
+  const MIN_REFERENCE_MAG2_FOR_DELTA_TEST: f32 = 1.0e-12;
 
   let localX = globalId.x;
   let localY = globalId.y;
@@ -291,18 +294,19 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
       break;
     }
 
-    // Klassischer Glitch-Verdacht: perturbierter Orbit wird relativ zum
-    // Referenzorbit verdaechtig klein.
-    if (iteration > 0u && refMag2 > 0.0 && zMag2 < 1.0e-6 * refMag2) {
+    // Klassischer Glitch-Verdacht:
+    // |Z + dz|^2 ist deutlich kleiner als |Z|^2.
+    // Der bisherige Faktor 1e-6 ist vermutlich zu tolerant.
+    if (iteration > 0u && refMag2 > 0.0 && zMag2 < GLITCH_THRESHOLD * refMag2) {
       status = 2u;
       break;
     }
-
-    // Der Delta-Orbit ist nicht mehr "klein". Dann ist diese Referenz fuer
-    // diesen Pixel wahrscheinlich ungeeignet.
+    
+    // Die Perturbation ist nicht mehr lokal genug.
+    // Bei f32 sollte dz nicht in die Größenordnung des Referenzorbits wachsen.
     if (iteration > 0u &&
-        refMag2 > 1.0e-12 &&
-        dzMag2 > 1.0e6 * refMag2
+        refMag2 > MIN_REFERENCE_MAG2_FOR_DELTA_TEST &&
+        dzMag2 > DELTA_TOO_LARGE_THRESHOLD * refMag2
     ) {
       status = 3u;
       break;
@@ -1280,6 +1284,165 @@ async function runMandelbrotPerturbationPass(
             );
 }
 
+// -----------------------------------------------------------------------------
+/**
+ * Berechnet einen einzelnen Mandelbrot-Punkt CPU-basiert.
+ *
+ * Worker-lokale Kopie der Punktberechnung aus mandelbrot-cpu-worker.js.
+ *
+ * @param {number} cx - Koordinate auf der Real-Achse.
+ * @param {number} cy - Koordinate auf der Imaginär-Achse.
+ * @param {number} iterationLimit - Maximale Iterationszahl.
+ * @param {number} escapeRadius - Escape-Radius.
+ * @returns {{ iterations: number, escapeValue: number }}
+ */
+function computeMandelbrotPointOnCpu(
+    cx,
+    cy,
+    iterationLimit,
+    escapeRadius
+) {
+    if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) {
+        return {
+            iterations: iterationLimit,
+            escapeValue: 0,
+        };
+    }
+
+    const q = (cx - 0.25) * (cx - 0.25) + cy * cy;
+
+    if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) {
+        return {
+            iterations: iterationLimit,
+            escapeValue: 0,
+        };
+    }
+
+    let zx = 0;
+    let zy = 0;
+    let iteration = 0;
+
+    const escapeRadiusSquared = escapeRadius * escapeRadius;
+
+    while (
+        zx * zx + zy * zy < escapeRadiusSquared &&
+        iteration < iterationLimit
+    ) {
+        const temp = zx * zx - zy * zy + cx;
+
+        zy = 2 * zx * zy + cy;
+        zx = temp;
+
+        iteration++;
+    }
+
+    return {
+        iterations: iteration,
+        escapeValue: zx * zx + zy * zy,
+    };
+}
+
+/**
+ * Repariert nach einer akzeptierten Perturbation verbleibende Sentinel-Pixel
+ * punktweise per CPU.
+ *
+ * @param {PixelRect} rect - Berechneter Pixelbereich.
+ * @param {number} imageWidth - Breite der vollständigen Zielmatrix.
+ * @param {number} imageHeight - Höhe der vollständigen Zielmatrix.
+ * @param {ComputationSettings} computationSettings - Berechnungseinstellungen.
+ * @param {Uint32Array} gpuIterations - Aus der GPU gelesene Iterationswerte.
+ * @param {Float32Array} gpuEscapeValues - Aus der GPU gelesene Escape-Werte.
+ * @param {Uint32Array} gpuStatus - Aus der GPU gelesene Perturbation-Statuswerte.
+ * @returns {Object} Reparaturstatistik.
+ */
+function repairMandelbrotPerturbationSentinelPixelsOnCpu(
+    rect,
+    imageWidth,
+    imageHeight,
+    computationSettings,
+    gpuIterations,
+    gpuEscapeValues,
+    gpuStatus
+) {
+    const { view, iterationLimit, escapeRadius } = computationSettings;
+    const { minX, maxX, minY, maxY } = view;
+
+    let repairedCount = 0;
+    let referenceEndedCount = 0;
+    let smallOrbitCount = 0;
+    let deltaTooLargeCount = 0;
+    let nonFiniteCount = 0;
+    let unknownStatusCount = 0;
+
+    for (let localY = 0; localY < rect.height; localY++) {
+        for (let localX = 0; localX < rect.width; localX++) {
+            const index = localY * rect.width + localX;
+
+            if (gpuIterations[index] !== MANDELBROT_ITERATION_SENTINEL) {
+                continue;
+            }
+
+            const status = gpuStatus[index];
+
+            if (status === PERTURBATION_STATUS_REFERENCE_ENDED) {
+                referenceEndedCount++;
+            } else if (status === PERTURBATION_STATUS_SMALL_ORBIT) {
+                smallOrbitCount++;
+            } else if (status === PERTURBATION_STATUS_DELTA_TOO_LARGE) {
+                deltaTooLargeCount++;
+            } else if (status === PERTURBATION_STATUS_NON_FINITE) {
+                nonFiniteCount++;
+            } else {
+                unknownStatusCount++;
+            }
+
+            const px = rect.x + localX;
+            const py = rect.y + localY;
+
+            const cx = minX + (px / imageWidth) * (maxX - minX);
+            const cy = minY + (py / imageHeight) * (maxY - minY);
+
+            const pointResult = computeMandelbrotPointOnCpu(
+                cx,
+                cy,
+                iterationLimit,
+                escapeRadius
+            );
+
+            gpuIterations[index] = pointResult.iterations;
+            gpuEscapeValues[index] = pointResult.escapeValue;
+
+            repairedCount++;
+        }
+    }
+
+    return {
+        repairedCount,
+        referenceEndedCount,
+        smallOrbitCount,
+        deltaTooLargeCount,
+        nonFiniteCount,
+        unknownStatusCount,
+    };
+}
+
+/**
+ * Stellt sicher, dass nach dem CPU-Fixup keine Sentinel-Pixel mehr übrig sind.
+ *
+ * @param {Uint32Array} gpuIterations - Aus der GPU gelesene und ggf. reparierte Iterationswerte.
+ * @returns {void}
+ */
+function assertNoMandelbrotPerturbationSentinelsRemain(gpuIterations) {
+    for (let index = 0; index < gpuIterations.length; index++) {
+        if (gpuIterations[index] === MANDELBROT_ITERATION_SENTINEL) {
+            throw new Error(
+                `CPU repair left unresolved perturbation sentinel pixel at index ${index}.`
+            );
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 function isAcceptableMandelbrotPerturbationStats(stats) {
     if (!stats || stats.pixelCount === 0) {
         return true;
@@ -1402,6 +1565,7 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
     }));
 
     const totalReferenceCandidates = referenceCandidateResults.length;
+    let perturbationAcceptable = false ; 
 
     for (let candidateIndex = 0; candidateIndex < totalReferenceCandidates; candidateIndex++) {
 
@@ -1462,6 +1626,7 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         console.info("Perturbation stats after computation.", { perturbationCounters });
 
         if (isAcceptableMandelbrotPerturbationStats(perturbationCounters)) {
+            perturbationAcceptable = true ; 
             break;
         }
     }
@@ -1481,6 +1646,43 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         session
     );
 
+    let cpuRepairStats = {
+        repairedCount: 0,
+        referenceEndedCount: 0,
+        smallOrbitCount: 0,
+        deltaTooLargeCount: 0,
+        nonFiniteCount: 0,
+        unknownStatusCount: 0,
+    };
+
+    if (perturbationAcceptable && perturbationCounters.invalidCount > 0) {
+        console.warn("Repairing invalid perturbation results on CPU.", {
+            cpuRepairStats,
+            perturbationCounters,
+        });
+
+        cpuRepairStats = repairMandelbrotPerturbationSentinelPixelsOnCpu(
+            rect,
+            imageWidth,
+            imageHeight,
+            computationSettings,
+            gpuResult.gpuIterations,
+            gpuResult.gpuEscapeValues,
+            gpuResult.gpuStatus
+        );
+
+        console.info("Repaired accepted Mandelbrot perturbation result on CPU.", {
+            cpuRepairStats,
+            perturbationCounters,
+        });
+    }
+
+    if (perturbationAcceptable) {
+        assertNoMandelbrotPerturbationSentinelsRemain(
+            gpuResult.gpuIterations
+        );
+    }
+
     // iterationData aus gpuResult erzeugen
     const result = createIterationDataFromGpuArrays(
         rect,
@@ -1493,9 +1695,11 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
 
     // das Zähler-Objekt und die annotierten Referenzkandidaten zum result hinzufügen
     result.perturbationStats = perturbationCounters;
-    result.perturbationAcceptable =
-        isAcceptableMandelbrotPerturbationStats(perturbationCounters);
+    result.perturbationAcceptable = perturbationAcceptable;
     result.referenceCandidates = referenceCandidateResults;
+    result.cpuRepairStats = cpuRepairStats;
+    result.cpuRepairedPixelCount = cpuRepairStats.repairedCount;
+    result.status = gpuResult.gpuStatus;
 
     console.log("computeMandelbrotRectWithPerturbationOnGpu (done)", {
         pixelCount,
