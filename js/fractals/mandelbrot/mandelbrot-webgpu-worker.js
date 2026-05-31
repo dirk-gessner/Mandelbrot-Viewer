@@ -1378,22 +1378,22 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
 
         const referenceOrbit = computeMandelbrotReferenceOrbit(referenceCandidate);
 
-        const requiredIterations = getRequiredReferenceOrbitIterations(
-            referenceCandidate,
-            computationSettings.iterationLimit,
-            maxObservedIterations
-        );
+        // const requiredIterations = getRequiredReferenceOrbitIterations(
+        //     referenceCandidate,
+        //     computationSettings.iterationLimit,
+        //     maxObservedIterations
+        // );
 
-        if (referenceOrbit.iterations < requiredIterations) {
-            rejectedCandidateCount++;
-            lastRejectedReference = {
-                reason: "reference-orbit-too-short",
-                referenceCandidate,
-                referenceOrbitIterations: referenceOrbit.iterations,
-                requiredIterations,
-            };
-            continue;
-        }
+        // if (referenceOrbit.iterations < requiredIterations) {
+        //     rejectedCandidateCount++;
+        //     lastRejectedReference = {
+        //         reason: "reference-orbit-too-short",
+        //         referenceCandidate,
+        //         referenceOrbitIterations: referenceOrbit.iterations,
+        //         requiredIterations,
+        //     };
+        //     continue;
+        // }
 
         acceptedCandidateCount++;
 
@@ -1423,7 +1423,7 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         console.info("Perturbation stats after computation.", { perturbationCounters });
 
 
-        if (perturbationCounters.invalidCount < 10) {
+        if (perturbationCounters.invalidCount < 100) {
             break;
         }
     }
