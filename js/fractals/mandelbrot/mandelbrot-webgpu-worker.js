@@ -37,6 +37,9 @@ const MANDELBROT_PERTURBATION_COUNTER_COUNT = 7;
 const MANDELBROT_PERTURBATION_COUNTER_BUFFER_SIZE =
     MANDELBROT_PERTURBATION_COUNTER_COUNT * Uint32Array.BYTES_PER_ELEMENT;
 
+const MANDELBROT_PERTURBATION_MAX_SMALL_ORBIT_RATIO = 0.001;
+const MANDELBROT_PERTURBATION_MAX_DELTA_TOO_LARGE_RATIO = 0.001;
+
 // -----------------------------------------------------------------------------
 // Pfad zum Shader-Code
 // -----------------------------------------------------------------------------
@@ -1276,6 +1279,25 @@ async function runMandelbrotPerturbationPass(
             );
 }
 
+function isAcceptableMandelbrotPerturbationStats(stats) {
+    if (!stats || stats.pixelCount === 0) {
+        return true;
+    }
+
+    const hardInvalidCount =
+        stats.referenceEndedCount + stats.nonFiniteCount;
+
+    const smallOrbitRatio =
+        stats.smallOrbitCount / stats.pixelCount;
+
+    const deltaTooLargeRatio =
+        stats.deltaTooLargeCount / stats.pixelCount;
+
+    return hardInvalidCount === 0 &&
+        smallOrbitRatio <= MANDELBROT_PERTURBATION_MAX_SMALL_ORBIT_RATIO &&
+        deltaTooLargeRatio <= MANDELBROT_PERTURBATION_MAX_DELTA_TOO_LARGE_RATIO;
+}
+
 /**
  * Berechnet einen Pixelbereich der Mandelbrot-Menge per Perturbation auf der GPU.
  *
@@ -1438,8 +1460,7 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
 
         console.info("Perturbation stats after computation.", { perturbationCounters });
 
-
-        if (perturbationCounters.invalidCount < 100) {
+        if (isAcceptableMandelbrotPerturbationStats(perturbationCounters)) {
             break;
         }
     }
@@ -1471,6 +1492,8 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
 
     // das Zähler-Objekt und die annotierten Referenzkandidaten zum result hinzufügen
     result.perturbationStats = perturbationCounters;
+    result.perturbationAcceptable =
+        isAcceptableMandelbrotPerturbationStats(perturbationCounters);
     result.referenceCandidates = referenceCandidateResults;
 
     console.log("computeMandelbrotRectWithPerturbationOnGpu (done)", {

@@ -388,64 +388,6 @@ function canUseStandardWebGpuShaderForView(view, imageWidth, imageHeight) {
     return Math.min(pixelWidth, pixelHeight) > WEBGPU_MIN_PIXEL_SIZE;
 }
 
-const MANDELBROT_PERTURBATION_MAX_SMALL_ORBIT_RATIO = 0.001;
-const MANDELBROT_PERTURBATION_MAX_DELTA_TOO_LARGE_RATIO = 0.01;
-
-/**
- * Bewertet, ob ein Perturbation-Ergebnis mit dem verwendeten Referenzorbit
- * noch als brauchbar akzeptiert werden soll.
- *
- * Ergebnisse ohne `perturbationStats` oder mit `pixelCount === 0` gelten als
- * akzeptabel, weil sie nicht aus dem Perturbation-Diagnosepfad stammen oder
- * keine Pixel enthalten.
- *
- * Harte Fehler (`referenceEndedCount` und `nonFiniteCount`) werden nicht
- * toleriert. Glitch-Verdacht durch kleine Orbits und zu grosse Delta-Orbits
- * darf nur bis zu den konfigurierten Anteilsgrenzen auftreten.
- *
- * Die Funktion korrigiert keine fehlerhaften Pixel. Sie entscheidet nur, ob das
- * komplette Ergebnis verwendet oder der naechste Referenzkandidat versucht wird.
- * 
- * @param {IterationData} result    - Ergebnis einer Perturbation-Berechnung inklusive optionaler `perturbationStats`.
- * @returns {boolean}               - `true`, wenn das Ergebnis akzeptiert werden soll, sonst `false`.
- */
-function isAcceptablePerturbationResult(
-    result
-) {
-    const stats = result.perturbationStats;
-
-    if (!stats || stats.pixelCount === 0) {
-        return true;
-    }
-
-    const hardInvalidCount =
-        stats.referenceEndedCount + stats.nonFiniteCount;
-
-    const smallOrbitRatio =
-        stats.smallOrbitCount / stats.pixelCount;
-
-    const deltaTooLargeRatio =
-        stats.deltaTooLargeCount / stats.pixelCount;
-
-    const acceptable =
-        hardInvalidCount === 0 &&
-        smallOrbitRatio <= MANDELBROT_PERTURBATION_MAX_SMALL_ORBIT_RATIO &&
-        deltaTooLargeRatio <= MANDELBROT_PERTURBATION_MAX_DELTA_TOO_LARGE_RATIO;
-
-    console.info("ReferenceCandidate", {
-        acceptable,
-        pixel: stats.pixelCount,
-        smallOrbit: stats.smallOrbitCount,
-        smallOrbitRatio,
-        deltaTooLarge: stats.deltaTooLargeCount,
-        deltaTooLargeRatio,
-        referenceEnded: stats.referenceEndedCount,
-        nonFinite: stats.nonFiniteCount,
-    });
-
-    return acceptable;
-}
-
 function interleaveReferenceCandidatesFromEnds(candidates) {
     const result = [];
     let left = 0;
@@ -570,9 +512,8 @@ async function computeMandelbrotRect(
 
                     fallbackReferenceCandidates = result.referenceCandidates;
 
-                    if (result.perturbationReferenceRejected ||
-                        !isAcceptablePerturbationResult(result)) 
-                    {
+                    if ( result.perturbationReferenceRejected ||
+                        !result.perturbationAcceptable)                    {
                         console.warn("Perturbation reference orbits rejected. Falling back to CPU backend.", {
                             perturbationStats: result.perturbationStats, 
                         });

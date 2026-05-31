@@ -90,6 +90,7 @@
  * @property {number}               maxObservedIterations - (integer) Höchster Iterationswert aus `iterations`.
  * @property {?View}                view                  - Ausschnitt der komplexen Ebene, auf die sich die Datenmatrix bezieht.
  * @property {ReferenceCandidate[]} [referenceCandidates] - Kandidaten fuer Referenzpunkte, typischerweise nach Iterationswert absteigend sortiert.
+ * @property {boolean}              [perturbationAcceptable] - True, wenn der Worker das Perturbation-Ergebnis akzeptiert hat. 
  * @property {PerturbationStats}    [perturbationStats]   - Optionale Diagnosewerte einer Perturbationsberechnung.
  * */
 
