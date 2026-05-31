@@ -108,6 +108,8 @@ function splitRectHorizontally(
         y += height;
     }
 
+    // Die Mitte der interleavten Liste enthaelt die urspruenglich mittleren
+    // Kandidaten. Diese sind oft wichtige Stuetzpunkte und sollen frueh laufen.
     return result;
 }
 
@@ -444,6 +446,26 @@ function isAcceptablePerturbationResult(
     return acceptable;
 }
 
+function interleaveReferenceCandidatesFromEnds(candidates) {
+    const result = [];
+    let left = 0;
+    let right = candidates.length - 1;
+
+    while (left <= right) {
+        result.push(candidates[left]);
+        left++;
+
+        if (left <= right) {
+            result.push(candidates[right]);
+            right--;
+        }
+    }
+
+    // Die Mitte der interleavten Liste enthaelt die urspruenglich mittleren
+    // Kandidaten. Diese sind oft wichtige Stuetzpunkte und sollen frueh laufen.
+    return result.reverse();
+}
+
 /**
  * Berechnet die Mandelbrot-Iterationsdaten für ein Rechteck.
  *
@@ -519,13 +541,15 @@ async function computeMandelbrotRect(
             );
 
             try {
-                const candidates = createMandelbrotPerturbationReferenceCandidatesForRect(
-                    rect,
-                    imageWidth,
-                    imageHeight,
-                    computationSettings.view,
-                    computationSettings.iterationLimit,
-                    iterationData
+                const candidates = interleaveReferenceCandidatesFromEnds(
+                    createMandelbrotPerturbationReferenceCandidatesForRect(
+                                    rect,
+                                    imageWidth,
+                                    imageHeight,
+                                    computationSettings.view,
+                                    computationSettings.iterationLimit,
+                                    iterationData
+                                )
                 );
                 initialReferenceCandidates = candidates;
 
@@ -990,6 +1014,8 @@ function createMandelbrotPerturbationReferenceCandidatesForRect(
         }
     }
 
+    // Die Mitte der interleavten Liste enthaelt die urspruenglich mittleren
+    // Kandidaten. Diese sind oft wichtige Stuetzpunkte und sollen frueh laufen.
     return result;
 }
 
