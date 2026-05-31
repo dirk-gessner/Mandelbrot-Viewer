@@ -29,6 +29,8 @@ export function splitFloat64ToFloat32Pair(value) {
  * @param {Uint32Array}         gpuIterations       - Von der GPU gelesene Iterationszahlen.
  * @param {Float32Array}        gpuEscapeValues     - Von der GPU gelesene Escape-Werte.
  * @param {number}              iterationLimit      - (integer) maximale Iterationszahl.
+ * @param {number}              [sentinel]          - Optionaler Sentinel-Wert fuer nicht berechnete Pixel.
+ * @param {?View}               [view=null]         - Ausschnitt der komplexen Ebene, auf den sich die Daten beziehen.
  * @returns {IterationData} Iterationsdaten im Format der bestehenden Rendering-Pipeline.
  */
 export function createIterationDataFromGpuArrays(
@@ -36,7 +38,8 @@ export function createIterationDataFromGpuArrays(
     gpuIterations,
     gpuEscapeValues,
     iterationLimit,
-    sentinel, 
+    sentinel,
+    view = null
 ) {
     const pixelCount = rect.width * rect.height;
     const iterations = new Uint16Array(pixelCount);
@@ -75,6 +78,7 @@ export function createIterationDataFromGpuArrays(
         escapeValues,
         minIterations,
         maxObservedIterations,
+        view,
         referenceCandidates: [],
     };
 }

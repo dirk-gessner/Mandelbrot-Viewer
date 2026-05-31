@@ -85,6 +85,7 @@
  * @property {EscapeValueArray}     escapeValues          - (decimal) Escape-Wert je Pixel.
  * @property {number}               minIterations         - (integer) Niedrigster Iterationswert aus `iterations`.
  * @property {number}               maxObservedIterations - (integer) Höchster Iterationswert aus `iterations`.
+ * @property {?View}                view                  - Ausschnitt der komplexen Ebene, auf die sich die Datenmatrix bezieht.
  * @property {ReferenceCandidate[]} [referenceCandidates] - Kandidaten fuer Referenzpunkte, typischerweise nach Iterationswert absteigend sortiert.
  * @property {PerturbationStats}    [perturbationStats]   - Optionale Diagnosewerte einer Perturbationsberechnung.
  * */
@@ -170,11 +171,13 @@ function findIterationRange(
  * 
  * @param {number} width        - (integer) Breite der Matrix
  * @param {number} height       - (integer) Höhe der Matrix
+ * @param {?View} [view=null] - Ausschnitt der komplexen Ebene, auf den sich die Matrix bezieht.
  * @returns {IterationData}     - ein leeres IterationData-Objekt
  */
 function createEmptyIterationData(
     width, 
-    height
+    height,
+    view = null
 ) {
     return {
         width,
@@ -183,6 +186,7 @@ function createEmptyIterationData(
         escapeValues: new Float32Array(width * height),
         minIterations: 0, 
         maxObservedIterations: 0, 
+        view,
         referenceCandidates: [], 
     };
 }
@@ -195,6 +199,8 @@ function createEmptyIterationData(
  * Kopiert ein IterationData-Objekt (source) oder einen Ausschnitt daraus 
  * in ein anderes IterationData-Objekt (target) - 
  * z.B. nach einer Verschiebung oder Erweiterung. 
+ * 
+ * Die View wird hier nicht kopiert: copyIterationRect kopiert nur Pixelwerte.
  * 
  * copyRegion (                 - beschreibt eine verschobene Kopie: 
  *                                  source(sourceX + x, sourceY + y) 
@@ -325,7 +331,7 @@ async function computeShiftedIterationData(
     const { width, height } = oldData;
 
     // die neue Matrix ist so groß wie die alte
-    const newData = createEmptyIterationData(width, height);
+    const newData = createEmptyIterationData(width, height, computationSettings.view);
 
     // Translation oldData -> newData beschreiben
     let copyRegion = {
@@ -375,6 +381,8 @@ async function computeShiftedIterationData(
     const iterationRange = findIterationRange(newData.iterations); 
     newData.minIterations = iterationRange.minIterations;
     newData.maxObservedIterations = iterationRange.maxObservedIterations;
+
+    newData.view = computationSettings.view;
 
     return newData;
 }
@@ -585,6 +593,8 @@ async function fillDirtyResizeRects(
     newData.minIterations = iterationRange.minIterations;
     newData.maxObservedIterations = iterationRange.maxObservedIterations;
 
+    newData.view = newView;
+
     return newData; 
 }
 
@@ -597,8 +607,7 @@ async function fillDirtyResizeRects(
  *
  * @param {ResizeDirection}      direction           - Richtung der Erweiterung.
  * @param {IterationData}        oldData             - Bisherige Iterationsdaten.
- * @param {View}                 oldView             - View, die zu `oldData` gehört.
- * @param {View}                 newView             - View, die zur erweiterten Zielmatrix gehört.
+ * @param {View}                 newView             - View, die zur erweiterten Zielmatrix gehoert.
  * @param {ImageSize}            newSize             - (integer) Zielgröße der erweiterten Iterationsmatrix.
  * @param {ComputeIterationRect} computeFn           - Funktion zur Berechnung neu entstandener Rechtecke.
  * @param {ComputationSettings}  computationSettings - Berechnungseinstellungen als Grundlage.
@@ -607,14 +616,15 @@ async function fillDirtyResizeRects(
 async function expandIterationData(
     direction, 
     oldData,
-    oldView,
     newView,
     newSize,
     computeFn,
     computationSettings 
 ) {
 
-    const newData = createEmptyIterationData(newSize.width, newSize.height);
+    const oldView = oldData.view ?? computationSettings.view;
+
+    const newData = createEmptyIterationData(newSize.width, newSize.height, newView);
 
     const offsetX = direction === 'horizontal'
                   ? Math.round((  (oldView.minX - newView.minX) 
@@ -664,7 +674,6 @@ async function expandIterationData(
  *   wobei vorhandene Daten übernommen und nur neue Bereiche berechnet werden
  *
  * @param {IterationData}         oldData            - Bisherige Iterationsdaten.
- * @param {View}                  oldView            - View, die zu `oldData` gehört.
  * @param {View}                  newView            - Gewünschte View für die neue Canvas-Größe.
  * @param {ImageSize}             oldSize            - (integer) Bisherige Canvas-Größe.
  * @param {ImageSize}             newSize            - (integer) Neue Canvas-Größe.
@@ -676,7 +685,6 @@ async function expandIterationData(
  */
 async function resizeIterationData( 
     oldData,
-    oldView,
     newView,
     oldSize, 
     newSize,
@@ -692,6 +700,8 @@ async function resizeIterationData(
         throw new Error('Resize without iteration data!');
     }
 
+    const oldView = oldData.view ?? computationSettings.view;
+
     // keine Veränderung whatsoever
     if ( dx == 0 && dy == 0 ) {
         return {
@@ -705,11 +715,18 @@ async function resizeIterationData(
 
         const {width, height} = newSize; 
         const rect = { x: 0, y: 0, width: width, height: height };
-        const newData = await computeFn(rect, width, height, computationSettings);
+        const newData = await computeFn(
+            rect,
+            width,
+            height,
+            copySettingsWithView(computationSettings, newView)
+        );
 
         const iterationRange = findIterationRange(newData.iterations); 
         newData.minIterations = iterationRange.minIterations;
         newData.maxObservedIterations = iterationRange.maxObservedIterations;
+
+        newData.view = newView;
 
         const finalizedData = finalizeFn(
             newData, 
@@ -740,7 +757,6 @@ async function resizeIterationData(
         currentData = await expandIterationData(  
                         'horizontal',
                         currentData,
-                        currentView,
                         nextView,
                         nextSize,
                         computeFn,
@@ -763,7 +779,6 @@ async function resizeIterationData(
         currentData = await expandIterationData(
                         'vertical',
                         currentData,
-                        currentView,
                         nextView,
                         nextSize,
                         computeFn,

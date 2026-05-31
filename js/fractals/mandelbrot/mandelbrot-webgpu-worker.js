@@ -644,7 +644,9 @@ async function computeMandelbrotRectOnGpu(
         rect,
         gpuIterations,
         gpuEscapeValues,
-        computationSettings.iterationLimit
+        computationSettings.iterationLimit,
+        undefined,
+        computationSettings.view
     );
 
     console.log("computeMandelbrotRectOnGpu (done)", {
@@ -1449,7 +1451,8 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         gpuResult.gpuIterations,
         gpuResult.gpuEscapeValues,
         computationSettings.iterationLimit,
-        MANDELBROT_ITERATION_SENTINEL, 
+        MANDELBROT_ITERATION_SENTINEL,
+        computationSettings.view
     );
 
     // das Zähler-Objekt zum result hinzufügen

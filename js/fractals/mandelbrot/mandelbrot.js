@@ -96,11 +96,13 @@ function splitRectHorizontally(
  *
  * @param {PixelRect}       rect    - Gesamtbereich, den die Teile zusammen abdecken.
  * @param {IterationData[]} parts   - Berechnete Teilmatrizen in vertikaler Reihenfolge.
+ * @param {?View}          [view=null] - Ausschnitt der komplexen Ebene, auf den sich die zusammengefuehrte Matrix bezieht.
  * @returns {IterationData}         - Zusammengeführte Iterationsdaten für `rect`.
  */
 function mergeIterationDataParts(
     rect, 
-    parts
+    parts,
+    view = null
 ) {
     const totalPixels = rect.width * rect.height;
 
@@ -132,6 +134,7 @@ function mergeIterationDataParts(
         escapeValues,
         minIterations,
         maxObservedIterations, 
+        view,
         referenceCandidates: [], 
     };
 }
@@ -280,7 +283,11 @@ async function computeMandelbrotRectCpuParallel(
         workerCount
     );
 
-    const iterationData = mergeIterationDataParts(rect, parts);
+    const iterationData = mergeIterationDataParts(
+        rect,
+        parts,
+        computationSettings.view
+    );
 
     const elapsed = performance.now() - startedAt;
     console.log(

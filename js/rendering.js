@@ -453,7 +453,6 @@ function drawSelectionFrame(
  *
  * @param {CanvasRenderingContext2D} ctx - Zeichenkontext des Fraktal-Canvas.
  * @param {IterationData} iterationData - Aktuelle Iterationsdaten.
- * @param {View} view - Aktuelle View fuer die Auswahl des besten Kandidaten.
  * @param {number} pixelDx - Horizontale Anzeigeverschiebung beim Panning.
  * @param {number} pixelDy - Vertikale Anzeigeverschiebung beim Panning.
  * @returns {void}
@@ -461,7 +460,6 @@ function drawSelectionFrame(
 function drawReferenceCandidateOverlay(
     ctx,
     iterationData,
-    view,
     pixelDx,
     pixelDy
 ) {
@@ -482,7 +480,7 @@ function drawReferenceCandidateOverlay(
 
     const selectedCandidate = selectReferenceCandidateForView(
         iterationData.referenceCandidates,
-        view
+        iterationData.view ?? computationSettings.view
     );
 
     for (const candidate of iterationData.referenceCandidates) {
@@ -606,7 +604,6 @@ function drawScene(pixelDx = 0, pixelDy = 0) {
         drawReferenceCandidateOverlay(
             ctx,
             iterationData,
-            computationSettings.view,
             pixelDx,
             pixelDy
         );    
