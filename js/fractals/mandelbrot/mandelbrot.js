@@ -292,7 +292,7 @@ async function computeMandelbrotRectCpuParallel(
     const tasks = splitRectHorizontally(rect, taskCount);
 
     const startedAt = performance.now();
-    console.log(
+    debugLog(
         "computeMandelbrotRectCpuParallel (start)",
         {
             requestedWorkers: workerCount,
@@ -316,7 +316,7 @@ async function computeMandelbrotRectCpuParallel(
     );
 
     const elapsed = performance.now() - startedAt;
-    console.log(
+    debugLog(
         "computeMandelbrotRectCpuParallel (done)",
         {
             elapsedMilleSeconds: elapsed,
@@ -466,20 +466,18 @@ async function computeMandelbrotRect(
 
             } catch (error) {
 
-                console.warn(
-                    "WebGPU Mandelbrot backend failed.",
-                    error
-                );
+                debugWarn("WebGPU Mandelbrot backend failed.", error);
 
                 if (!useCpu) { throw error };
 
-                console.warn("Falling back to CPU backend.");
+                debugWarn("Falling back to CPU backend.");
             }
 
         } else if (usePerturbation) {
 
-            console.warn(
-                "Resolution limits for Standard WebGPU (Float32) reached. Switching to Perturbation WebGPU backend."
+            debugWarn(
+                "Resolution limits for Standard WebGPU (Float32) reached.", 
+                "Switching to Perturbation WebGPU backend."
             );
 
             try {
@@ -512,16 +510,17 @@ async function computeMandelbrotRect(
                     fallbackReferenceCandidates = result.referenceCandidates;
 
                     if ( result.perturbationReferenceRejected ||
-                        !result.perturbationAcceptable)                    {
-                        console.warn("Perturbation reference orbits rejected. Falling back to CPU backend.", {
+                        !result.perturbationAcceptable) {        
+                        debugWarn("Perturbation reference orbits rejected. Falling back to CPU backend.", {
                             perturbationStats: result.perturbationStats, 
                         });
-                    }
-                    else if (result.perturbationStats.invalidCount !== 0 ) {
+                    } else if (result.perturbationStats.invalidCount !== 0 ) {
 
-                        console.info("Perturbation reference orbit accepted with minor invalid pixels.", {
-                            perturbationStats: result.perturbationStats,
-                        }); 
+                        debugLog("Perturbation reference orbit accepted with minor invalid pixels.");
+                        debugInfo(
+                            `Invalid pixels: ${result.perturbationStats.invalidCount}`,
+                            `Repaired pixels: ${result.cpuRepairedPixelCount}`,
+                        ); 
 
                         runtimeStats.lastComputationBackend =
                             `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
@@ -529,9 +528,11 @@ async function computeMandelbrotRect(
 
                     } else {
 
-                        console.info("Perturbation reference orbit accepted.", {
-                            perturbationStats: result.perturbationStats,
-                        }); 
+                        debugLog("Perturbation reference orbit accepted.");
+                        debugInfo(
+                            `Invalid pixels: ${result.perturbationStats.invalidCount}`,
+                            `Repaired pixels: ${result.cpuRepairedPixelCount}`,
+                        ); 
 
                         runtimeStats.lastComputationBackend =
                             `${COMPUTATION_BACKEND_WEBGPU} perturbation`;
@@ -539,18 +540,18 @@ async function computeMandelbrotRect(
                     }
                 } else {
 
-                    console.warn("No suitable reference candidates found. Falling back to CPU backend.");
+                    debugWarn("No suitable reference candidates found. Falling back to CPU backend.");
                 }
 
             } catch (error) {
 
-                console.warn("WebGPU Mandelbrot perturbation backend failed.", error); 
+                debugWarn("WebGPU Mandelbrot perturbation backend failed.", error); 
 
                 if (!useCpu) { 
                     throw error; 
                 };
 
-                console.warn("Falling back to CPU backend.");
+                debugWarn("Falling back to CPU backend.");
             }
         }
     }

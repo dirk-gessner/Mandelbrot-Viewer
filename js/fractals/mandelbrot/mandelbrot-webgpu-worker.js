@@ -6,6 +6,9 @@
 //
 // -----------------------------------------------------------------------------
 import {
+    debugLog, 
+    debugInfo, 
+    debugWarn, 
     getWorkerContext,
     getComputePipeline,
     postWorkerErrorResponse,
@@ -486,7 +489,7 @@ async function computeMandelbrotRectOnGpu(
     imageHeight,
     computationSettings
 ) {
-    console.log("computeMandelbrotRectOnGpu (start)", {
+    debugLog("computeMandelbrotRectOnGpu (start)", {
         rect,
         imageWidth,
         imageHeight,
@@ -598,17 +601,7 @@ async function computeMandelbrotRectOnGpu(
     const activePixels = rect.width * rect.height;
     const inactiveInvocations = dispatchedInvocations - activePixels;
 
-    console.log("WebGPU Mandelbrot dispatch", {
-        rect,
-        workgroupSizeX,
-        workgroupSizeY,
-        workgroupCountX,
-        workgroupCountY,
-        dispatchedWorkgroups,
-        dispatchedInvocations,
-        activePixels,
-        inactiveInvocations,
-    });
+    debugLog("WebGPU Mandelbrot dispatch");
 
     computePass.dispatchWorkgroups(workgroupCountX, workgroupCountY);
     // -------------------------------------------------------------------------
@@ -656,12 +649,7 @@ async function computeMandelbrotRectOnGpu(
         computationSettings.view
     );
 
-    console.log("computeMandelbrotRectOnGpu (done)", {
-        pixelCount,
-        minIterations: result.minIterations,
-        iterations_sample: result.iterations.slice(0, 16),
-        escapeValues_sample: result.escapeValues.slice(0, 16),
-    });
+    debugLog("computeMandelbrotRectOnGpu (done)");
 
     return result;
 }
@@ -897,7 +885,7 @@ function destroyGpuBuffer(buffer) {
     try {
         buffer.destroy();
     } catch (error) {
-        console.warn("Failed to destroy GPUBuffer.", error);
+        debugWarn("Failed to destroy GPUBuffer.", error);
     }
 }
 
@@ -1472,7 +1460,7 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
     computationSettings,
     referenceCandidates,
 ) {
-    console.log("computeMandelbrotRectWithPerturbationOnGpu (start)");
+    debugLog("computeMandelbrotRectWithPerturbationOnGpu (start)");
 
     if (!referenceCandidates || referenceCandidates.length === 0) {
         return {
@@ -1542,9 +1530,6 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         });
 
         let perturbationCounters = null;
-        let acceptedCandidateCount = 0;
-        let rejectedCandidateCount = 0;
-        let lastRejectedReference = null;
 
         const referenceCandidateResults = referenceCandidates.map((candidate, candidateIndex) => ({
             ...candidate,
@@ -1558,19 +1543,7 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         for (let candidateIndex = 0; candidateIndex < totalReferenceCandidates; candidateIndex++) {
 
             const referenceCandidate = referenceCandidateResults[candidateIndex];
-
             const referenceOrbit = computeMandelbrotReferenceOrbit(referenceCandidate);
-
-            acceptedCandidateCount++;
-
-            console.info("Applying next reference orbit", {
-                candidate: `${candidateIndex + 1} / ${totalReferenceCandidates}`,
-                pixelX: referenceCandidate.pixelX,
-                pixelY: referenceCandidate.pixelY,
-                iterations: referenceCandidate.iterations,
-                cellMaxObservedIterations: referenceCandidate.cellMaxObservedIterations,
-            });
-
             const invalidBefore = perturbationCounters?.invalidCount ?? pixelCount;
 
             // einen Pass auf den Sessiondaten mit einem einzelnen Orbit ausführen
@@ -1594,7 +1567,10 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
                 ? "used-improved"
                 : "used-no-improvement";
 
-            console.info("Perturbation stats after computation.", { perturbationCounters });
+            debugInfo(
+                `Next reference orbit applied: ${candidateIndex + 1} / ${totalReferenceCandidates}`, 
+                `invalid Pixels: ${perturbationCounters.invalidCount}`
+            );
 
             if (isAcceptableMandelbrotPerturbationStats(perturbationCounters)) {
                 perturbationAcceptable = true ; 
@@ -1606,8 +1582,6 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
             return {
                 perturbationReferenceRejected: true,
                 reason: "no-usable-reference-orbit",
-                rejectedCandidateCount,
-                lastRejectedReference,
             };
         }
 
@@ -1627,10 +1601,8 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         };
 
         if (perturbationAcceptable && perturbationCounters.invalidCount > 0) {
-            console.warn("Repairing invalid perturbation results on CPU.", {
-                cpuRepairStats,
-                perturbationCounters,
-            });
+            debugWarn("Repairing invalid perturbation results on CPU.");
+            debugInfo(`Invalid pixels: ${perturbationCounters.invalidCount}`);
 
             cpuRepairStats = repairMandelbrotPerturbationSentinelPixelsOnCpu(
                 rect,
@@ -1642,10 +1614,7 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
                 gpuResult.gpuStatus
             );
 
-            console.info("Repaired accepted Mandelbrot perturbation result on CPU.", {
-                cpuRepairStats,
-                perturbationCounters,
-            });
+            debugInfo(`Repaired pixels: ${cpuRepairStats.repairedCount}`);
         }
 
         if (perturbationAcceptable) {
@@ -1672,15 +1641,15 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         result.cpuRepairedPixelCount = cpuRepairStats.repairedCount;
         result.status = gpuResult.gpuStatus;
 
-        console.log("computeMandelbrotRectWithPerturbationOnGpu (done)", {
-            pixelCount,
-            minIterations: result.minIterations,
-            iterations_sample: result.iterations.slice(0, 16),
-            escapeValues_sample: result.escapeValues.slice(0, 16),
-            perturbationStats: result.perturbationStats, 
-        });
-
+        debugLog("computeMandelbrotRectWithPerturbationOnGpu (done)");
+        debugInfo(
+            `Acceptable: ${result.perturbationAcceptable}`, 
+            `Invalid pixels: ${result.perturbationStats.invalidCount}`, 
+            `Repaired pixels: ${result.cpuRepairedPixelCount}`, 
+        ); 
+        
         return result;
+
     } finally {
         destroyMandelbrotPerturbationSession(session);
     }
