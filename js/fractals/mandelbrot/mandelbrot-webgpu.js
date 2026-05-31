@@ -41,7 +41,6 @@ const mandelbrotWebGpuClient = createWorkerRpcClient(
  * @param {number} imageHeight - Höhe der vollständigen Zielmatrix in Pixeln.
  * @param {ComputationSettings} computationSettings - Mandelbrot-Berechnungseinstellungen.
  * @param {ReferenceCandidates[]|null} referenceCandidates - Optional: Referenzkandidaten fuer Perturbation.
- * @param {number} maxObservedIterations - Hoechster beobachteter Iterationswert der aktuellen Matrix.
  * @returns {Promise<IterationData>} Berechnete Iterationsdaten für den Pixelbereich.
  */
 async function computeMandelbrotRectWebGpu(
@@ -49,8 +48,7 @@ async function computeMandelbrotRectWebGpu(
     imageWidth,
     imageHeight,
     computationSettings,
-    referenceCandidates = null,
-    maxObservedIterations = 0
+    referenceCandidates = null
 ) {
     return  await mandelbrotWebGpuClient.request({
         type: MANDELBROT_COMPUTE_REQUEST,
@@ -58,8 +56,7 @@ async function computeMandelbrotRectWebGpu(
         imageWidth,
         imageHeight,
         computationSettings,
-        referenceCandidates,
-        maxObservedIterations,
+        referenceCandidates
     });
 }
 

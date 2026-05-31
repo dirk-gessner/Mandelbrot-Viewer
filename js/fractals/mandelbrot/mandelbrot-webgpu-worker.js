@@ -354,8 +354,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
  * @property {number}                       imageWidth            - (integer) Breite der vollständigen Zielmatrix.
  * @property {number}                       imageHeight           - (integer) Höhe der vollständigen Zielmatrix.
  * @property {ComputationSettings}          computationSettings   - Einstellungen für die Berechnung.
- * @property {?ReferenceCandidates[]}       referenceCandidates   - Optional: Referenzkandidaten fuer die Perturbationsberechnung.
- * @property {number}                       maxObservedIterations - Hoechster beobachteter Iterationswert der aktuellen Matrix.
+ * @property {ReferenceCandidates[]|null}   referenceCandidates   - Optional: Referenzkandidaten fuer die Perturbationsberechnung.
  */
 
 /**
@@ -738,44 +737,6 @@ function computeMandelbrotReferenceOrbit(
         escapeIteration,
         escapeValue,
     };
-}
-
-/**
- * Bestimmt, wie lang ein Referenzorbit mindestens sein muss.
- *
- * Die Logik entspricht der bisherigen Main-Thread-Pruefung. Sie liegt nun im
- * Worker, weil der Worker den Referenzorbit selbst erzeugt und deshalb auch
- * entscheiden kann, ob der Kandidat fuer die aktuelle Berechnung reicht.
- *
- * @param {ReferenceCandidate} candidate - Referenzkandidat, dessen Orbit bewertet wird.
- * @param {number} iterationLimit - Aktuelles Iterationslimit der Mandelbrot-Berechnung.
- * @param {number} maxObservedIterations - Hoechster beobachteter Iterationswert der aktuellen Matrix.
- * @returns {number} Mindestanzahl an Orbit-Iterationen.
- */
-function getRequiredReferenceOrbitIterations(
-    candidate,
-    iterationLimit,
-    maxObservedIterations
-) {
-    const viewReachedIterationLimit =
-        maxObservedIterations >= iterationLimit;
-
-    if (viewReachedIterationLimit) {
-        return iterationLimit;
-    }
-
-    const observedIterations =
-        candidate.cellMaxObservedIterations ?? candidate.iterations;
-
-    const safetyMargin = Math.max(
-        100,
-        Math.floor(observedIterations * 0.1)
-    );
-
-    return Math.min(
-        iterationLimit,
-        observedIterations + safetyMargin
-    );
 }
 
 /**
@@ -1474,7 +1435,6 @@ function isAcceptableMandelbrotPerturbationStats(stats) {
  * @param {number} imageHeight - Hoehe der vollstaendigen Zielmatrix in Pixeln.
  * @param {ComputationSettings} computationSettings - Einstellungen fuer die Mandelbrot-Berechnung.
  * @param {ReferenceCandidate} referenceCandidate - Referenzkandidat, aus dem der Worker den Orbit berechnet.
- * @param {number} maxObservedIterations - Hoechster beobachteter Iterationswert der aktuellen Matrix.
  * @returns {Promise<IterationData|Object>} Berechnete Iterationsdaten oder Kandidaten-Ablehnung.
  */
 async function computeMandelbrotRectWithPerturbationOnGpu(
@@ -1483,7 +1443,6 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
     imageHeight,
     computationSettings,
     referenceCandidates,
-    maxObservedIterations = 0
 ) {
     console.log("computeMandelbrotRectWithPerturbationOnGpu (start)");
 
@@ -1572,23 +1531,6 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         const referenceCandidate = referenceCandidateResults[candidateIndex];
 
         const referenceOrbit = computeMandelbrotReferenceOrbit(referenceCandidate);
-
-        // const requiredIterations = getRequiredReferenceOrbitIterations(
-        //     referenceCandidate,
-        //     computationSettings.iterationLimit,
-        //     maxObservedIterations
-        // );
-
-        // if (referenceOrbit.iterations < requiredIterations) {
-        //     rejectedCandidateCount++;
-        //     lastRejectedReference = {
-        //         reason: "reference-orbit-too-short",
-        //         referenceCandidate,
-        //         referenceOrbitIterations: referenceOrbit.iterations,
-        //         requiredIterations,
-        //     };
-        //     continue;
-        // }
 
         acceptedCandidateCount++;
 
@@ -1734,8 +1676,7 @@ async function handleComputeMandelbrotRectMessage(
             message.imageWidth,
             message.imageHeight,
             message.computationSettings,
-            message.referenceCandidates,
-            message.maxObservedIterations ?? 0
+            message.referenceCandidates
         )
         : await computeMandelbrotRectOnGpu(
             message.rect,

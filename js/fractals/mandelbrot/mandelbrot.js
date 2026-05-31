@@ -502,8 +502,7 @@ async function computeMandelbrotRect(
                         imageWidth,
                         imageHeight,
                         computationSettings,
-                        candidates,
-                        computationSettings.iterationLimit
+                        candidates
                     );
 
                     if (!result.referenceCandidates?.length) {
