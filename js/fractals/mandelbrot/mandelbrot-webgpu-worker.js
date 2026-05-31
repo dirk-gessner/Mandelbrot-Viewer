@@ -1372,11 +1372,17 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
     let rejectedCandidateCount = 0;
     let lastRejectedReference = null;
 
-    const totalReferenceCandidates = referenceCandidates.length;
+    const referenceCandidateResults = referenceCandidates.map((candidate, candidateIndex) => ({
+        ...candidate,
+        source: candidate.source ?? "original",
+        status: candidate.status ?? "not-used",
+    }));
+
+    const totalReferenceCandidates = referenceCandidateResults.length;
 
     for (let candidateIndex = 0; candidateIndex < totalReferenceCandidates; candidateIndex++) {
 
-        const referenceCandidate = referenceCandidates[candidateIndex];
+        const referenceCandidate = referenceCandidateResults[candidateIndex];
 
         const referenceOrbit = computeMandelbrotReferenceOrbit(referenceCandidate);
 
@@ -1407,6 +1413,7 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
             cellMaxObservedIterations: referenceCandidate.cellMaxObservedIterations,
         });
 
+        const invalidBefore = perturbationCounters?.invalidCount ?? pixelCount;
 
         // einen Pass auf den Sessiondaten mit einem einzelnen Orbit ausführen
         perturbationCounters = await runMandelbrotPerturbationPass(
@@ -1421,6 +1428,13 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
             computationSettings,
             statusInfoBuffers
         );
+
+        const invalidAfter = perturbationCounters.invalidCount;
+        const improvement = Math.max(0, invalidBefore - invalidAfter);
+
+        referenceCandidate.status = improvement > 0
+            ? "used-improved"
+            : "used-no-improvement";
 
         console.info("Perturbation stats after computation.", { perturbationCounters });
 
@@ -1455,8 +1469,9 @@ async function computeMandelbrotRectWithPerturbationOnGpu(
         computationSettings.view
     );
 
-    // das Zähler-Objekt zum result hinzufügen
-    result.perturbationStats = perturbationCounters; 
+    // das Zähler-Objekt und die annotierten Referenzkandidaten zum result hinzufügen
+    result.perturbationStats = perturbationCounters;
+    result.referenceCandidates = referenceCandidateResults;
 
     console.log("computeMandelbrotRectWithPerturbationOnGpu (done)", {
         pixelCount,

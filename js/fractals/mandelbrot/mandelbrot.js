@@ -883,8 +883,9 @@ function createMandelbrotPerturbationReferenceCandidatesForRect(
                     escapeValue: previousIterationData.escapeValues[sourceIndex],
                     cellMaxObservedIterations: previousIterationData.iterations[sourceIndex],
                     distanceToCellCenterSquared: dx * dx + dy * dy,
-                    sourcePixelX: sourceX,
-                    sourcePixelY: sourceY,
+                    source: "original",
+                    origin: "known-pixel",
+                    status: "not-used",
                 });
             }
         }
@@ -907,7 +908,9 @@ function createMandelbrotPerturbationReferenceCandidatesForRect(
             escapeValue: 0,
             cellMaxObservedIterations: iterationLimit,
             distanceToCellCenterSquared: 0,
-            source: "tile-center-fallback",
+            source: "original",
+            origin: "tile-center-fallback",
+            status: "not-used",
         };
     }
 

@@ -41,6 +41,9 @@
  * @property {number} escapeValue                   - (decimal) Quadratischer Betrag des Orbits beim Abbruch.
  * @property {number} [cellMaxObservedIterations]   - (integer) Hoechster beobachteter Iterationswert in der Sammelzelle des Kandidaten.
  * @property {number} [distanceToCellCenterSquared] - (decimal) Quadratischer Abstand zur Mitte der Sammelzelle in Pixeln.
+ * @property {'original'|'generated'} [source]      - Herkunft des Kandidaten: initial ermittelt oder spaeter aus einem Glitch erzeugt.
+ * @property {'known-pixel'|'tile-center-fallback'|'glitch-pixel'} [origin] - Genauere Entstehungsart des Kandidaten.
+ * @property {'not-used'|'used-improved'|'used-no-improvement'} [status] - Diagnose-/Anwendungsstatus in der Perturbation-Schleife.
  */
 
 /**
