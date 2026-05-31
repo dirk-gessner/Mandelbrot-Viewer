@@ -35,6 +35,30 @@ const WEBGPU_MIN_PIXEL_SIZE = 1e-7;
  */
 const MANDELBROT_CPU_WORKER_SCRIPT = "./js/fractals/mandelbrot/mandelbrot-cpu-worker.js";
 
+/**
+ * Rastergroesse fuer Perturbation-Referenzkandidaten in der aktuellen View.
+ *
+ * @type {number}
+ */
+const MANDELBROT_REFERENCE_TILE_COLUMNS = 9;
+const MANDELBROT_REFERENCE_TILE_ROWS = 9;
+
+/**
+ * Anzahl der Referenzkandidaten, die pro Tile an den Worker gegeben werden.
+ *
+ * @type {number}
+ */
+const MANDELBROT_REFERENCE_CANDIDATES_PER_TILE = 2;
+
+/**
+ * Mindestabstand zweier Kandidaten innerhalb eines Tiles, relativ zur kleineren
+ * Tile-Kante. Wenn kein zweiter Punkt diesen Abstand erreicht, wird der beste
+ * verbleibende Punkt verwendet.
+ *
+ * @type {number}
+ */
+const MANDELBROT_REFERENCE_MIN_TILE_DISTANCE_RATIO = 0.25;
+
 // -----------------------------------------------------------------------------
 // Funktionen
 // -----------------------------------------------------------------------------
@@ -459,6 +483,9 @@ async function computeMandelbrotRect(
         !mandelbrotBackendSettings.useWebGpu ||
         mandelbrotBackendSettings.useCpu;
 
+    let initialReferenceCandidates = null;
+    let fallbackReferenceCandidates = null;
+
     if (useStandardWebGpu) {
 
         if (standardWebGpuIsPreciseEnough ||
@@ -498,7 +525,9 @@ async function computeMandelbrotRect(
                     imageHeight,
                     computationSettings.view,
                     computationSettings.iterationLimit,
-                );              
+                    iterationData
+                );
+                initialReferenceCandidates = candidates;
 
                 if (candidates.length > 0) {
 
@@ -511,7 +540,11 @@ async function computeMandelbrotRect(
                         computationSettings.iterationLimit
                     );
 
-                    result.referenceCandidates = candidates;
+                    if (!result.referenceCandidates?.length) {
+                        result.referenceCandidates = candidates;
+                    }
+
+                    fallbackReferenceCandidates = result.referenceCandidates;
 
                     if (result.perturbationReferenceRejected ||
                         !isAcceptablePerturbationResult(result)) 
@@ -561,12 +594,23 @@ async function computeMandelbrotRect(
     if (useCpu) {
         
         runtimeStats.lastComputationBackend = COMPUTATION_BACKEND_CPU;
-        return computeMandelbrotRectCpu(
+        const result = await computeMandelbrotRectCpu(
             rect,
             imageWidth,
             imageHeight,
             computationSettings
         );
+
+        const referenceCandidates =
+            fallbackReferenceCandidates?.length
+                ? fallbackReferenceCandidates
+                : initialReferenceCandidates;
+
+        if (referenceCandidates?.length) {
+            result.referenceCandidates = referenceCandidates;
+        }
+
+        return result;
     }
 
     throw new Error("No enabled Mandelbrot backend can compute the current view.");
@@ -704,20 +748,23 @@ function selectReferenceCandidateForView(
 /**
  * Erzeugt Referenzkandidaten fuer eine konkrete Perturbation-Rechteckberechnung.
  *
- * Die Kandidaten werden erst erzeugt, wenn das Zielrechteck und die aktuelle
- * View feststehen. Dadurch beziehen sich `pixelX` und `pixelY` direkt auf die
- * aktuelle Berechnung; eine nachtraegliche Rekalibrierung alter Bildpunkte ist
- * fuer diesen Pfad nicht noetig.
+ * Die aktuelle Zielmatrix wird in konfigurierbare Tiles unterteilt. Bekannte
+ * Pixel aus `previousIterationData` werden ueber deren gespeicherte `view` in
+ * die aktuelle View projiziert. Pro Tile werden die Punkte mit den hoechsten
+ * Iterationswerten bevorzugt; mehrere Punkte pro Tile muessen nach Moeglichkeit
+ * einen Mindestabstand zueinander einhalten.
  *
- * Die Funktion erzeugt ein kleines, gleichmaessiges Raster innerhalb des
- * Zielrechtecks. Der Worker berechnet spaeter fuer jeden Kandidaten den echten
- * Referenzorbit und verwirft Kandidaten, deren Orbit zu kurz ist.
+ * Falls fuer ein Tile keine bekannten Punkte in das Zielrechteck projiziert
+ * werden koennen, erzeugt die Funktion einen geometrischen Fallbackpunkt in der
+ * Tile-Mitte. So bleibt der Perturbation-Worker auch bei nicht ueberlappenden
+ * Views arbeitsfaehig.
  *
  * @param {PixelRect} rect - Zielrechteck, das per Perturbation berechnet werden soll.
  * @param {number} imageWidth - (integer) Breite der vollstaendigen Zielmatrix.
  * @param {number} imageHeight - (integer) Hoehe der vollstaendigen Zielmatrix.
  * @param {View} view - Aktuelle View der Mandelbrot-Berechnung.
  * @param {number} iterationLimit - (integer) Aktuelles Iterationslimit der Mandelbrot-Berechnung.
+ * @param {?IterationData} [previousIterationData=null] - Vorherige Matrix als Quelle bekannter Iterationswerte.
  * @returns {ReferenceCandidate[]} Kandidaten fuer genau dieses Zielrechteck.
  */
 function createMandelbrotPerturbationReferenceCandidatesForRect(
@@ -725,7 +772,8 @@ function createMandelbrotPerturbationReferenceCandidatesForRect(
     imageWidth,
     imageHeight,
     view,
-    iterationLimit
+    iterationLimit,
+    previousIterationData = null
 ) {
     if (rect.width <= 0 || rect.height <= 0) {
         return [];
@@ -738,68 +786,210 @@ function createMandelbrotPerturbationReferenceCandidatesForRect(
         return [];
     }
 
-    const gridColumns = Math.min(9, Math.max(1, Math.ceil(rect.width / 128)));
-    const gridRows = Math.min(9, Math.max(1, Math.ceil(rect.height / 128)));
+    const tileColumns = MANDELBROT_REFERENCE_TILE_COLUMNS;
+    const tileRows = MANDELBROT_REFERENCE_TILE_ROWS;
+    const tileCount = tileColumns * tileRows;
+    const tileWidth = imageWidth / tileColumns;
+    const tileHeight = imageHeight / tileRows;
+    const minDistance = Math.min(tileWidth, tileHeight) *
+        MANDELBROT_REFERENCE_MIN_TILE_DISTANCE_RATIO;
+    const minDistanceSquared = minDistance * minDistance;
 
-    const rectCenterX = rect.x + rect.width / 2;
-    const rectCenterY = rect.y + rect.height / 2;
-    const safeRectWidth = Math.max(rect.width, 1);
-    const safeRectHeight = Math.max(rect.height, 1);
+    const tileCandidates = Array.from(
+        { length: tileCount },
+        () => []
+    );
 
-    const candidates = [];
-    const seenPixelKeys = new Set();
+    function isInsideTargetRect(pixelX, pixelY) {
+        return pixelX >= rect.x &&
+               pixelX < rect.x + rect.width &&
+               pixelY >= rect.y &&
+               pixelY < rect.y + rect.height;
+    }
 
-    function addCandidate(pixelX, pixelY) {
-        const clampedPixelX = Math.min(
-            imageWidth - 1,
-            Math.max(0, pixelX)
+    function getTilePosition(pixelX, pixelY) {
+        const tileX = Math.min(
+            tileColumns - 1,
+            Math.max(0, Math.floor((pixelX / imageWidth) * tileColumns))
         );
-        const clampedPixelY = Math.min(
-            imageHeight - 1,
-            Math.max(0, pixelY)
+        const tileY = Math.min(
+            tileRows - 1,
+            Math.max(0, Math.floor((pixelY / imageHeight) * tileRows))
         );
 
-        const candidatePixelX = Math.floor(clampedPixelX);
-        const candidatePixelY = Math.floor(clampedPixelY);
-        const pixelKey = `${candidatePixelX}:${candidatePixelY}`;
+        return {
+            tileX,
+            tileY,
+            tileIndex: tileY * tileColumns + tileX,
+        };
+    }
 
-        if (seenPixelKeys.has(pixelKey)) {
+    function getDistanceSquared(a, b) {
+        const dx = a.pixelX - b.pixelX;
+        const dy = a.pixelY - b.pixelY;
+
+        return dx * dx + dy * dy;
+    }
+
+    function isFarEnoughFromSelectedCandidates(candidate, selectedCandidates) {
+        for (const selectedCandidate of selectedCandidates) {
+            if (getDistanceSquared(candidate, selectedCandidate) < minDistanceSquared) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function addKnownCandidatesFromPreviousData() {
+        if (!previousIterationData?.view) {
             return;
         }
 
-        seenPixelKeys.add(pixelKey);
+        const sourceView = previousIterationData.view;
+        const sourceViewWidth = sourceView.maxX - sourceView.minX;
+        const sourceViewHeight = sourceView.maxY - sourceView.minY;
 
-        const normalizedDx = (candidatePixelX - rectCenterX) / safeRectWidth;
-        const normalizedDy = (candidatePixelY - rectCenterY) / safeRectHeight;
+        if (sourceViewWidth === 0 || sourceViewHeight === 0) {
+            return;
+        }
 
-        candidates.push({
-            pixelX: candidatePixelX,
-            pixelY: candidatePixelY,
-            cx: view.minX + (candidatePixelX / imageWidth) * viewWidth,
-            cy: view.minY + (candidatePixelY / imageHeight) * viewHeight,
-            iterations: iterationLimit,
-            escapeValue: 0,
-            cellMaxObservedIterations: iterationLimit,
-            distanceToRectCenterSquared:
-                normalizedDx * normalizedDx + normalizedDy * normalizedDy,
-        });
-    }
+        for (let sourceY = 0; sourceY < previousIterationData.height; sourceY++) {
+            for (let sourceX = 0; sourceX < previousIterationData.width; sourceX++) {
+                const sourceIndex = sourceY * previousIterationData.width + sourceX;
+                const cx = sourceView.minX +
+                    (sourceX / previousIterationData.width) * sourceViewWidth;
+                const cy = sourceView.minY +
+                    (sourceY / previousIterationData.height) * sourceViewHeight;
+                const pixelX = ((cx - view.minX) / viewWidth) * imageWidth;
+                const pixelY = ((cy - view.minY) / viewHeight) * imageHeight;
 
-    addCandidate(rectCenterX, rectCenterY);
+                if (!isInsideTargetRect(pixelX, pixelY)) {
+                    continue;
+                }
 
-    for (let cellY = 0; cellY < gridRows; cellY++) {
-        for (let cellX = 0; cellX < gridColumns; cellX++) {
-            addCandidate(
-                rect.x + ((cellX + 0.5) / gridColumns) * rect.width,
-                rect.y + ((cellY + 0.5) / gridRows) * rect.height
-            );
+                const { tileX, tileY, tileIndex } = getTilePosition(pixelX, pixelY);
+                const tileCenterX = ((tileX + 0.5) / tileColumns) * imageWidth;
+                const tileCenterY = ((tileY + 0.5) / tileRows) * imageHeight;
+                const dx = pixelX - tileCenterX;
+                const dy = pixelY - tileCenterY;
+
+                tileCandidates[tileIndex].push({
+                    pixelX: Math.floor(pixelX),
+                    pixelY: Math.floor(pixelY),
+                    cx,
+                    cy,
+                    iterations: previousIterationData.iterations[sourceIndex],
+                    escapeValue: previousIterationData.escapeValues[sourceIndex],
+                    cellMaxObservedIterations: previousIterationData.iterations[sourceIndex],
+                    distanceToCellCenterSquared: dx * dx + dy * dy,
+                    sourcePixelX: sourceX,
+                    sourcePixelY: sourceY,
+                });
+            }
         }
     }
 
-    return candidates.sort((a, b) =>
-        a.distanceToRectCenterSquared - b.distanceToRectCenterSquared
-    );
+    function createFallbackCandidateForTile(tileX, tileY) {
+        const pixelX = Math.floor(((tileX + 0.5) / tileColumns) * imageWidth);
+        const pixelY = Math.floor(((tileY + 0.5) / tileRows) * imageHeight);
+
+        if (!isInsideTargetRect(pixelX, pixelY)) {
+            return null;
+        }
+
+        return {
+            pixelX,
+            pixelY,
+            cx: view.minX + (pixelX / imageWidth) * viewWidth,
+            cy: view.minY + (pixelY / imageHeight) * viewHeight,
+            iterations: iterationLimit,
+            escapeValue: 0,
+            cellMaxObservedIterations: iterationLimit,
+            distanceToCellCenterSquared: 0,
+            source: "tile-center-fallback",
+        };
+    }
+
+    addKnownCandidatesFromPreviousData();
+
+    const result = [];
+    const seenPixelKeys = new Set();
+
+    for (let tileY = 0; tileY < tileRows; tileY++) {
+        for (let tileX = 0; tileX < tileColumns; tileX++) {
+            const tileIndex = tileY * tileColumns + tileX;
+            const candidates = tileCandidates[tileIndex];
+
+            candidates.sort((a, b) => {
+                if (a.iterations !== b.iterations) {
+                    return b.iterations - a.iterations;
+                }
+
+                if (a.distanceToCellCenterSquared !== b.distanceToCellCenterSquared) {
+                    return a.distanceToCellCenterSquared - b.distanceToCellCenterSquared;
+                }
+
+                return a.escapeValue - b.escapeValue;
+            });
+
+            const selectedCandidates = [];
+            const fallbackCandidates = [];
+
+            for (const candidate of candidates) {
+                const pixelKey = `${candidate.pixelX}:${candidate.pixelY}`;
+
+                if (seenPixelKeys.has(pixelKey)) {
+                    continue;
+                }
+
+                if (isFarEnoughFromSelectedCandidates(candidate, selectedCandidates)) {
+                    selectedCandidates.push(candidate);
+                    seenPixelKeys.add(pixelKey);
+                } else {
+                    fallbackCandidates.push(candidate);
+                }
+
+                if (selectedCandidates.length >= MANDELBROT_REFERENCE_CANDIDATES_PER_TILE) {
+                    break;
+                }
+            }
+
+            for (const candidate of fallbackCandidates) {
+                if (selectedCandidates.length >= MANDELBROT_REFERENCE_CANDIDATES_PER_TILE) {
+                    break;
+                }
+
+                const pixelKey = `${candidate.pixelX}:${candidate.pixelY}`;
+
+                if (seenPixelKeys.has(pixelKey)) {
+                    continue;
+                }
+
+                selectedCandidates.push(candidate);
+                seenPixelKeys.add(pixelKey);
+            }
+
+            if (selectedCandidates.length === 0) {
+                const fallbackCandidate = createFallbackCandidateForTile(tileX, tileY);
+
+                if (fallbackCandidate) {
+                    const pixelKey = `${fallbackCandidate.pixelX}:${fallbackCandidate.pixelY}`;
+
+                    if (!seenPixelKeys.has(pixelKey)) {
+                        selectedCandidates.push(fallbackCandidate);
+                        seenPixelKeys.add(pixelKey);
+                    }
+                }
+            }
+
+            result.push(...selectedCandidates);
+        }
+    }
+
+    return result;
 }
+
 /**
  * Mandelbrot-spezifischer Finalisierungs-Hook fuer fertige Iterationsdaten.
  *
