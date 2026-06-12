@@ -41,20 +41,28 @@
  * @property {number} escapeValue                   - (decimal) Quadratischer Betrag des Orbits beim Abbruch.
  * @property {number} [cellMaxObservedIterations]   - (integer) Hoechster beobachteter Iterationswert in der Sammelzelle des Kandidaten.
  * @property {number} [distanceToCellCenterSquared] - (decimal) Quadratischer Abstand zur Mitte der Sammelzelle in Pixeln.
+ * @property {'original'|'generated'} [source]      - Herkunft des Kandidaten: initial ermittelt oder spaeter aus einem Glitch erzeugt.
+ * @property {'known-pixel'|'tile-center-fallback'|'glitch-pixel'} [origin] - Genauere Entstehungsart des Kandidaten.
+ * @property {'not-used'|'used-improved'|'used-no-improvement'} [status] - Diagnose-/Anwendungsstatus in der Perturbation-Schleife.
  */
 
 /**
  * Diagnosewerte einer Perturbationsberechnung.
  *
- * Die Werte beschreiben, wie viele Pixel vom Perturbation-Shader mit dem
- * verwendeten Referenzorbit nicht verlaesslich berechnet werden konnten.
+ * Die Werte werden vom Perturbation-Shader in einen kompakten Counterbuffer
+ * geschrieben und nach dem Dispatch ausgelesen. Sie beschreiben das Ergebnis
+ * des letzten Perturbation-Laufs fuer den berechneten Pixelbereich.
+ *
  * Normale CPU- oder Standard-GPU-Berechnungen setzen diese Statistik nicht.
  *
- * `invalidCount` ist die Summe aller Statuswerte ungleich OK. Die Einzelzaehler
- * beschreiben, warum Pixel abgebrochen wurden.
+ * `pixelCount` ist die Anzahl der betrachteten Pixel. `okCount` zaehlt die
+ * erfolgreich berechneten Pixel. `invalidCount` ist die Summe aller Pixel mit
+ * Status ungleich OK. Die Einzelzaehler beschreiben, warum Pixel als nicht
+ * verlaesslich markiert wurden.
  *
  * @typedef {Object} PerturbationStats
- * @property {number} pixelCount           - (integer) Anzahl der berechneten Pixel.
+ * @property {number} pixelCount           - (integer) Anzahl der betrachteten Pixel.
+ * @property {number} okCount              - (integer) Erfolgreich berechnete Pixel.
  * @property {number} invalidCount         - (integer) Summe aller als unverlaesslich markierten Pixel.
  * @property {number} referenceEndedCount  - (integer) Pixel, fuer die der Referenzorbit vor dem normalen Abbruch endete.
  * @property {number} smallOrbitCount      - (integer) Pixel mit Glitch-Verdacht durch auffaellig kleinen perturbierten Orbit.
@@ -80,7 +88,9 @@
  * @property {EscapeValueArray}     escapeValues          - (decimal) Escape-Wert je Pixel.
  * @property {number}               minIterations         - (integer) Niedrigster Iterationswert aus `iterations`.
  * @property {number}               maxObservedIterations - (integer) Höchster Iterationswert aus `iterations`.
+ * @property {?View}                view                  - Ausschnitt der komplexen Ebene, auf die sich die Datenmatrix bezieht.
  * @property {ReferenceCandidate[]} [referenceCandidates] - Kandidaten fuer Referenzpunkte, typischerweise nach Iterationswert absteigend sortiert.
+ * @property {boolean}              [perturbationAcceptable] - True, wenn der Worker das Perturbation-Ergebnis akzeptiert hat. 
  * @property {PerturbationStats}    [perturbationStats]   - Optionale Diagnosewerte einer Perturbationsberechnung.
  * */
 
@@ -165,11 +175,13 @@ function findIterationRange(
  * 
  * @param {number} width        - (integer) Breite der Matrix
  * @param {number} height       - (integer) Höhe der Matrix
+ * @param {?View} [view=null] - Ausschnitt der komplexen Ebene, auf den sich die Matrix bezieht.
  * @returns {IterationData}     - ein leeres IterationData-Objekt
  */
 function createEmptyIterationData(
     width, 
-    height
+    height,
+    view = null
 ) {
     return {
         width,
@@ -178,6 +190,7 @@ function createEmptyIterationData(
         escapeValues: new Float32Array(width * height),
         minIterations: 0, 
         maxObservedIterations: 0, 
+        view,
         referenceCandidates: [], 
     };
 }
@@ -190,6 +203,8 @@ function createEmptyIterationData(
  * Kopiert ein IterationData-Objekt (source) oder einen Ausschnitt daraus 
  * in ein anderes IterationData-Objekt (target) - 
  * z.B. nach einer Verschiebung oder Erweiterung. 
+ * 
+ * Die View wird hier nicht kopiert: copyIterationRect kopiert nur Pixelwerte.
  * 
  * copyRegion (                 - beschreibt eine verschobene Kopie: 
  *                                  source(sourceX + x, sourceY + y) 
@@ -320,7 +335,7 @@ async function computeShiftedIterationData(
     const { width, height } = oldData;
 
     // die neue Matrix ist so groß wie die alte
-    const newData = createEmptyIterationData(width, height);
+    const newData = createEmptyIterationData(width, height, computationSettings.view);
 
     // Translation oldData -> newData beschreiben
     let copyRegion = {
@@ -370,6 +385,8 @@ async function computeShiftedIterationData(
     const iterationRange = findIterationRange(newData.iterations); 
     newData.minIterations = iterationRange.minIterations;
     newData.maxObservedIterations = iterationRange.maxObservedIterations;
+
+    newData.view = computationSettings.view;
 
     return newData;
 }
@@ -580,6 +597,8 @@ async function fillDirtyResizeRects(
     newData.minIterations = iterationRange.minIterations;
     newData.maxObservedIterations = iterationRange.maxObservedIterations;
 
+    newData.view = newView;
+
     return newData; 
 }
 
@@ -592,8 +611,7 @@ async function fillDirtyResizeRects(
  *
  * @param {ResizeDirection}      direction           - Richtung der Erweiterung.
  * @param {IterationData}        oldData             - Bisherige Iterationsdaten.
- * @param {View}                 oldView             - View, die zu `oldData` gehört.
- * @param {View}                 newView             - View, die zur erweiterten Zielmatrix gehört.
+ * @param {View}                 newView             - View, die zur erweiterten Zielmatrix gehoert.
  * @param {ImageSize}            newSize             - (integer) Zielgröße der erweiterten Iterationsmatrix.
  * @param {ComputeIterationRect} computeFn           - Funktion zur Berechnung neu entstandener Rechtecke.
  * @param {ComputationSettings}  computationSettings - Berechnungseinstellungen als Grundlage.
@@ -602,14 +620,15 @@ async function fillDirtyResizeRects(
 async function expandIterationData(
     direction, 
     oldData,
-    oldView,
     newView,
     newSize,
     computeFn,
     computationSettings 
 ) {
 
-    const newData = createEmptyIterationData(newSize.width, newSize.height);
+    const oldView = oldData.view ?? computationSettings.view;
+
+    const newData = createEmptyIterationData(newSize.width, newSize.height, newView);
 
     const offsetX = direction === 'horizontal'
                   ? Math.round((  (oldView.minX - newView.minX) 
@@ -659,7 +678,6 @@ async function expandIterationData(
  *   wobei vorhandene Daten übernommen und nur neue Bereiche berechnet werden
  *
  * @param {IterationData}         oldData            - Bisherige Iterationsdaten.
- * @param {View}                  oldView            - View, die zu `oldData` gehört.
  * @param {View}                  newView            - Gewünschte View für die neue Canvas-Größe.
  * @param {ImageSize}             oldSize            - (integer) Bisherige Canvas-Größe.
  * @param {ImageSize}             newSize            - (integer) Neue Canvas-Größe.
@@ -671,7 +689,6 @@ async function expandIterationData(
  */
 async function resizeIterationData( 
     oldData,
-    oldView,
     newView,
     oldSize, 
     newSize,
@@ -687,6 +704,8 @@ async function resizeIterationData(
         throw new Error('Resize without iteration data!');
     }
 
+    const oldView = oldData.view ?? computationSettings.view;
+
     // keine Veränderung whatsoever
     if ( dx == 0 && dy == 0 ) {
         return {
@@ -700,11 +719,18 @@ async function resizeIterationData(
 
         const {width, height} = newSize; 
         const rect = { x: 0, y: 0, width: width, height: height };
-        const newData = await computeFn(rect, width, height, computationSettings);
+        const newData = await computeFn(
+            rect,
+            width,
+            height,
+            copySettingsWithView(computationSettings, newView)
+        );
 
         const iterationRange = findIterationRange(newData.iterations); 
         newData.minIterations = iterationRange.minIterations;
         newData.maxObservedIterations = iterationRange.maxObservedIterations;
+
+        newData.view = newView;
 
         const finalizedData = finalizeFn(
             newData, 
@@ -735,7 +761,6 @@ async function resizeIterationData(
         currentData = await expandIterationData(  
                         'horizontal',
                         currentData,
-                        currentView,
                         nextView,
                         nextSize,
                         computeFn,
@@ -758,7 +783,6 @@ async function resizeIterationData(
         currentData = await expandIterationData(
                         'vertical',
                         currentData,
-                        currentView,
                         nextView,
                         nextSize,
                         computeFn,

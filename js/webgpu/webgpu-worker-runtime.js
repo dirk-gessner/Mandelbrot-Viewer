@@ -5,6 +5,29 @@
  */
 
 // -----------------------------------------------------------------------------
+// Debug-Log-Funktionen
+// -----------------------------------------------------------------------------
+const DEBUG_MODE = true;
+
+export function debugLog(...args) {
+    if (DEBUG_MODE) {
+        console.log(...args);
+    }
+}
+
+export function debugInfo(...args) {
+    if (DEBUG_MODE) {
+        console.info(...args);
+    }
+}
+
+export function debugWarn(...args) {
+    if (DEBUG_MODE) {
+        console.warn(...args);
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Datentypen
 // -----------------------------------------------------------------------------
 
@@ -75,7 +98,7 @@ async function initializeComputePipeline(
 ) {
     const { device } = await getWorkerContext();
 
-    console.log("Initializing WebGPU compute pipeline");
+    debugLog("Initializing WebGPU compute pipeline");
 
     const shaderModule = device.createShaderModule({
         label: label,
@@ -91,7 +114,7 @@ async function initializeComputePipeline(
         },
     });
 
-    console.log("WebGPU compute pipeline initialized", {
+    debugLog("WebGPU compute pipeline initialized", {
         shaderModule,
         computePipeline,
     });
@@ -163,7 +186,7 @@ async function initializeWorkerContext() {
         workerContextPromise = null;
     });
 
-    console.log("WebGPU worker context initialized", {
+    debugLog("WebGPU worker context initialized", {
         adapter,
         device,
     });

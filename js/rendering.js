@@ -444,6 +444,52 @@ function drawSelectionFrame(
 }
 
 /**
+ * Liefert die Overlay-Zeichenfarbe fuer einen Referenzkandidaten.
+ *
+ * Der Status beschreibt, ob und wie der Kandidat in der letzten
+ * Perturbation-Schleife verwendet wurde. Dadurch sieht man im Debug-Overlay
+ * sofort, welche Referenzpunkte geholfen haben und welche nur getestet wurden.
+ *
+ * @param {ReferenceCandidate} candidate - Referenzkandidat mit optionalem Status.
+ * @returns {string} CSS-Farbe fuer die Kreislinie.
+ */
+function getReferenceCandidateOverlayColor(candidate) {
+    if (candidate.status === "used-improved") {
+        return "rgba(0, 255, 120, 0.98)";
+    }
+
+    if (candidate.status === "used-no-improvement") {
+        return "rgba(255, 170, 0, 0.98)";
+    }
+
+    if (candidate.status === "not-used") {
+        return "rgba(190, 190, 190, 0.82)";
+    }
+
+    if (candidate.source === "generated") {
+        return "rgba(0, 210, 255, 0.98)";
+    }
+
+    return "rgba(136, 255, 0, 0.99)";
+}
+
+/**
+ * Zeichnet einen einzelnen Referenzkandidaten im Debug-Overlay.
+ *
+ * @param {CanvasRenderingContext2D} ctx - Zeichenkontext des Fraktal-Canvas.
+ * @param {ReferenceCandidate} candidate - Zu zeichnender Referenzkandidat.
+ * @param {number} x - X-Position auf dem Canvas.
+ * @param {number} y - Y-Position auf dem Canvas.
+ * @returns {void}
+ */
+function drawReferenceCandidateMarker(ctx, candidate, x, y) {
+    ctx.beginPath();
+    ctx.arc(x, y, 6, 0, 2 * Math.PI);
+    ctx.strokeStyle = getReferenceCandidateOverlayColor(candidate);
+    ctx.lineWidth = candidate.status === "not-used" ? 1.5 : 2;
+    ctx.stroke();
+}
+/**
  * Zeichnet Referenzkandidaten als Debug-Overlay auf den Canvas.
  *
  * Die Markierungen werden nicht in die berechneten Bilddaten geschrieben,
@@ -453,7 +499,6 @@ function drawSelectionFrame(
  *
  * @param {CanvasRenderingContext2D} ctx - Zeichenkontext des Fraktal-Canvas.
  * @param {IterationData} iterationData - Aktuelle Iterationsdaten.
- * @param {View} view - Aktuelle View fuer die Auswahl des besten Kandidaten.
  * @param {number} pixelDx - Horizontale Anzeigeverschiebung beim Panning.
  * @param {number} pixelDy - Vertikale Anzeigeverschiebung beim Panning.
  * @returns {void}
@@ -461,7 +506,6 @@ function drawSelectionFrame(
 function drawReferenceCandidateOverlay(
     ctx,
     iterationData,
-    view,
     pixelDx,
     pixelDy
 ) {
@@ -480,38 +524,10 @@ function drawReferenceCandidateOverlay(
         return;
     }
 
-    const selectedCandidate = selectReferenceCandidateForView(
-        iterationData.referenceCandidates,
-        view
-    );
-
     for (const candidate of iterationData.referenceCandidates) {
         const x = candidate.pixelX + pixelDx;
         const y = candidate.pixelY + pixelDy;
-
-        ctx.beginPath();
-        ctx.arc(x, y, 6, 0, 2 * Math.PI);
-        ctx.strokeStyle = 'rgba(136, 255, 0, 0.99)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-
-    if (selectedCandidate) {
-        const x = selectedCandidate.pixelX + pixelDx;
-        const y = selectedCandidate.pixelY + pixelDy;
-
-        ctx.beginPath();
-        ctx.arc(x, y, 10, 0, 2 * Math.PI);
-        ctx.strokeStyle = 'rgba(255, 0, 180, 1)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(x - 4, y);
-        ctx.lineTo(x + 4, y);
-        ctx.moveTo(x, y - 4);
-        ctx.lineTo(x, y + 4);
-        ctx.stroke();
+        drawReferenceCandidateMarker(ctx, candidate, x, y);
     }
 
     ctx.restore();
@@ -606,7 +622,6 @@ function drawScene(pixelDx = 0, pixelDy = 0) {
         drawReferenceCandidateOverlay(
             ctx,
             iterationData,
-            computationSettings.view,
             pixelDx,
             pixelDy
         );    

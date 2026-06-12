@@ -159,6 +159,8 @@ function workerComputeMandelbrotRect(
         escapeValues, 
         minIterations: iterationRange.minIterations,
         maxObservedIterations: iterationRange.maxObservedIterations, 
+        view,
+        referenceCandidates: [],
     };
 }
 

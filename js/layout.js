@@ -87,8 +87,8 @@ function resizeCanvasAndKeepView() {
         return; 
     }
 
-    const oldView = {...computationSettings.view};
-    const oldIterationData = iterationData; 
+    const oldIterationData = iterationData;
+    const oldView = { ...(oldIterationData.view ?? computationSettings.view) }; 
 
     const oldSize = {
         width:  canvas.width,
@@ -119,7 +119,6 @@ function resizeCanvasAndKeepView() {
         // returns: { iterationData, view }
         const resizeResult = await resizeIterationData(
             oldIterationData,
-            oldView,
             newView,
             oldSize,
             newSize,

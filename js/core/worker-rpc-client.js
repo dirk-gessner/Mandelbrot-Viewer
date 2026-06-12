@@ -60,7 +60,7 @@ function createWorkerRpcClient(workerScript) {
         const pendingRequest = pendingRequests.get(message.requestId);
 
         if (!pendingRequest) {
-            console.warn("Received worker response for unknown request", message);
+            debugWarn("Received worker response for unknown request", message);
             return;
         }
 
