@@ -1,60 +1,45 @@
 # Naechste Schritte
 
-## Erledigt
 
-* Perturbation-Session eingefuehrt:
-  * Ergebnisbuffer, Escape-Buffer, Statusbuffer und Readback-Buffer werden als Session-Kontext angelegt.
-  * Die finalen Session-Buffer koennen gemeinsam ausgelesen werden.
-* Perturbation-Parameter getrennt:
-  * Session-Parameter werden einmal pro Rechteck/View geschrieben.
-  * Orbit-Parameter werden zusammen mit dem Referenzorbit geschrieben.
-* Orbit-Upload separiert:
-  * Orbit-Buffer werden einmal angelegt.
-  * Referenzorbit-Daten und Orbit-Parameter koennen wiederholt in bestehende Buffer geschrieben werden.
-* Counterbuffer ergaenzt:
-  * Der Shader schreibt kompakte Perturbation-Counter.
-  * Der Host liest die Counter nach einem Pass aus.
-  * `perturbationStats` kommt aus dem Counterbuffer.
-* Statusbuffer beibehalten:
-  * Der Statusbuffer bleibt als pro-Pixel-Diagnosefeld erhalten.
-  * Er ist nicht mehr die Quelle fuer die Statistikzaehlung.
-* Sentinel-Logik begonnen:
-  * Der Iterationsbuffer kann mit `0xffffffff` initialisiert werden.
-  * Der Perturbation-Shader nutzt den Sentinel als Maske fuer neu zu berechnende Pixel.
-  * Der Iterationsbuffer benoetigt dafuer `COPY_DST`.
+ToDos aus Review
 
-## Naechster Block
+* [x] **Sentinel-Pixel werden als Innenmenge interpretiert**
 
-* Referenzorbit-Berechnung in den WebGPU-Worker verlagern:
-  * Der Main Thread uebergibt Referenzkandidaten statt fertiger Referenzorbits.
-  * Der Worker berechnet Referenzorbits nur dann, wenn sie fuer einen Pass gebraucht werden.
-  * Die bisherige Referenzorbit-Berechnung aus `mandelbrot.js` in den Worker verschieben oder worker-nah kapseln.
-  * Pruefen, welche Bewertungslogik mitwandern muss, z.B. Mindestlaenge des Referenzorbits.
+  * Nicht erfolgreich berechnete Pixel bleiben intern auf `0xffffffff`.
+  * Beim Erzeugen von `IterationData` werden sie auf `iterationLimit` / `escapeValue = 0` abgebildet.
+  * Dadurch erscheinen verbleibende ungültige Pixel wie echte Mandelbrot-Innenpunkte.
+  * Priorität: **hoch**
 
-* Perturbation-Mehrpass im Worker einbauen:
-  * Fuer jeden geeigneten Kandidaten einen Referenzorbit berechnen.
-  * Orbit in bestehende Orbit-Buffer schreiben.
-  * Counterbuffer resetten.
-  * Perturbation-Pass dispatchen.
-  * Counter auslesen.
-  * Stoppen, wenn `invalidCount === 0` oder keine Kandidaten mehr sinnvoll sind.
+* [x] **Mehrpass-Statistik / `okCount` war irreführend**
 
-* Referenzkandidaten fuer Perturbation begrenzen:
-  * Nicht alle gesammelten Referenzpunkte ausprobieren.
-  * Nur Kandidaten innerhalb des Zielrechtecks und einer nahen Umgebung beruecksichtigen.
-  * Padding abhaengig von Rect-Groesse oder View-Zoom waehlen.
-  * Maximale Kandidatenanzahl pro Perturbation-Berechnung begrenzen.
-  * Kandidaten weiterhin nach Eignung sortieren: Naehe, Iterationswert, lokales Zellmaximum, Escape-Wert.
+  * Nach mehreren Shader-Passes zählte `okCount` nur neu berechnete Pixel des letzten Passes, nicht alle gültigen Pixel.
+  * Von dir bereits erledigt und gepusht.
+  * Priorität: **erledigt**
 
-## Danach
+* [x] **`maxObservedIterations` wird vermutlich falsch übergeben**
 
-* Finalen Umgang mit verbleibenden Sentinel-Pixeln festlegen:
-  * Ergebnis akzeptieren, wenn `invalidCount` klein genug ist.
-  * Optional einzelne Restpixel per CPU nachberechnen, solange die Anzahl klein bleibt.
-  * Ergebnis verwerfen oder CPU-Fallback verwenden, wenn zu viele Pixel ungueltig bleiben.
-* Debug-Overlay fuer Perturbation-Status vorbereiten:
-  * Statusbuffer fuer farbliche Markierung pro Fehlerstatus nutzen.
-  * Overlay optional im Rendering aktivieren.
-* Datei-Struktur spaeter pruefen:
-  * Standard-WebGPU-Berechnung und Perturbation-Berechnung ggf. auf getrennte Module aufteilen.
-  * Gemeinsame Worker-/Buffer-Helfer auslagern, falls die Datei weiter waechst.
+  * Beim Aufruf von `computeMandelbrotRectWebGpu` wird aktuell bzw. wurde `iterationLimit` als `maxObservedIterations` übergeben.
+  * Korrekt wäre vermutlich der bisher beobachtete Maximalwert aus vorhandenen `IterationData`, z. B. `iterationData?.maxObservedIterations ?? 0`.
+  * Wird besonders relevant, wenn die Orbit-Längenprüfung wieder aktiviert wird.
+  * Priorität: **mittel bis hoch**
+
+* [x] **Keine CPU-Nachberechnung für kleine akzeptierte Restfehler**
+
+  * Wenn das Gesamtergebnis als akzeptabel gilt, aber noch einzelne invalide Pixel übrig sind, wird kein CPU-Fixup gemacht.
+  * Zusammen mit dem Sentinel-Problem führt das zu falsch dargestellten Restpixeln.
+  * Mögliche Lösung: akzeptierte Restfehler gezielt per CPU reparieren oder `invalidCount === 0` als Akzeptanzbedingung verlangen.
+  * Priorität: **hoch**
+
+* [ ] **Kandidatenstatus `used-no-improvement` ist eventuell zu grob**
+
+  * Die Bewertung basiert vor allem darauf, ob `invalidCount` sinkt.
+  * Ein Kandidat kann das Fehlerprofil verändern, ohne die Anzahl invalider Pixel zu reduzieren.
+  * Für Debugging/Overlay wäre eine feinere Unterscheidung hilfreich, z. B. `used-reduced-invalid-count`, `used-changed-error-profile`, `used-no-change`.
+  * Priorität: **niedrig bis mittel**
+
+* [x] **GPU-Ressourcen werden nicht explizit freigegeben**
+
+  * Temporäre GPUBuffer für Iterationen, Escape-Werte, Status, Readback, Orbitdaten und Counter werden nicht sichtbar per `destroy()` freigegeben.
+  * In einem langlebigen Worker kann das zu GPU-Speicherdruck führen.
+  * Sinnvoll wäre ein `finally`-Block mit explizitem Cleanup.
+  * Priorität: **mittel**
