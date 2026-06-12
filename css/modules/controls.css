@@ -155,3 +155,12 @@
     opacity: 0.55;
     cursor: not-allowed;
 }
+
+
+#music-controls input[type="range"] {
+  width: 100%;
+}
+
+#music-controls select {
+  width: 100%;
+}

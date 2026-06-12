@@ -156,3 +156,57 @@ const MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK = "webgpu-perturb
  * @type {number}
  */
 let inputTimer = 0;
+
+// -----------------------------------------------------------------------------
+// Musik-Player
+// -----------------------------------------------------------------------------
+
+/**
+ * Verfügbare Musikstücke.
+ *
+ * @typedef {Object} MusicTrack
+ * @property {string} key - Eindeutiger Schlüssel.
+ * @property {string} title - Anzeigename in der UI.
+ * @property {string} src - Pfad zur MP3-Datei.
+ */
+
+/**
+ * @type {Record<string, MusicTrack>}
+ */
+const musicTracks = {
+  belladonnaD30: {
+    key: "belladonnaD30",
+    title: "Belladonna D30",
+    src: "audio/music/Belladonna D30.mp3",
+  },
+  sidetracked: {
+    key: "sidetracked",
+    title: "Sidetracked",
+    src: "audio/music/Sidetracked.mp3",
+  },
+  tokyo6pm_nyc12amMix: {
+    key: "tokyo6pm_nyc12amMix",
+    title: "Tokyo 6pm (NYC 12am Mix)",
+    src: "audio/music/Tokyo 6pm (NYC 12am Mix).mp3",
+  },
+};
+
+/**
+ * @typedef {Object} MusicSettings
+ * @property {string} selectedTrackKey
+ * @property {number} volume - 0.0 bis 1.0
+ * @property {boolean} enabled
+ * @property {boolean} loop
+ */
+
+/**
+ * Globale Musik-Einstellungen.
+ *
+ * @type {MusicSettings}
+ */
+const musicSettings = {
+  selectedTrackKey: "belladonnaD30",
+  volume: 0.35,
+  enabled: false,
+  loop: true,
+};

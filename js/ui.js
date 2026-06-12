@@ -47,7 +47,13 @@ const app = Vue.createApp({
             MANDELBROT_BACKEND_MODE_WEBGPU,
             MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION,
             MANDELBROT_BACKEND_MODE_WEBGPU_CPU_FALLBACK,
-            MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK,            
+            MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK,       
+            
+            availableMusicTracks: musicTracks,
+            selectedMusicTrackKey: musicSettings.selectedTrackKey,
+            musicEnabled: musicSettings.enabled,
+            musicVolume: musicSettings.volume,
+            musicLoop: musicSettings.loop,            
         };
     },
     
@@ -172,6 +178,22 @@ const app = Vue.createApp({
         resetView() {
             resetView();
         }, 
+
+        async toggleMusicPlayback() {
+        this.musicEnabled = await toggleMusic();
+        },
+
+        async updateMusicTrack() {
+        this.musicEnabled = await selectMusicTrack(this.selectedMusicTrackKey);
+        },
+
+        updateMusicVolume() {
+        setMusicVolume(this.musicVolume);
+        },
+
+        updateMusicLoop() {
+        setMusicLoop(this.musicLoop);
+        },        
 
     },
 
