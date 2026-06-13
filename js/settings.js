@@ -192,9 +192,17 @@ const musicTracks = {
 };
 
 /**
+ * @typedef {Object} MusicTrack
+ * @property {string} title - Anzeigename.
+ * @property {string} src - Blob-URL oder regulärer URL-Pfad.
+ * @property {string} fileName - Ursprünglicher Dateiname.
+ */
+
+/**
  * @typedef {Object} MusicSettings
- * @property {string} selectedTrackKey
- * @property {number} volume - 0.0 bis 1.0
+ * @property {MusicTrack[]} tracks
+ * @property {number} selectedTrackIndex
+ * @property {number} volume
  * @property {boolean} enabled
  * @property {boolean} loop
  */
@@ -205,8 +213,9 @@ const musicTracks = {
  * @type {MusicSettings}
  */
 const musicSettings = {
-  selectedTrackKey: "belladonnaD30",
-  volume: 0.35,
+  tracks: [],
+  selectedTrackIndex: -1,
+  volume: 0.25,
   enabled: false,
   loop: true,
 };
