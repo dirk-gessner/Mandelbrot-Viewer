@@ -156,3 +156,66 @@ const MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK = "webgpu-perturb
  * @type {number}
  */
 let inputTimer = 0;
+
+// -----------------------------------------------------------------------------
+// Musik-Player
+// -----------------------------------------------------------------------------
+
+/**
+ * Verfügbare Musikstücke.
+ *
+ * @typedef {Object} MusicTrack
+ * @property {string} key - Eindeutiger Schlüssel.
+ * @property {string} title - Anzeigename in der UI.
+ * @property {string} src - Pfad zur MP3-Datei.
+ */
+
+/**
+ * @type {Record<string, MusicTrack>}
+ */
+const musicTracks = {
+  belladonnaD30: {
+    key: "belladonnaD30",
+    title: "Belladonna D30",
+    src: "audio/music/Belladonna D30.mp3",
+  },
+  sidetracked: {
+    key: "sidetracked",
+    title: "Sidetracked",
+    src: "audio/music/Sidetracked.mp3",
+  },
+  tokyo6pm_nyc12amMix: {
+    key: "tokyo6pm_nyc12amMix",
+    title: "Tokyo 6pm (NYC 12am Mix)",
+    src: "audio/music/Tokyo 6pm (NYC 12am Mix).mp3",
+  },
+};
+
+/**
+ * @typedef {Object} MusicTrack
+ * @property {string} title - Anzeigename.
+ * @property {string} src - Blob-URL oder regulärer URL-Pfad.
+ * @property {string} fileName - Ursprünglicher Dateiname.
+ */
+
+/**
+ * @typedef {Object} MusicSettings
+ * @property {MusicTrack[]} tracks
+ * @property {number} selectedTrackIndex
+ * @property {number} volume
+ * @property {boolean} enabled
+ * @property {boolean} loop
+ */
+
+/**
+ * Globale Musik-Einstellungen.
+ *
+ * @type {MusicSettings}
+ */
+const musicSettings = {
+  tracks: [],
+  selectedTrackIndex: -1,
+  volume: 0.25,
+  enabled: false,
+  loop: true,
+};

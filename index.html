@@ -263,6 +263,103 @@
                             </button>
                         </div>
                     </div>
+
+                    <div id="music-controls" class="control-group separation-line">
+
+                        <h3>Musik</h3>
+
+                        <div class="control-row music-directory-row">
+                            <span>Musikverzeichnis:</span>
+                        
+                            <label for="musicDirectoryInput" class="btn btn-outline music-directory-button">
+                                Ordner auswählen
+                            </label>
+                        
+                            <input 
+                                id="musicDirectoryInput" 
+                                class="hidden-file-input" 
+                                type="file" 
+                                accept="audio/mpeg,audio/wav,audio/wave,audio/x-wav,.mp3,.wav"
+                                multiple
+                                webkitdirectory @change="loadMusicDirectory">
+                        </div>
+
+                        <div class="control-row">
+                            <label for="musicTrackSelect">Musikstück:</label>
+
+                            <select 
+                                id="musicTrackSelect" 
+                                v-model.number="selectedMusicTrackIndex" 
+                                @change="updateMusicTrack"
+                                :disabled="availableMusicTracks.length === 0">
+
+                                <option v-for="(track, index) in availableMusicTracks" :key="track.src" :value="index">
+                                    {{ track.title }}
+                                </option>
+
+                            </select>
+                        </div>
+
+                        <div class="control-row music-player-buttons">
+                            <button 
+                                @click="previousMusicTrack" 
+                                class="btn btn-outline music-button"
+                                :disabled="availableMusicTracks.length === 0">
+                                ⏮
+                            </button>
+
+                            <button 
+                                @click="playMusicPlayback" 
+                                class="btn btn-outline music-button"
+                                :disabled="availableMusicTracks.length === 0">
+                                ▶
+                            </button>
+
+                            <button 
+                                @click="pauseMusicPlayback" 
+                                class="btn btn-outline music-button"
+                                :disabled="availableMusicTracks.length === 0">
+                                ⏸
+                            </button>
+
+                            <button 
+                                @click="stopMusicPlayback" 
+                                class="btn btn-outline music-button"
+                                :disabled="availableMusicTracks.length === 0">
+                                ⏹
+                            </button>
+
+                            <button 
+                                @click="nextMusicTrack" 
+                                class="btn btn-outline music-button"
+                                :disabled="availableMusicTracks.length === 0">
+                                ⏭
+                            </button>
+                        </div>
+
+                        <div class="control-row">
+                            <label>Lautstärke: {{ Math.round(musicVolume * 100) }} %</label>
+
+                            <input type="range" min="0" max="1" step="0.01" v-model.number="musicVolume" @input="updateMusicVolume">
+                        </div>
+
+                        <div class="control-row">
+                            <label>
+                                <input type="checkbox" v-model="musicLoop" @change="updateMusicLoop">
+
+                                Playlist wiederholen
+                            </label>
+                        </div>
+
+                        <div class="control-row" v-if="availableMusicTracks.length === 0">
+                            <small>Kein Musikverzeichnis ausgewählt.</small>
+                        </div>
+
+                        <div class="control-row" v-if="availableMusicTracks.length > 0">
+                            <small>{{ availableMusicTracks.length }} Musikstücke geladen.</small>
+                        </div>
+
+                    </div>                    
                 </aside>
             </div>
 
@@ -328,6 +425,7 @@
     <script src="js/rendering.js"></script>
     <script src="js/layout.js"></script>
     <script src="js/interactions.js"></script>
+    <script src="js/music.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/file.js"></script>
     <script src="js/help.js"></script>

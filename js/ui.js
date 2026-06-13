@@ -47,7 +47,13 @@ const app = Vue.createApp({
             MANDELBROT_BACKEND_MODE_WEBGPU,
             MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION,
             MANDELBROT_BACKEND_MODE_WEBGPU_CPU_FALLBACK,
-            MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK,            
+            MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK,       
+            
+            availableMusicTracks: musicSettings.tracks,
+            selectedMusicTrackIndex: musicSettings.selectedTrackIndex,
+            musicEnabled: musicSettings.enabled,
+            musicVolume: musicSettings.volume,
+            musicLoop: musicSettings.loop,        
         };
     },
     
@@ -173,6 +179,52 @@ const app = Vue.createApp({
             resetView();
         }, 
 
+        loadMusicDirectory(event) {
+            const files = event.target.files;
+
+            loadMusicFiles(files);
+
+            this.availableMusicTracks = musicSettings.tracks;
+            this.selectedMusicTrackIndex = musicSettings.selectedTrackIndex;
+            this.musicEnabled = musicSettings.enabled;
+        },
+
+        async playMusicPlayback() {
+            this.musicEnabled = await playMusic();
+        },
+
+        pauseMusicPlayback() {
+            pauseMusic();
+            this.musicEnabled = musicSettings.enabled;
+        },
+
+        stopMusicPlayback() {
+            stopMusic();
+            this.musicEnabled = musicSettings.enabled;
+        },
+
+        async previousMusicTrack() {
+            this.musicEnabled = await playPreviousTrack();
+            this.selectedMusicTrackIndex = musicSettings.selectedTrackIndex;
+        },
+
+        async nextMusicTrack() {
+            this.musicEnabled = await playNextTrack();
+            this.selectedMusicTrackIndex = musicSettings.selectedTrackIndex;
+        },
+
+        async updateMusicTrack() {
+            this.musicEnabled = await selectMusicTrackByIndex(this.selectedMusicTrackIndex);
+            this.selectedMusicTrackIndex = musicSettings.selectedTrackIndex;
+        },
+
+        updateMusicVolume() {
+            setMusicVolume(this.musicVolume);
+        },
+
+        updateMusicLoop() {
+            setMusicLoop(this.musicLoop);
+        },
     },
 
     computed: {
