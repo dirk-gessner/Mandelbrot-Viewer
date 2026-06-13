@@ -5,6 +5,8 @@ const app = Vue.createApp({
     data() {
         return {
 
+            activeControlTab: "view",
+
             inputConstraints, 
 
             viewInfo: {
@@ -58,6 +60,11 @@ const app = Vue.createApp({
     },
     
     methods: {
+
+        setControlTab(tabKey) {
+            this.activeControlTab = tabKey;
+        },
+
         updateInfo() {
             const { view, initialView } = computationSettings;
             this.viewInfo.minX = view.minX;
