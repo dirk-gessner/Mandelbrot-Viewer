@@ -27,6 +27,25 @@
     box-sizing: border-box;
 }
 
+.help-dialog .help-section-touch {
+    display: none !important;
+}
+
+.help-dialog .help-section-desktop {
+    display: block !important;
+}
+
+@media (pointer: coarse), (any-pointer: coarse), (hover: none), (any-hover: none) {
+
+    .help-dialog .help-section-desktop {
+        display: none !important;
+    }
+
+    .help-dialog .help-section-touch {
+        display: block !important;
+    }
+}
+
 .help-dialog-header {
     display: flex;
     align-items: center;

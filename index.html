@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="./img/lmv.png" type="image/png">
+    <meta charset="UTF-8" />
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-  <title>LMV - Lightweight Mandelbrot Viewer</title>
+    <link rel="icon" href="./img/lmv.png" type="image/png">
 
-  <link rel="stylesheet" href="css/styles.css" />
+    <title>LMV - Lightweight Mandelbrot Viewer</title>
+
+    <link rel="stylesheet" href="css/styles.css" />
 </head>
 
 <body>
@@ -429,6 +432,7 @@
     </div>
 
     <div id="help-modal" class="help-modal hidden" role="dialog">
+
         <div class="help-dialog">
 
             <div class="help-dialog-header">
@@ -436,32 +440,56 @@
                 <button id="help-close-button" class="help-close-button" type="button">X</button>
             </div>
 
-            <dl class="help-list">
-                <div>
-                    <dt>Linke Maustaste ziehen</dt>
-                    <dd>Ansicht verschieben</dd>
-                </div>
-                <div>
-                    <dt>Linksklick ohne Ziehen</dt>
-                    <dd>Schrittweise herauszoomen</dd>
-                </div>
-                <div>
-                    <dt>Rechte Maustaste halten</dt>
-                    <dd>Zoom-Ziel wählen</dd>
-                </div>
-                <div>
-                    <dt>Mausrad bei Zoom-Ziel</dt>
-                    <dd>Zoombereich anpassen</dd>
-                </div>
-                <div>
-                    <dt>Mausrad ohne Zoom-Ziel</dt>
-                    <dd>Iterationstiefe ändern</dd>
-                </div>
-                <div>
-                    <dt>Rechter Fensterrand</dt>
-                    <dd>Control-Panel öffnen</dd>
-                </div>
-            </dl>
+            <section class="help-section help-section-desktop">
+                <h4>Desktop / Maus</h4>
+
+                <dl class="help-list">
+                    <div>
+                        <dt>Linke Maustaste ziehen</dt>
+                        <dd>Ansicht verschieben</dd>
+                    </div>
+                    <div>
+                        <dt>Doppelklick</dt>
+                        <dd>Schrittweise herauszoomen</dd>
+                    </div>
+                    <div>
+                        <dt>Rechte Maustaste halten</dt>
+                        <dd>Zoom-Ziel wählen</dd>
+                    </div>
+                    <div>
+                        <dt>Mausrad bei Zoom-Ziel</dt>
+                        <dd>Zoombereich anpassen</dd>
+                    </div>
+                    <div>
+                        <dt>Rechter Fensterrand oder seitliche Tabs</dt>
+                        <dd>Control-Panel öffnen</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <section class="help-section help-section-touch">
+                <h4>Touch / Tablet / Smartphone</h4>
+
+                <dl class="help-list">
+                    <div>
+                        <dt>Mit einem Finger ziehen</dt>
+                        <dd>Ansicht verschieben</dd>
+                    </div>
+                    <div>
+                        <dt>Zwei Finger auseinanderziehen</dt>
+                        <dd>In den gewählten Bereich hineinzoomen</dd>
+                    </div>
+                    <div>
+                        <dt>Doppeltippen</dt>
+                        <dd>Schrittweise herauszoomen</dd>
+                    </div>
+                    <div>
+                        <dt>Seitliche Tabs antippen</dt>
+                        <dd>Control-Panel öffnen</dd>
+                    </div>
+                </dl>
+            </section>
+
         </div>
     </div>
 
