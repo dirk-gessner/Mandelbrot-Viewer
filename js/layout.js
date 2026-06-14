@@ -162,13 +162,56 @@ function initializeCanvasAndView() {
     computationSettings.view = { ...initialView };
 }
 
+function openControlsDrawer() {
+    controlsDrawer.classList.add('open');
+    controlsDrawer.setAttribute('aria-expanded', 'true');
+}
+
+function closeControlsDrawer() {
+    controlsDrawer.classList.remove('open');
+    controlsDrawer.setAttribute('aria-expanded', 'false');
+}
+
+function toggleControlsDrawer() {
+    if (controlsDrawer.classList.contains('open')) {
+        closeControlsDrawer();
+    } else {
+        openControlsDrawer();
+    }
+}
+
 function initializeControlsDrawer() {
+    controlsDrawer.setAttribute('aria-expanded', 'false');
+
     controlsDrawer.addEventListener('mouseenter', () => {
-        controlsDrawer.classList.add('open');
+        if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+            openControlsDrawer();
+        }
     });
 
-    controlsCloseButton.addEventListener('click', () => {
-        controlsDrawer.classList.remove('open');
+    controlsDrawer.addEventListener('pointerdown', (event) => {
+        if (controlsDrawer.classList.contains('open')) {
+            return;
+        }
+
+        event.preventDefault();
+        openControlsDrawer();
     });
+
+    controlsCloseButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        closeControlsDrawer();
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeControlsDrawer();
+        }
+    });
+
+    window.setTimeout(() => {
+        controlsDrawer.classList.add('initial-reveal-done');
+    }, 2000);    
 }
 

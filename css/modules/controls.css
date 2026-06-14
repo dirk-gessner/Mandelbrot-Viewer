@@ -84,6 +84,28 @@ label,
   overflow-y: auto;
 }
 
+@media (pointer: coarse), (hover: none) {
+  .controls-drawer {
+    width: 44px;
+  }
+
+  .controls-drawer.open {
+    width: min(100vw, 332px);
+  }
+
+  .controls {
+    width: min(300px, calc(100vw - 44px));
+  }
+
+  .controls-close-button {
+    right: min(300px, calc(100vw - 44px));
+  }
+
+  .vertical-control-tabs {
+    right: min(300px, calc(100vw - 44px));
+  }
+}
+
 /* --------------------------------------------------------------*/
 /* Control Panel Close Button                                    */
 /* --------------------------------------------------------------*/
@@ -213,6 +235,12 @@ label,
     100% {
         transform: translateX(332px);
     }
+}
+
+.controls-drawer.initial-reveal-done .controls,
+.controls-drawer.initial-reveal-done .controls-close-button,
+.controls-drawer.initial-reveal-done .vertical-control-tabs {
+  animation: none;
 }
 
 /*---------------------------------------------------------------*/

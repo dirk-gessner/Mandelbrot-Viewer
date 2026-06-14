@@ -63,6 +63,10 @@ const app = Vue.createApp({
 
         setControlTab(tabKey) {
             this.activeControlTab = tabKey;
+            
+            if (typeof openControlsDrawer === 'function') {
+                openControlsDrawer();
+            }            
         },
 
         updateInfo() {
