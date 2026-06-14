@@ -124,42 +124,87 @@ function getCanvasCoords(event) {
     };
 }
 
+const tap = {
+  lastTime: 0,
+  lastX: 0,
+  lastY: 0,
+  maxDelayMs: 300,
+  maxDistancePx: 24,
+};
+
+function isDoubleTap(pos) {
+  const now = performance.now();
+  const dt = now - tap.lastTime;
+  const distance = Math.hypot(pos.x - tap.lastX, pos.y - tap.lastY);
+
+  const result = dt <= tap.maxDelayMs && distance <= tap.maxDistancePx;
+
+  tap.lastTime = now;
+  tap.lastX = pos.x;
+  tap.lastY = pos.y;
+
+  return result;
+}
+
+const activePointers = new Map();
+
+const pinch = {
+    active: false,
+    startDistance: 0,
+    startCenterX: 0,
+    startCenterY: 0,
+    startView: null,
+};
+
 // Kontextmenü verhindern
 canvas.addEventListener('contextmenu', event => event.preventDefault());
 
-// Mouse-Down: Startet die Auswahl eines neuen Bereichs
+// Pointer-Events für die Auswahl eines neuen Bereichs oder das Verschieben des Views
+canvas.addEventListener('pointerdown', handleCanvasPointerDown);
+canvas.addEventListener('pointermove', handleCanvasPointerMove);
+canvas.addEventListener('pointerup', handleCanvasPointerUp);
+canvas.addEventListener('pointercancel', handleCanvasPointerCancel);
+
+
+// Pointer-Down: Startet die Auswahl eines neuen Bereichs
 // -----------------------------------------------------------------------------
-canvas.addEventListener('mousedown', (event) => {
+function handleCanvasPointerDown(event) {
 
-      // linke Maustaste: Zoomt schrittweise zurück zum initialen View
-    if (event.button === 0) { 
-        const pos = getCanvasCoords(event);
+    canvas.setPointerCapture(event.pointerId);
 
-        pan.active = true;
-        pan.moved = false;
-        pan.startX = pos.x;
-        pan.startY = pos.y;
-        pan.dx = 0;
-        pan.dy = 0;
-    } 
-    // rechte Maustaste: Startet die Auswahl eines neuen Bereichs
-    else if (event.button === 2) {
+    if (event.pointerType === 'mouse') {
 
-        const pos = getCanvasCoords(event);
-        const { width, height } = canvas;
+        // linke Maustaste: Zoomt schrittweise zurück zum initialen View
+        if (event.button === 0) { 
+            const pos = getCanvasCoords(event);
 
-        selection.active  = true;
-        selection.centerX = pos.x;
-        selection.centerY = pos.y;
-        selection.width   = width * 0.25;
-        selection.height  = height * 0.25;
+            pan.active = true;
+            pan.moved = false;
+            pan.startX = pos.x;
+            pan.startY = pos.y;
+            pan.dx = 0;
+            pan.dy = 0;
+        } 
+        // rechte Maustaste: Startet die Auswahl eines neuen Bereichs
+        else if (event.button === 2) {
+
+            const pos = getCanvasCoords(event);
+            const { width, height } = canvas;
+
+            selection.active  = true;
+            selection.centerX = pos.x;
+            selection.centerY = pos.y;
+            selection.width   = width * 0.25;
+            selection.height  = height * 0.25;
+        }
+        drawScene();
     }
-    drawScene();
-});
+};
 
-// Mouse-Move: Aktualisiert die Position des Auswahlrahmens
+// Pointer-Move: Aktualisiert die Position des Auswahlrahmens
 // -----------------------------------------------------------------------------
-canvas.addEventListener('mousemove', (event) => {
+function handleCanvasPointerMove(event) {
+
     if (pan.active) {
         const pos = getCanvasCoords(event);
         pan.dx = Math.round(pos.x - pan.startX);
@@ -183,7 +228,84 @@ canvas.addEventListener('mousemove', (event) => {
         drawScene();
         return; 
     }
-});
+};
+
+// Pointer-Up: Bestätigt die Auswahl und zoomt in den neuen Bereich
+// -----------------------------------------------------------------------------
+function handleCanvasPointerUp(event) {
+
+
+    if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+    }
+
+    if (event.pointerType === 'touch') {
+
+        if (pan.active && !pan.moved) {
+
+            const pos = getCanvasCoords(event);
+
+            pan.active = false;
+            pan.moved  = false;
+            pan.dx = 0;
+            pan.dy = 0;
+
+            if (isDoubleTap(pos)) {
+                computationSettings.view = zoomOutView(
+                    computationSettings.view,
+                    computationSettings.initialView,
+                    2.0
+                );
+
+                computeRenderAndDrawScene();
+            }
+        }
+    }
+    
+    if (event.pointerType === 'mouse') {
+        if (! ( pan.active || selection.active )) {
+            return ; 
+        }
+
+        if (pan.active) {
+
+            const viewChanged = pan.moved;
+            if (viewChanged) {
+
+                computationSettings.view = shiftViewByPixels(
+                    computationSettings.view, 
+                    pan.dx, pan.dy, 
+                    canvas.width, canvas.height
+                );
+                computeRenderAndDrawScene(pan.dx, pan.dy);
+            } 
+
+            pan.active = false;
+            pan.moved  = false;
+            pan.dx = 0;
+            pan.dy = 0;
+
+        } else if (selection.active) {
+            computationSettings.view = getViewFromSelection( 
+                computationSettings.view, 
+                selection, 
+                canvas.width, canvas.height); 
+            selection.active = false;
+            computeRenderAndDrawScene();
+        }
+    }
+}
+
+function handleCanvasPointerCancel(event) {
+    pan.active = false;
+    selection.active = false;
+
+    if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId);
+    }
+
+    drawScene();
+}
 
 // Mouse-Wheel: Zoomt in oder aus, wenn die Auswahl aktiv ist, 
 // und passt die Größe des Auswahlrahmens an
@@ -196,90 +318,38 @@ canvas.addEventListener('wheel', (event) => {
         return;
     }
 
-    if (selection.active) {
-
-        event.preventDefault();
-
-        const cv = canvas;
-        const sl = selection;
-        const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1;
-
-        sl.width *= zoomFactor;
-        sl.height *= zoomFactor;
-
-        // Optional: Mindest- und Max-Größe begrenzen
-        sl.width = Math.max(20, Math.min(sl.width, cv.width));
-        sl.height = Math.max(20, Math.min(sl.height, cv.height));
-
-    } else {
-
-        // Verändere die iterationLimit mit dem Mausrad
-
-        // Alias für einfacheren Zugriff
-        const cs = computationSettings;
-        const limits = inputConstraints.iterationLimit;
-
-        cs.iterationLimit += event.deltaY < 0 ? 50 : -50;
-        cs.iterationLimit = Math.max(limits.min, Math.min(cs.iterationLimit, limits.max));
-
-        // Synchronisiere mit Vue-Inputfeld
-        app.iterationLimitInput = cs.iterationLimit; 
-
-        // Verzögerung von 250ms nach dem letzten Mausrad-Event;
-        clearTimeout(inputTimer);
-        inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
+    if (!selection.active) {
+        return
     }
+
+    event.preventDefault();
+
+    const cv = canvas;
+    const sl = selection;
+    const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1;
+
+    sl.width *= zoomFactor;
+    sl.height *= zoomFactor;
+
+    // Optional: Mindest- und Max-Größe begrenzen
+    sl.width = Math.max(20, Math.min(sl.width, cv.width));
+    sl.height = Math.max(20, Math.min(sl.height, cv.height));
+
     drawScene();
 }, { passive: false });
 
-// Mouse-Up: Bestätigt die Auswahl und zoomt in den neuen Bereich
+// Doppelklick: Zoomt schrittweise zurück zum initialen View
 // -----------------------------------------------------------------------------
-window.addEventListener('mouseup', () => {
+canvas.addEventListener('dblclick', event => {
+  event.preventDefault();
 
-    if (! ( pan.active || selection.active )) {
-        return ; 
-    }
+  computationSettings.view = zoomOutView(
+    computationSettings.view,
+    computationSettings.initialView,
+    2.0
+  );
 
-    let dx = 0; 
-    let dy = 0; 
-
-    if (pan.active) {
-
-        if (pan.moved) {
-
-            dx = pan.dx;
-            dy = pan.dy;
-
-            computationSettings.view = shiftViewByPixels(
-                computationSettings.view, 
-                dx, dy, 
-                canvas.width, canvas.height
-            );
-
-        } else {
-
-            computationSettings.view = zoomOutView(
-                computationSettings.view, 
-                computationSettings.initialView, 
-                2.0
-            );
-        }
-
-        pan.active = false;
-        pan.moved  = false;
-        pan.dx = 0;
-        pan.dy = 0;
-
-    } else if (selection.active) {
-        computationSettings.view = getViewFromSelection( 
-            computationSettings.view, 
-            selection, 
-            canvas.width, canvas.height); 
-        selection.active = false;
-    }
-
-    // Neuberechnung, REndering und Ausgabe der neuen View
-    computeRenderAndDrawScene(dx, dy);
+  computeRenderAndDrawScene();
 });
 
 // nach einem Resize-Event wird die Canvas-Größe angepasst und der View erweitert, 
