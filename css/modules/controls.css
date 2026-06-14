@@ -1,6 +1,17 @@
 /*---------------------------------------------------------------*/
 /* Control Panel                                                 */
 /*---------------------------------------------------------------*/
+
+button,
+select,
+input,
+label,
+.controls,
+.controls-drawer,
+.control-tab-button {
+  touch-action: manipulation;
+}
+
 .controls {
     background: #e9e9e9;
 
