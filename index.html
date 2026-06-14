@@ -83,13 +83,7 @@
                         </div>
 
                         <div id="misc-controls" class="control-group separation-line">
-                            <h3>Sonstiges</h3>
-                            <!--------------------------------------------------------------------->
-                            <div class="control-row">
-                                <button @click="saveCanvasAsPng" class="btn btn-outline control-button">
-                                    Als PNG speichern
-                                </button>
-                            </div>
+                            <p></p>
                             <div class="control-row">
                                 <button @click="resetView" class="btn btn-outline control-button">
                                     Ansicht zurücksetzen
@@ -161,9 +155,7 @@
                             </div>
 
                         </div>
-                    </div>
 
-                    <div v-show="activeControlTab === 'render'">
                         <div id="backendSettings" class="control-group separation-line"> 
                             <h3>Backend-Konfiguration</h3>
                             <!--------------------------------------------------------------------->
@@ -204,6 +196,9 @@
                             
                         </div>
 
+                    </div>
+
+                    <div v-show="activeControlTab === 'render'">
                         <div id="coloring-controls" class="control-group separation-line">
                             <h3>Image-Korrekturen</h3>
                             <!--------------------------------------------------------------------->
@@ -301,6 +296,18 @@
                             </div>
 
                         </div>
+
+                        <div id="misc-controls" class="control-group separation-line">
+
+                            <p></p>
+                            <div class="control-row">
+                                <button @click="saveCanvasAsPng" class="btn btn-outline control-button">
+                                    Als PNG speichern
+                                </button>
+                            </div>
+
+                        </div>
+
                     </div>
 
                     <div v-show="activeControlTab === 'audio'">
