@@ -172,33 +172,32 @@ function handleCanvasPointerDown(event) {
 
     canvas.setPointerCapture(event.pointerId);
 
-    if (event.pointerType === 'mouse') {
+    if (
+        (event.pointerType === 'mouse' && event.button === 0) ||
+         event.pointerType === 'touch'
+    ) {    
+        const pos = getCanvasCoords(event);
 
-        // linke Maustaste: Zoomt schrittweise zurück zum initialen View
-        if (event.button === 0) { 
-            const pos = getCanvasCoords(event);
+        pan.active = true;
+        pan.moved = false;
+        pan.startX = pos.x;
+        pan.startY = pos.y;
+        pan.dx = 0;
+        pan.dy = 0;
+    } 
+    // rechte Maustaste: Startet die Auswahl eines neuen Bereichs
+    else if (event.pointerType === 'mouse' && event.button === 2) {
 
-            pan.active = true;
-            pan.moved = false;
-            pan.startX = pos.x;
-            pan.startY = pos.y;
-            pan.dx = 0;
-            pan.dy = 0;
-        } 
-        // rechte Maustaste: Startet die Auswahl eines neuen Bereichs
-        else if (event.button === 2) {
+        const pos = getCanvasCoords(event);
+        const { width, height } = canvas;
 
-            const pos = getCanvasCoords(event);
-            const { width, height } = canvas;
-
-            selection.active  = true;
-            selection.centerX = pos.x;
-            selection.centerY = pos.y;
-            selection.width   = width * 0.25;
-            selection.height  = height * 0.25;
-        }
-        drawScene();
+        selection.active  = true;
+        selection.centerX = pos.x;
+        selection.centerY = pos.y;
+        selection.width   = width * 0.25;
+        selection.height  = height * 0.25;
     }
+    drawScene();
 };
 
 // Pointer-Move: Aktualisiert die Position des Auswahlrahmens
@@ -239,9 +238,9 @@ function handleCanvasPointerUp(event) {
         canvas.releasePointerCapture(event.pointerId);
     }
 
-    if (event.pointerType === 'touch') {
+    if (pan.active) {
 
-        if (pan.active && !pan.moved) {
+        if (event.pointerType === 'touch' && !pan.moved) {
 
             const pos = getCanvasCoords(event);
 
@@ -260,39 +259,34 @@ function handleCanvasPointerUp(event) {
                 computeRenderAndDrawScene();
             }
         }
-    }
-    
-    if (event.pointerType === 'mouse') {
-        if (! ( pan.active || selection.active )) {
-            return ; 
-        }
 
-        if (pan.active) {
+        if (pan.moved) {
 
-            const viewChanged = pan.moved;
-            if (viewChanged) {
-
-                computationSettings.view = shiftViewByPixels(
-                    computationSettings.view, 
-                    pan.dx, pan.dy, 
-                    canvas.width, canvas.height
-                );
-                computeRenderAndDrawScene(pan.dx, pan.dy);
-            } 
-
-            pan.active = false;
-            pan.moved  = false;
-            pan.dx = 0;
-            pan.dy = 0;
-
-        } else if (selection.active) {
-            computationSettings.view = getViewFromSelection( 
+            computationSettings.view = shiftViewByPixels(
                 computationSettings.view, 
-                selection, 
-                canvas.width, canvas.height); 
-            selection.active = false;
-            computeRenderAndDrawScene();
+                pan.dx, pan.dy, 
+                canvas.width, canvas.height
+            );
+            computeRenderAndDrawScene(pan.dx, pan.dy);
         }
+
+        pan.active = false;
+        pan.moved  = false;
+        pan.dx = 0;
+        pan.dy = 0;
+
+        return; 
+    }
+
+    if (event.pointerType === 'mouse' && selection.active ) {
+
+        computationSettings.view = getViewFromSelection( 
+            computationSettings.view, 
+            selection, 
+            canvas.width, canvas.height); 
+        selection.active = false;
+        computeRenderAndDrawScene();
+        return;
     }
 }
 
