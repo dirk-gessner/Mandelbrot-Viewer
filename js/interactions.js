@@ -15,16 +15,14 @@ function zoomOutView(
     zoomOutFactor = 2.0
 ) {
 
+    const centerX = (view.minX + view.maxX) / 2;
+    const centerY = (view.minY + view.maxY) / 2;
+
     const currentWidth = view.maxX - view.minX;
     const currentHeight = view.maxY - view.minY;
+
     const targetWidth = initialView.maxX - initialView.minX;
     const targetHeight = initialView.maxY - initialView.minY;
-
-    const currentCenterX = (view.minX + view.maxX) / 2;
-    const currentCenterY = (view.minY + view.maxY) / 2;
-
-    const targetCenterX = (initialView.minX + initialView.maxX) / 2;
-    const targetCenterY = (initialView.minY + initialView.maxY) / 2;
 
     const nextWidth = Math.min(currentWidth * zoomOutFactor, targetWidth);
     const nextHeight = Math.min(currentHeight * zoomOutFactor, targetHeight);
@@ -32,17 +30,21 @@ function zoomOutView(
     const sizeProgress =
         (nextWidth - currentWidth) / (targetWidth - currentWidth || 1);
 
-    const nextCenterX =
-        currentCenterX + (targetCenterX - currentCenterX) * sizeProgress;
-
-    const nextCenterY =
-        currentCenterY + (targetCenterY - currentCenterY) * sizeProgress;
+    if (nextWidth >= targetWidth || nextHeight >= targetHeight) {
+        return {
+            minX: initialView.minX,
+            maxX: initialView.maxX,
+            minY: initialView.minY,
+            maxY: initialView.maxY,
+        };
+    }
 
     return {
-        minX : nextCenterX - nextWidth  / 2,
-        maxX : nextCenterX + nextWidth  / 2,
-        minY : nextCenterY - nextHeight / 2,
-        maxY : nextCenterY + nextHeight / 2,
+        minX : centerX - nextWidth  / 2,
+        minX : centerX - nextWidth  / 2,
+        maxX : centerX + nextWidth  / 2,
+        minY : centerY - nextHeight / 2,
+        maxY : centerY + nextHeight / 2,
     }
 
 }
@@ -148,13 +150,184 @@ function isDoubleTap(pos) {
 
 const activePointers = new Map();
 
+let pinchFrameRequested = false;
+
 const pinch = {
     active: false,
     startDistance: 0,
     startCenterX: 0,
     startCenterY: 0,
     startView: null,
+
+    lastFrameCenterX: 0,
+    lastFrameCenterY: 0,
+    lastFrameWidth: 0,
+    lastFrameHeight: 0,
 };
+
+function getActivePointerList() {
+    return Array.from(activePointers.values());
+}
+
+function getPointerDistance(p1, p2) {
+    return Math.hypot(p2.x - p1.x, p2.y - p1.y);
+}
+
+function getPointerCenter(p1, p2) {
+    return {
+        x: (p1.x + p2.x) / 2,
+        y: (p1.y + p2.y) / 2,
+    };
+}
+
+function cloneView(view) {
+    return {
+        minX: view.minX,
+        maxX: view.maxX,
+        minY: view.minY,
+        maxY: view.maxY,
+    };
+}
+
+function getViewFromPinch(startView, startCenter, currentCenter, startDistance, currentDistance, imageWidth, imageHeight) {
+
+    if (currentDistance <= startDistance) {
+        return null;
+    }
+
+    const zoomFactor = startDistance / currentDistance;
+
+    const startViewWidth = startView.maxX - startView.minX;
+    const startViewHeight = startView.maxY - startView.minY;
+
+    const newViewWidth = startViewWidth * zoomFactor;
+    const newViewHeight = startViewHeight * zoomFactor;
+
+    const focalX = startView.minX + (startCenter.x / imageWidth) * startViewWidth;
+    const focalY = startView.minY + (startCenter.y / imageHeight) * startViewHeight;
+
+    const newMinX = focalX - (currentCenter.x / imageWidth) * newViewWidth;
+    const newMinY = focalY - (currentCenter.y / imageHeight) * newViewHeight;
+
+    return {
+        minX: newMinX,
+        maxX: newMinX + newViewWidth,
+        minY: newMinY,
+        maxY: newMinY + newViewHeight,
+    };
+}
+
+function startPinch() {
+    const pointers = getActivePointerList();
+
+    if (pointers.length !== 2) {
+        return;
+    }
+
+    const center = getPointerCenter(pointers[0], pointers[1]);
+
+    pinch.active = true;
+    pinch.startDistance = getPointerDistance(pointers[0], pointers[1]);
+    pinch.startCenterX = center.x;
+    pinch.startCenterY = center.y;
+    pinch.startView = cloneView(computationSettings.view);
+
+    pan.active = false;
+    pan.moved = false;
+    pan.dx = 0;
+    pan.dy = 0;
+}
+
+function finishPinch() {
+    const pointers = getActivePointerList();
+
+    if (!pinch.active || pointers.length !== 2) {
+        return false;
+    }
+
+    const currentDistance = getPointerDistance(pointers[0], pointers[1]);
+    const currentCenter = getPointerCenter(pointers[0], pointers[1]);
+
+    const newView = getViewFromSelection(
+        computationSettings.view,
+        selection,
+        canvas.width,
+        canvas.height
+    );
+
+    selection.active = false;
+    pinch.active = false;
+    pinch.startView = null;
+    pinchFrameRequested = false;
+
+    if (!newView) {
+        return false;
+    }
+
+    computationSettings.view = newView;
+    computeRenderAndDrawScene();
+
+    return true;
+}
+
+function updatePinchSelectionFrame() {
+    if (!pinch.active || activePointers.size !== 2) {
+        selection.active = false;
+        drawScene();
+        return;
+    }
+
+    const pointers = getActivePointerList();
+    const currentDistance = getPointerDistance(pointers[0], pointers[1]);
+    const currentCenter = getPointerCenter(pointers[0], pointers[1]);
+
+    if (currentDistance <= pinch.startDistance) {
+        selection.active = false;
+        drawScene();
+        return;
+    }
+
+    const scale = currentDistance / pinch.startDistance;
+
+    selection.active = true;
+    selection.centerX = currentCenter.x;
+    selection.centerY = currentCenter.y;
+    selection.width = canvas.width / scale;
+    selection.height = canvas.height / scale;
+
+    selection.width = Math.max(20, Math.min(selection.width, canvas.width));
+    selection.height = Math.max(20, Math.min(selection.height, canvas.height));
+
+    const changed =
+        Math.abs(selection.centerX - pinch.lastFrameCenterX) > 1 ||
+        Math.abs(selection.centerY - pinch.lastFrameCenterY) > 1 ||
+        Math.abs(selection.width - pinch.lastFrameWidth) > 1 ||
+        Math.abs(selection.height - pinch.lastFrameHeight) > 1;
+
+    if (!changed) {
+        return;
+    }
+
+    pinch.lastFrameCenterX = selection.centerX;
+    pinch.lastFrameCenterY = selection.centerY;
+    pinch.lastFrameWidth = selection.width;
+    pinch.lastFrameHeight = selection.height;
+
+    drawScene();
+}
+
+function requestPinchSelectionFrame() {
+    if (pinchFrameRequested) {
+        return;
+    }
+
+    pinchFrameRequested = true;
+
+    requestAnimationFrame(() => {
+        pinchFrameRequested = false;
+        updatePinchSelectionFrame();
+    });
+}
 
 // Kontextmenü verhindern
 canvas.addEventListener('contextmenu', event => event.preventDefault());
@@ -171,6 +344,29 @@ canvas.addEventListener('pointercancel', handleCanvasPointerCancel);
 function handleCanvasPointerDown(event) {
 
     canvas.setPointerCapture(event.pointerId);
+
+    if (event.pointerType === 'touch') {
+
+        const pos = getCanvasCoords(event);
+
+        activePointers.set(event.pointerId, {
+            x: pos.x,
+            y: pos.y,
+        });
+
+        if (activePointers.size === 1) {
+            pan.active = true;
+            pan.moved = false;
+            pan.startX = pos.x;
+            pan.startY = pos.y;
+            pan.dx = 0;
+            pan.dy = 0;
+        } else if (activePointers.size === 2) {
+            startPinch();
+        }
+
+        return;
+    }
 
     if (
         (event.pointerType === 'mouse' && event.button === 0) ||
@@ -204,6 +400,22 @@ function handleCanvasPointerDown(event) {
 // -----------------------------------------------------------------------------
 function handleCanvasPointerMove(event) {
 
+    if (event.pointerType === 'touch') {
+        const pos = getCanvasCoords(event);
+
+        if (activePointers.has(event.pointerId)) {
+            activePointers.set(event.pointerId, {
+                x: pos.x,
+                y: pos.y,
+            });
+        }
+
+        if (pinch.active) {
+            requestPinchSelectionFrame();
+            return;
+        }
+    }    
+
     if (pan.active) {
         const pos = getCanvasCoords(event);
         pan.dx = Math.round(pos.x - pan.startX);
@@ -236,6 +448,25 @@ function handleCanvasPointerUp(event) {
 
     if (canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
+    }
+
+    if (event.pointerType === 'touch') {
+        const pos = getCanvasCoords(event);
+
+        if (activePointers.has(event.pointerId)) {
+            activePointers.set(event.pointerId, {
+                x: pos.x,
+                y: pos.y,
+            });
+        }
+
+        if (pinch.active) {
+            finishPinch();
+            activePointers.delete(event.pointerId);
+            return;
+        }
+
+        activePointers.delete(event.pointerId);
     }
 
     if (pan.active) {
@@ -293,9 +524,17 @@ function handleCanvasPointerUp(event) {
 function handleCanvasPointerCancel(event) {
     pan.active = false;
     selection.active = false;
+    pinchFrameRequested = false;
 
     if (canvas.hasPointerCapture(event.pointerId)) {
-    canvas.releasePointerCapture(event.pointerId);
+        canvas.releasePointerCapture(event.pointerId);
+    }
+
+    activePointers.delete(event.pointerId);
+
+    if (activePointers.size === 0) {
+        pinch.active = false;
+        pinch.startView = null;
     }
 
     drawScene();
