@@ -1,4 +1,6 @@
-/* -- Controls -------------------------------------------------------------- */
+/*---------------------------------------------------------------*/
+/* Control Panel                                                 */
+/*---------------------------------------------------------------*/
 .controls {
     background: #e9e9e9;
 
@@ -13,9 +15,7 @@
 
     animation: reveal-controls 1.5s ease 0.4s;
     
-    overflow-y: auto; 
-    align-items: top;
-    justify-content: left;
+    overflow:visible;
     padding: 20px 20px;
     box-sizing: border-box;
     border-left: 1px solid #333; 
@@ -68,39 +68,13 @@
     transform: translateX(0);
 }
 
-.control-group {
-    margin-top: 20px;
-    margin-bottom: 20px;
+.controls-content {
+  height: 100%;
+  overflow-y: auto;
 }
 
-.separation-line {
-    border-top: 1px solid #888;
-}
-
-.control-group label {
-    font-weight: 100;
-}
-
-.control-group h3 {
-    font-weight:500;
-    margin-bottom: 5px; 
-}
-
-.control-row {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-bottom: 5px;
-}
-
-.btn.control-button {
-    background: rgba(0, 0, 0, 0.0);
-}
-
-.btn.control-button:hover {
-    background: rgba(0, 0, 0, 0.1);
-}
-
+/* --------------------------------------------------------------*/
+/* Control Panel Close Button                                    */
 /* --------------------------------------------------------------*/
 .controls-close-button {
     appearance: none;
@@ -143,6 +117,131 @@
     outline: none;
 }
 
+/*---------------------------------------------------------------*/
+/* Control Panel Tabs                                            */
+/*---------------------------------------------------------------*/
+
+.vertical-control-tabs {
+    position: absolute;
+    top: 44px;
+    right: 300px;
+
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    width: 32px;
+    min-height: 92px;
+
+    gap: 0px; 
+    z-index: 12;
+
+    transform: translateX(332px);
+    transition: transform 0.25s ease;    
+}
+
+.controls-drawer.open .vertical-control-tabs {
+    transform: translateX(0);
+}
+
+.vertical-control-tabs .control-tab-button {
+    appearance: none;
+    padding: 6px 8px;
+
+    border: 1px solid #777;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    box-shadow: -2px 2px 4px rgba(0, 0, 0, 0.12);
+
+    background: #b6b6b6;
+    color: #222;
+    cursor: pointer;
+    text-align: center;
+    font-size: 0.85rem;
+    line-height: 1.1;
+
+    writing-mode: vertical-lr;
+    text-orientation: mixed;
+}
+
+.vertical-control-tabs .control-tab-button:hover {
+    background: #e9e9e9;
+}
+
+.vertical-control-tabs .control-tab-button.active {
+    background: #e9e9e9;
+    font-weight: 600;
+    transform: translateX(1px);
+    border-right: none;
+}
+
+/*
+ * Close-Button und Tabs erhalten dieselbe Initial-Reveal-Animation wie das Panel.
+ * Die Animation bleibt auch im Open-State aktiv, damit sie beim Schließen nicht erneut getriggert wird.
+ */
+ 
+ .controls-close-button,
+.vertical-control-tabs {
+    animation: reveal-control-handles 1.5s ease 0.4s;
+}
+
+@keyframes reveal-control-handles {
+    0% {
+        transform: translateX(332px);
+    }
+
+    15% {
+        transform: translateX(0);
+    }
+
+    70% {
+        transform: translateX(0);
+    }
+
+    100% {
+        transform: translateX(332px);
+    }
+}
+
+/*---------------------------------------------------------------*/
+.control-group {
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+.separation-line {
+    border-top: 1px solid #888;
+}
+
+.control-group.separation-line {
+    padding-top: 0.75rem;
+}
+
+.control-group label {
+    font-weight: 100;
+}
+
+.control-group h3 {
+    font-weight:500;
+    margin-bottom: 5px; 
+}
+
+.control-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 5px;
+}
+
+.btn.control-button {
+    background: rgba(0, 0, 0, 0.0);
+}
+
+.btn.control-button:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
 .control-row-disabled label {
     color: var(--control-disabled-text-color, #888);
     cursor: not-allowed;
@@ -156,7 +255,7 @@
     cursor: not-allowed;
 }
 
-
+/*---------------------------------------------------------------*/
 #music-controls input[type="range"] {
   width: 100%;
 }

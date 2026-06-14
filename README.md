@@ -1,6 +1,6 @@
 # LMV – Lightweight Mandelbrot Viewer
 
-LMV ist ein interaktiver Mandelbrot-Viewer für den Webbrowser. Die Anwendung stellt die Mandelbrot-Menge auf einem HTML5-Canvas dar und erlaubt es, den Ausschnitt, die Berechnungsparameter, das Berechnungsbackend und die Farbgebung interaktiv zu verändern.
+LMV ist ein interaktiver Mandelbrot-Viewer für den Webbrowser. Die Anwendung stellt die Mandelbrot-Menge auf einem HTML5-Canvas dar und erlaubt es, den Ausschnitt, die Berechnungsparameter, das Berechnungsbackend, die Farbgebung und die optionale Musikwiedergabe (Karls Idee) interaktiv zu verändern.
 
 Das Projekt ist bewusst leichtgewichtig gehalten: Es gibt keine Build-Pipeline, keinen Bundler und kein Framework-Setup. Die Anwendung kann direkt über einen lokalen Webserver in einem modernen Browser gestartet werden.
 
@@ -12,7 +12,7 @@ Das Projekt ist bewusst leichtgewichtig gehalten: Es gibt keine Build-Pipeline, 
 
 LMV ist ein Lern- und Experimentierprojekt zur Mandelbrot-Menge. Der Viewer berechnet die Mandelbrot-Daten im Browser und erzeugt daraus ein farbig gerendertes Canvas-Bild.
 
-Die Anwendung eignet sich zum Erkunden der Mandelbrot-Menge, zum Experimentieren mit Zoomstufen, Iterationstiefe und Farbpaletten sowie zum Speichern interessanter Ansichten als PNG-Datei.
+Die Anwendung eignet sich zum Erkunden der Mandelbrot-Menge, zum Experimentieren mit Zoomstufen, Iterationstiefe, Farbpaletten und Backends sowie zum Speichern interessanter Ansichten als PNG-Datei.
 
 Die Berechnung kann je nach Konfiguration und Ansicht über ein CPU-Backend mit Web Workern, über ein klassisches WebGPU-Backend oder über ein WebGPU-Backend mit Perturbation-Ansatz erfolgen. Für Ansichten, bei denen die aktuelle WebGPU-Implementierung wegen `f32`-Präzision nicht mehr sinnvoll eingesetzt werden kann, kann die Anwendung automatisch auf Perturbation oder auf die CPU-Berechnung zurückfallen.
 
@@ -22,11 +22,11 @@ Die Berechnung kann je nach Konfiguration und Ansicht über ein CPU-Backend mit 
 - Zoom in frei wählbare Bildbereiche.
 - Verschieben des sichtbaren Ausschnitts per Maus.
 - Änderung der Iterationstiefe direkt über das Mausrad.
-- Anpassung der Darstellung über ein Control-Panel.
-- Auswahl verschiedener Farbpaletten.
-- Steuerung von Gamma-Korrektur, logarithmischer Skalierung, Smooth Coloring und Paletteninvertierung.
+- Thematisch gegliedertes Control-Panel mit seitlichen Tabs.
 - Anzeige der aktuellen X- und Y-Bereiche sowie des Zoom-Levels.
 - Anzeige der zuletzt verwendeten Berechnungszeit und des zuletzt verwendeten Backends.
+- Auswahl verschiedener Farbpaletten.
+- Steuerung von Gamma-Korrektur, logarithmischer Skalierung, Smooth Coloring und Paletteninvertierung.
 - Berechnung der `IterationData` über CPU-Worker, WebGPU oder WebGPU mit Perturbation.
 - Umschaltbare Backend-Konfiguration:
   - `CPU`
@@ -38,6 +38,7 @@ Die Berechnung kann je nach Konfiguration und Ansicht über ein CPU-Backend mit 
 - Automatischer CPU-Fallback, sofern die Backend-Konfiguration ihn erlaubt.
 - Sammlung, Priorisierung und optionale Anzeige von Referenzpunkten für die Perturbation-Berechnung.
 - Glitch-Erkennung für Perturbation-Ergebnisse mit Prüfung auf abgelaufene Referenzorbits, zu kleine Orbits, zu große Delta-Orbits und nicht endliche Werte.
+- Lokaler Musikplayer für selbst ausgewählte Audio-Dateien.
 - Speichern der aktuellen Ansicht als PNG.
 - Zurücksetzen auf den initialen Bildausschnitt.
 
@@ -52,7 +53,7 @@ Ein lokaler Webserver ist erforderlich, weil Web Worker und Modul-Worker in mode
 
 Der Viewer lädt Vue 3 über CDN:
 
-```html
+```text
 https://unpkg.com/vue@3/dist/vue.global.prod.js
 ```
 
@@ -76,59 +77,51 @@ Der große zentrale Bereich zeigt die Mandelbrot-Menge. Dort finden die wichtigs
 
 #### Control-Panel
 
-Das Control-Panel befindet sich als Overlay-Drawer am rechten Fensterrand.
+Das Control-Panel befindet sich als Overlay-Drawer am rechten Fensterrand. Beim Start fährt es kurz ein Stück heraus, um auf seine Position hinzuweisen. Über den rechten Fensterrand kann es geöffnet werden. Der Close-Button links neben dem Panel schließt es wieder.
+
+Die Inhalte des Control-Panels sind in seitliche Tabs gegliedert:
+
+| Tab | Inhalt |
+|---|---|
+| Ansicht | Aktueller Ausschnitt, Zoom-Level, letzte Berechnungszeit, verwendetes Backend, Zurücksetzen der Ansicht |
+| Berechnung | Iterationstiefe, Escape-Radius, CPU-Multithreading und Backend-Konfiguration |
+| Darstellung | Farbpalette, Farbe der inneren Menge, Gamma, Log-Skalierung, Smooth Coloring, Paletteninvertierung und PNG-Export |
+| Audio | Lokaler Musikplayer für ausgewählte Audio-Dateien |
+
+#### Aktionen im Control-Panel
 
 | Aktion | Bedienung |
 |---|---|
 | Control-Panel öffnen | Maus an den rechten Fensterrand bewegen |
 | Control-Panel schließen | Close-Button links neben dem geöffneten Control-Panel klicken |
-| PNG speichern | Im Control-Panel unter „Sonstiges“ den Button „Als PNG speichern“ verwenden |
-| Ansicht zurücksetzen | Im Control-Panel unter „Sonstiges“ den Button „Ansicht zurücksetzen“ verwenden |
+| Tab wechseln | Seitlichen Tab links am Control-Panel klicken |
+| Ansicht zurücksetzen | Im Tab „Ansicht“ den Button „Ansicht zurücksetzen“ verwenden |
+| PNG speichern | Im Tab „Darstellung“ den Button „Als PNG speichern“ verwenden |
 
-Das Control-Panel zeigt die aktuelle Ansicht und erlaubt die direkte Änderung von Berechnungs-, Multithreading-, Backend- und Darstellungsparametern.
+### Musikplayer
 
-Angezeigt werden:
+Der Musikplayer befindet sich im Tab „Audio“. Musikdateien werden nicht mit dem Projekt ausgeliefert und sollten auch nicht ins Repository eingecheckt werden. Stattdessen wählt der Nutzer lokal ein Musikverzeichnis aus.
 
-- X-Bereich,
-- Y-Bereich,
-- Zoom-Level,
-- Rechenzeit der letzten vollständigen `IterationData`-Aktualisierung in Sekunden,
-- zuletzt verwendetes Backend.
+Die Dateien bleiben lokal im Browser. Sie werden nicht hochgeladen und nicht im Projekt gespeichert. Die Anwendung erzeugt temporäre Objekt-URLs für die Dauer der Browser-Sitzung.
 
-Berechnungsparameter:
+Unterstützt werden aktuell:
 
-- Iterationstiefe,
-- Escape-Radius.
+- MP3-Dateien (`.mp3`)
+- WAV-Dateien (`.wav`)
 
-Multithreading-Parameter für das CPU-Backend:
+Funktionen des Musikplayers:
 
-- Anzahl Worker-Threads,
-- Tasks pro Worker.
+- lokales Musikverzeichnis auswählen,
+- Musikstück aus der geladenen Liste auswählen,
+- vorheriges Stück,
+- Wiedergabe starten,
+- Wiedergabe pausieren,
+- Wiedergabe stoppen,
+- nächstes Stück,
+- Lautstärke einstellen,
+- Playlist wiederholen.
 
-Backend-Konfiguration:
-
-- `CPU`,
-- `WebGPU`,
-- `WebGPU + Perturbation`,
-- `WebGPU + CPU-Fallback`,
-- `WebGPU + Perturbation + CPU-Fallback`,
-- Referenzpunkte für Perturbation anzeigen.
-
-Darstellungsparameter:
-
-- Farbpalette,
-- Farbe der inneren Menge,
-- Gamma-Korrektur,
-- Log-Skalierung,
-- Korrekturwert für die Farbskalierung,
-- Smooth Coloring ein/aus,
-- logarithmische Skalierung ein/aus,
-- Farbpalette invertieren.
-
-Sonstige Funktionen:
-
-- aktuelle Ansicht als PNG speichern,
-- Ansicht auf den initialen Ausschnitt zurücksetzen.
+Hinweis: Browser erlauben die Wiedergabe mit Ton in der Regel erst nach einer Nutzerinteraktion. Deshalb startet die Musik nicht automatisch beim Laden der Seite, sondern erst über die Player-Controls.
 
 ### Farbpaletten
 
@@ -136,49 +129,40 @@ Aktuell sind mehrere Palettentypen vorhanden.
 
 Cosinus-Paletten:
 
-- `Gold-Blau`,
-- `Feuer`,
-- `Eis`,
-- `Party`.
+- `Gold-Blau`
+- `Feuer`
+- `Eis`
+- `Party`
 
 Graustufen-Paletten:
 
-- `Graustufen`,
-- `Alternierende Graustufen`.
+- `Graustufen`
+- `Alternierende Graustufen`
 
 Weitere Paletten:
 
-- `HSV-Regenbogen`,
-- `Zyklische Farbbänder`.
+- `HSV-Regenbogen`
+- `Zyklische Farbbänder`
 
 Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 
-- Schwarz,
-- Weiß,
-- Magenta,
-- Cyan,
-- Gelb.
+- Schwarz
+- Weiß
+- Magenta
+- Cyan
+- Gelb
 
 ### Screenshots
 
 ![LMV Startansicht](img/screenshots/lmv-general-view.png)
-
 ![LMV Control-Panel](img/screenshots/lmv-control-panel.png)
-
 ![LMV Steuerung](img/screenshots/lmv-help-modal.png)
-
 ![LMV Farbmodus](img/screenshots/lmv-color-modes-01.png)
-
 ![LMV Farbmodus](img/screenshots/lmv-color-modes-02.png)
-
 ![LMV Farbmodus](img/screenshots/lmv-color-modes-03.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-01.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-02.png)
-
 ![LMV Zoom-Auswahl](img/screenshots/lmv-selection-frame-03.png)
-
 ![LMV Detailansicht](img/screenshots/lmv-detail-view.png)
 
 ---
@@ -221,6 +205,7 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
     ├── rendering.js
     ├── layout.js
     ├── interactions.js
+    ├── music.js
     ├── help.js
     ├── ui.js
     ├── file.js
@@ -229,13 +214,13 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 
 ### Wichtige Dateien
 
-- `index.html` enthält Seitenstruktur, Canvas, Render-Overlay, Control-Drawer, Help-Modal, Vue-gebundene Controls und die Script-Einbindung.
+- `index.html` enthält Seitenstruktur, Canvas, Render-Overlay, Control-Drawer, seitliche Control-Tabs, Help-Modal, Vue-gebundene Controls und die Script-Einbindung.
 - `css/styles.css` bindet die CSS-Module ein.
-- `css/modules/controls.css` enthält das Styling und die Animationen für den Control-Drawer und den Close-Button.
+- `css/modules/controls.css` enthält das Styling und die Animationen für den Control-Drawer, den Close-Button, die seitlichen Tabs und die Controls im Panel.
 - `css/modules/modal.css` enthält das Styling des Help-Modals.
 - `img/definition.svg` wird im Header als Formelgrafik eingebunden.
 - `js/dom.js` sammelt zentrale DOM-Referenzen wie Canvas, Context, Wrapper, Render-Overlay und Control-Drawer.
-- `js/settings.js` enthält Berechnungs-, Rendering-, Multithreading- und Backend-Einstellungen.
+- `js/settings.js` enthält Berechnungs-, Rendering-, Multithreading-, Backend- und Musik-Einstellungen.
 - `js/timing.js` enthält die Laufzeitmessung für vollständige Iterationsdaten-Aktualisierungen.
 - `js/palettes.js` definiert Farben und Farbpaletten.
 - `js/iteration-data.js` enthält generische Operationen auf Iterationsdaten, darunter Kopieren von Rechtecken, Dirty-Rect-Ermittlung, Panning- und Resize-Logik.
@@ -249,10 +234,37 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 - `js/rendering.js` enthält Rendering-Funktionen, den Aufbau von `ImageData` aus Iterationsdaten, Bildausgabe, Render-Overlay, Panning-Vorschau sowie das optionale Overlay für Perturbation-Referenzpunkte.
 - `js/layout.js` behandelt Canvas-Größe, initialen View, Seitenverhältnis, Resize-Logik und Reset der Ansicht.
 - `js/interactions.js` enthält Mausinteraktion, Panning, Zoom-Auswahl, Zoom-Out-Schritte, Mausradsteuerung und das Zeichnen des Auswahlrahmens mit Fadenkreuz.
+- `js/music.js` enthält den lokalen Audio-Player, das Laden von Audio-Dateien aus einem vom Nutzer ausgewählten Verzeichnis, Playlist-Verwaltung, temporäre Objekt-URLs und Player-Funktionen.
 - `js/help.js` steuert das Help-Modal.
-- `js/ui.js` enthält die Vue-App für das Control-Panel und synchronisiert UI-State mit Settings, Backend-Konfiguration und Laufzeitstatistik.
+- `js/ui.js` enthält die Vue-App für das Control-Panel und synchronisiert UI-State mit Settings, Backend-Konfiguration, Laufzeitstatistik, Tab-Auswahl und Musikplayer.
 - `js/file.js` enthält den PNG-Export des aktuellen Canvas.
 - `js/main.js` initialisiert Canvas, View, Control-Drawer, Help-Modal, UI-Info und startet die erste Berechnung.
+
+### UI-Struktur
+
+Das Control-Panel bleibt ein einfacher rechter Drawer. Die thematische Gliederung erfolgt über einen Vue-State `activeControlTab`. Die einzelnen Tab-Inhalte werden mit `v-show` ein- und ausgeblendet. Dadurch bleiben die Controls im DOM erhalten und verlieren ihren lokalen Zustand nicht beim Tab-Wechsel.
+
+Die seitlichen Tabs und der Close-Button sind außerhalb der eigentlichen Panel-Fläche positioniert. Dadurch wirken sie wie Reiter am Rand des Panels und bleiben visuell mit dem Drawer verbunden.
+
+### Musikplayer-Architektur
+
+Der Musikplayer arbeitet bewusst ohne ausgelieferte Audiodateien. Der Nutzer wählt lokal ein Verzeichnis aus. Die Anwendung filtert daraus unterstützte Audio-Dateien, baut eine Playlist auf und erzeugt für jede Datei eine temporäre Objekt-URL.
+
+Wichtige Zustände liegen in `musicSettings`:
+
+```js
+{
+  tracks: [],
+  selectedTrackIndex: -1,
+  volume: 0.25,
+  enabled: false,
+  loop: true
+}
+```
+
+`selectedTrackIndex` verweist auf den aktuell gewählten Eintrag in `tracks`. Dadurch muss die Playlist nicht mit stabilen statischen Track-IDs arbeiten. Das ist sinnvoll, weil die Musikliste erst zur Laufzeit aus lokalen Dateien entsteht.
+
+Nicht mehr benötigte Objekt-URLs sollten mit `URL.revokeObjectURL(...)` freigegeben werden, bevor eine neue Playlist geladen wird.
 
 ### Technische Details
 
@@ -283,14 +295,14 @@ Die zentrale Datenstruktur enthält:
 
 ```js
 {
-  width,                // Breite der Matrix in Pixeln
-  height,               // Höhe der Matrix in Pixeln
-  iterations,           // Uint16Array(width * height)
-  escapeValues,         // Float32Array(width * height)
-  minIterations,        // kleinster Iterationswert im Datensatz
-  maxObservedIterations,// größter beobachteter Iterationswert im Datensatz
-  referenceCandidates,  // Mandelbrot-Referenzkandidaten für Perturbation
-  perturbationStats     // optionale Diagnosewerte aus dem Perturbation-Shader
+  width,                 // Breite der Matrix in Pixeln
+  height,                // Höhe der Matrix in Pixeln
+  iterations,            // Uint16Array(width * height)
+  escapeValues,          // Float32Array(width * height)
+  minIterations,         // kleinster Iterationswert im Datensatz
+  maxObservedIterations, // größter beobachteter Iterationswert im Datensatz
+  referenceCandidates,   // Mandelbrot-Referenzkandidaten für Perturbation
+  perturbationStats      // optionale Diagnosewerte aus dem Perturbation-Shader
 }
 ```
 
@@ -342,7 +354,7 @@ Wenn die Pixelgröße unter die definierte Grenze für den klassischen `f32`-Sha
 
 Für kleine Rechtecke oder eine Worker-Anzahl von `1` wird ein einzelner CPU-Worker verwendet. Für größere Rechtecke wird das Rechteck horizontal in mehrere Tasks geteilt.
 
-Diese Tasks werden mit begrenzter Worker-Parallelität abgearbeitet. Konfigurierbar sind:
+Konfigurierbar sind:
 
 - Anzahl der Worker-Threads,
 - Anzahl der Tasks pro Worker.
