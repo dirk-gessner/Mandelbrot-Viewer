@@ -72,346 +72,346 @@
 
                     </div>                    
 
-                    <div v-show="activeControlTab === 'view'">
-                        <div id="info" class="control-group">
-                            <h3>Aktuelle Ansicht</h3>
-                            <!--------------------------------------------------------------------->
-                            <div class="control-row">
-                                X: {{ viewInfo.minX.toFixed(6) }} bis {{ viewInfo.maxX.toFixed(6) }}<br>
-                                Y: {{ viewInfo.minY.toFixed(6) }} bis {{ viewInfo.maxY.toFixed(6) }}<br>
-                                Zoom-Level: {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
-                            </div>
-                            <div class="control-row">
-                                Letzte Berechnung: {{ lastIterationDataUpdateSeconds.toFixed(3) }} s<br> 
-                                Backend: {{ lastComputationBackend }}                        
-                            </div>
-                        </div>
-
-                        <div id="misc-controls" class="control-group separation-line">
-                            <p></p>
-                            <div class="control-row">
-                                <button @click="resetView" class="btn btn-outline control-button">
-                                    Ansicht zurücksetzen
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div v-show="activeControlTab === 'compute'">
-                        <div id="calculation-controls" class="control-group separation-line">
-                            <h3>Parameter für die Berechnung</h3>
-                            <!--------------------------------------------------------------------->
-                            <div class="control-row">
-                                <label for="iterationLimitInput">Iterationstiefe:&nbsp;</label>
-                                <input
-                                    id="iterationLimitInput"
-                                    type="number"
-                                    :min="inputConstraints.iterationLimit.min"
-                                    :max="inputConstraints.iterationLimit.max"
-                                    :step="inputConstraints.iterationLimit.step"
-                                    :value="iterationLimitInput"
-                                    v-model.number="iterationLimitInput"
-                                    @change="updateMaxIterations">
+                    <div class="controls-content">
+                        <div v-show="activeControlTab === 'view'">
+                            <div id="info" class="control-group">
+                                <h3>Aktuelle Ansicht</h3>
+                                <!--------------------------------------------------------------------->
+                                <div class="control-row">
+                                    X: {{ viewInfo.minX.toFixed(6) }} bis {{ viewInfo.maxX.toFixed(6) }}<br>
+                                    Y: {{ viewInfo.minY.toFixed(6) }} bis {{ viewInfo.maxY.toFixed(6) }}<br>
+                                    Zoom-Level: {{ viewInfo.zoomLevel.toFixed(2) }}x<br>
+                                </div>
+                                <div class="control-row">
+                                    Letzte Berechnung: {{ lastIterationDataUpdateSeconds.toFixed(3) }} s<br> 
+                                    Backend: {{ lastComputationBackend }}                        
+                                </div>
                             </div>
 
-                            <div class="control-row">
-                                <label for="escapeRadiusInput">Escape-Radius:&nbsp;</label>
-                                <input
-                                    id="escapeRadiusInput"
-                                    type="number"
-                                    :min="inputConstraints.escapeRadius.min"
-                                    :max="inputConstraints.escapeRadius.max"
-                                    :step="inputConstraints.escapeRadius.step"
-                                    :value="escapeRadiusInput"
-                                    v-model.number="escapeRadiusInput"
-                                    @change="updateEscapeRadius">
+                            <div id="view-actions" class="control-group separation-line">
+                                <div class="control-row">
+                                    <button @click="resetView" class="btn btn-outline control-button">
+                                        Ansicht zurücksetzen
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
-                        <div id="multithreading" class="control-group separation-line"> 
-                            <h3>Parameter für Multithreading (CPU)</h3>
-                            <!--------------------------------------------------------------------->
-                            <div class="control-row" :class="{ 'control-row-disabled': isCpuBackendDisabled }">
-                                <label for="workerCountInput">Anzahl Worker-Threads:&nbsp;</label>
-                                <input
-                                    id="workerCountInput"
-                                    type="number"
-                                    :min="inputConstraints.workerCount.min"
-                                    :max="inputConstraints.workerCount.max"
-                                    :step="inputConstraints.workerCount.step"
-                                    :value="workerCountInput"
-                                    :disabled="isCpuBackendDisabled"
-                                    v-model.number="workerCountInput"
-                                    @change="updateWorkerCount">
-                            </div>
-
-                            <div class="control-row" :class="{ 'control-row-disabled': isCpuBackendDisabled }">
-                                <label for="tasksPerWorkerInput">Tasks pro Worker:&nbsp;</label>
-                                <input
-                                    id="tasksPerWorkerInput"
-                                    type="number"
-                                    :min="inputConstraints.tasksPerWorker.min"
-                                    :max="inputConstraints.tasksPerWorker.max"
-                                    :step="inputConstraints.tasksPerWorker.step"
-                                    :value="tasksPerWorkerInput"
-                                    :disabled="isCpuBackendDisabled"
-                                    v-model.number="tasksPerWorkerInput"
-                                    @change="updateTasksPerWorker">
-                            </div>
-
-                        </div>
-
-                        <div id="backendSettings" class="control-group separation-line"> 
-                            <h3>Backend-Konfiguration</h3>
-                            <!--------------------------------------------------------------------->
-
-                            <div class="control-row">
-                                <label for="backendModeSelect">Backend:</label>
-                                <select
-                                    id="backendModeSelect"
-                                    v-model="backendMode"
-                                    @change="updateBackendMode">
-                                    <option :value="MANDELBROT_BACKEND_MODE_CPU">
-                                        CPU
-                                    </option>
-                                    <option :value="MANDELBROT_BACKEND_MODE_WEBGPU">
-                                        WebGPU
-                                    </option>
-                                    <option :value="MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION">
-                                        WebGPU + Perturbation
-                                    </option>
-                                    <option :value="MANDELBROT_BACKEND_MODE_WEBGPU_CPU_FALLBACK">
-                                        WebGPU + CPU-Fallback
-                                    </option>
-                                    <option :value="MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK">
-                                        WebGPU + Perturbation + CPU-Fallback
-                                    </option>
-                                </select>
-                            </div>  
-
-                            <div class="control-row" :class="{ 'control-row-disabled': isPerturbationBackendDisabled }">
-                                <label>
+                        <div v-show="activeControlTab === 'compute'">
+                            <div id="calculation-controls" class="control-group separation-line">
+                                <h3>Parameter für die Berechnung</h3>
+                                <!--------------------------------------------------------------------->
+                                <div class="control-row">
+                                    <label for="iterationLimitInput">Iterationstiefe:&nbsp;</label>
                                     <input
-                                        type="checkbox"
-                                        v-model="showPerturbationReferences"
-                                        @change="updateRenderOptions">
-                                    Referenzpunkte anzeigen
-                                </label>
-                            </div>
-                            
-                        </div>
+                                        id="iterationLimitInput"
+                                        type="number"
+                                        :min="inputConstraints.iterationLimit.min"
+                                        :max="inputConstraints.iterationLimit.max"
+                                        :step="inputConstraints.iterationLimit.step"
+                                        :value="iterationLimitInput"
+                                        v-model.number="iterationLimitInput"
+                                        @change="updateMaxIterations">
+                                </div>
 
-                    </div>
-
-                    <div v-show="activeControlTab === 'render'">
-                        <div id="coloring-controls" class="control-group separation-line">
-                            <h3>Image-Korrekturen</h3>
-                            <!--------------------------------------------------------------------->
-                            <div class="control-row">
-                                <label for="paletteSelect">Farbpalette:</label>
-                                <select
-                                    id="paletteSelect"
-                                    v-model="selectedPaletteKey"
-                                    @change="updatePalette">
-                                    <option
-                                        v-for="(palette, key) in availablePalettes"
-                                        :key="key"
-                                        :value="key">
-                                        {{ palette.name }}
-                                    </option>
-                                </select>
-                            </div>
-                            
-                            <div class="control-row">
-                                <label for="innerSetColorSelect">Färbung der inneren Menge:</label>
-                                <select
-                                    id="innerSetColorSelect"
-                                    v-model="selectedInnerSetColorKey"
-                                    @change="updateInnerSetColor">
-                                    <option
-                                        v-for="(color, key) in availableColors"
-                                        :key="key"
-                                        :value="key">
-                                        {{ key }}
-                                    </option>
-                                </select>
-                            </div>
-                            
-                            <div class="control-row">
-                                <label>Gamma: {{ gamma.toFixed(2) }}</label><br>
-                                <input 
-                                    type="range" 
-                                    min="0" 
-                                    max="10" 
-                                    step="0.05" 
-                                    v-model.number="gamma"
-                                    @input="updateGamma">
-                            </div>
-
-                            <div class="control-row">
-                                <label>Log-Skalierung: {{ logStrength.toFixed(2) }}</label><br>
-                                <input 
-                                    type="range" 
-                                    min="0" 
-                                    max="1" 
-                                    step="0.05" 
-                                    v-model.number="logStrength"
-                                    @input="updateLogStrength">
-                            </div>  
-
-                            <div class="control-row">
-                                <label>Korrekturwert Farbskalierung: {{ colorScalingCorrection.toFixed(2) }}</label><br>
-                                <input 
-                                    type="range" 
-                                    min="0" 
-                                    max="5" 
-                                    step="0.5" 
-                                    v-model.number="colorScalingCorrection"
-                                    @input="updateColorscalingCorrection">
-                            </div>  
-
-                            <div class="control-row">
-                                <label>
+                                <div class="control-row">
+                                    <label for="escapeRadiusInput">Escape-Radius:&nbsp;</label>
                                     <input
-                                        type="checkbox"
-                                        v-model="smoothColoringEnabled"
-                                        @change="updateRenderOptions">
-                                    Smooth Coloring
-                                </label>
+                                        id="escapeRadiusInput"
+                                        type="number"
+                                        :min="inputConstraints.escapeRadius.min"
+                                        :max="inputConstraints.escapeRadius.max"
+                                        :step="inputConstraints.escapeRadius.step"
+                                        :value="escapeRadiusInput"
+                                        v-model.number="escapeRadiusInput"
+                                        @change="updateEscapeRadius">
+                                </div>
                             </div>
 
-                            <div class="control-row">
-                                <label>
+                            <div id="multithreading" class="control-group separation-line"> 
+                                <h3>Parameter für Multithreading (CPU)</h3>
+                                <!--------------------------------------------------------------------->
+                                <div class="control-row" :class="{ 'control-row-disabled': isCpuBackendDisabled }">
+                                    <label for="workerCountInput">Anzahl Worker-Threads:&nbsp;</label>
                                     <input
-                                        type="checkbox"
-                                        v-model="logScalingEnabled"
-                                        @change="updateRenderOptions">
-                                    Logarithmische Skalierung
-                                </label>
-                            </div>    
+                                        id="workerCountInput"
+                                        type="number"
+                                        :min="inputConstraints.workerCount.min"
+                                        :max="inputConstraints.workerCount.max"
+                                        :step="inputConstraints.workerCount.step"
+                                        :value="workerCountInput"
+                                        :disabled="isCpuBackendDisabled"
+                                        v-model.number="workerCountInput"
+                                        @change="updateWorkerCount">
+                                </div>
 
-                            <div class="control-row">
-                                <label>
+                                <div class="control-row" :class="{ 'control-row-disabled': isCpuBackendDisabled }">
+                                    <label for="tasksPerWorkerInput">Tasks pro Worker:&nbsp;</label>
                                     <input
-                                        type="checkbox"
-                                        v-model="invertedPalette"
-                                        @change="updateRenderOptions">
-                                    Farbpalette invertieren
-                                </label>
+                                        id="tasksPerWorkerInput"
+                                        type="number"
+                                        :min="inputConstraints.tasksPerWorker.min"
+                                        :max="inputConstraints.tasksPerWorker.max"
+                                        :step="inputConstraints.tasksPerWorker.step"
+                                        :value="tasksPerWorkerInput"
+                                        :disabled="isCpuBackendDisabled"
+                                        v-model.number="tasksPerWorkerInput"
+                                        @change="updateTasksPerWorker">
+                                </div>
+
+                            </div>
+
+                            <div id="backendSettings" class="control-group separation-line"> 
+                                <h3>Backend-Konfiguration</h3>
+                                <!--------------------------------------------------------------------->
+
+                                <div class="control-row">
+                                    <label for="backendModeSelect">Backend:</label>
+                                    <select
+                                        id="backendModeSelect"
+                                        v-model="backendMode"
+                                        @change="updateBackendMode">
+                                        <option :value="MANDELBROT_BACKEND_MODE_CPU">
+                                            CPU
+                                        </option>
+                                        <option :value="MANDELBROT_BACKEND_MODE_WEBGPU">
+                                            WebGPU
+                                        </option>
+                                        <option :value="MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION">
+                                            WebGPU + Perturbation
+                                        </option>
+                                        <option :value="MANDELBROT_BACKEND_MODE_WEBGPU_CPU_FALLBACK">
+                                            WebGPU + CPU-Fallback
+                                        </option>
+                                        <option :value="MANDELBROT_BACKEND_MODE_WEBGPU_PERTURBATION_CPU_FALLBACK">
+                                            WebGPU + Perturbation + CPU-Fallback
+                                        </option>
+                                    </select>
+                                </div>  
+
+                                <div class="control-row" :class="{ 'control-row-disabled': isPerturbationBackendDisabled }">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            v-model="showPerturbationReferences"
+                                            @change="updateRenderOptions">
+                                        Referenzpunkte anzeigen
+                                    </label>
+                                </div>
+                                
                             </div>
 
                         </div>
 
-                        <div id="misc-controls" class="control-group separation-line">
+                        <div v-show="activeControlTab === 'render'">
+                            <div id="coloring-controls" class="control-group separation-line">
+                                <h3>Image-Korrekturen</h3>
+                                <!--------------------------------------------------------------------->
+                                <div class="control-row">
+                                    <label for="paletteSelect">Farbpalette:</label>
+                                    <select
+                                        id="paletteSelect"
+                                        v-model="selectedPaletteKey"
+                                        @change="updatePalette">
+                                        <option
+                                            v-for="(palette, key) in availablePalettes"
+                                            :key="key"
+                                            :value="key">
+                                            {{ palette.name }}
+                                        </option>
+                                    </select>
+                                </div>
+                                
+                                <div class="control-row">
+                                    <label for="innerSetColorSelect">Färbung der inneren Menge:</label>
+                                    <select
+                                        id="innerSetColorSelect"
+                                        v-model="selectedInnerSetColorKey"
+                                        @change="updateInnerSetColor">
+                                        <option
+                                            v-for="(color, key) in availableColors"
+                                            :key="key"
+                                            :value="key">
+                                            {{ key }}
+                                        </option>
+                                    </select>
+                                </div>
+                                
+                                <div class="control-row">
+                                    <label>Gamma: {{ gamma.toFixed(2) }}</label><br>
+                                    <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="10" 
+                                        step="0.05" 
+                                        v-model.number="gamma"
+                                        @input="updateGamma">
+                                </div>
 
-                            <p></p>
-                            <div class="control-row">
-                                <button @click="saveCanvasAsPng" class="btn btn-outline control-button">
-                                    Als PNG speichern
-                                </button>
+                                <div class="control-row">
+                                    <label>Log-Skalierung: {{ logStrength.toFixed(2) }}</label><br>
+                                    <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="1" 
+                                        step="0.05" 
+                                        v-model.number="logStrength"
+                                        @input="updateLogStrength">
+                                </div>  
+
+                                <div class="control-row">
+                                    <label>Korrekturwert Farbskalierung: {{ colorScalingCorrection.toFixed(2) }}</label><br>
+                                    <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="5" 
+                                        step="0.5" 
+                                        v-model.number="colorScalingCorrection"
+                                        @input="updateColorscalingCorrection">
+                                </div>  
+
+                                <div class="control-row">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            v-model="smoothColoringEnabled"
+                                            @change="updateRenderOptions">
+                                        Smooth Coloring
+                                    </label>
+                                </div>
+
+                                <div class="control-row">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            v-model="logScalingEnabled"
+                                            @change="updateRenderOptions">
+                                        Logarithmische Skalierung
+                                    </label>
+                                </div>    
+
+                                <div class="control-row">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            v-model="invertedPalette"
+                                            @change="updateRenderOptions">
+                                        Farbpalette invertieren
+                                    </label>
+                                </div>
+
+                            </div>
+
+                            <div id="render-actions" class="control-group separation-line">
+
+                                <div class="control-row">
+                                    <button @click="saveCanvasAsPng" class="btn btn-outline control-button">
+                                        Als PNG speichern
+                                    </button>
+                                </div>
+
                             </div>
 
                         </div>
 
-                    </div>
+                        <div v-show="activeControlTab === 'audio'">
+                            <div id="music-controls" class="control-group separation-line">
 
-                    <div v-show="activeControlTab === 'audio'">
-                        <div id="music-controls" class="control-group separation-line">
+                                <h3>Musik</h3>
 
-                            <h3>Musik</h3>
+                                <div class="control-row music-directory-row">
+                                    <span>Musikverzeichnis:</span>
+                                
+                                    <label for="musicDirectoryInput" class="btn btn-outline music-directory-button">
+                                        Ordner auswählen
+                                    </label>
+                                
+                                    <input 
+                                        id="musicDirectoryInput" 
+                                        class="hidden-file-input" 
+                                        type="file" 
+                                        accept="audio/mpeg,audio/wav,audio/wave,audio/x-wav,.mp3,.wav"
+                                        multiple
+                                        webkitdirectory @change="loadMusicDirectory">
+                                </div>
 
-                            <div class="control-row music-directory-row">
-                                <span>Musikverzeichnis:</span>
-                            
-                                <label for="musicDirectoryInput" class="btn btn-outline music-directory-button">
-                                    Ordner auswählen
-                                </label>
-                            
-                                <input 
-                                    id="musicDirectoryInput" 
-                                    class="hidden-file-input" 
-                                    type="file" 
-                                    accept="audio/mpeg,audio/wav,audio/wave,audio/x-wav,.mp3,.wav"
-                                    multiple
-                                    webkitdirectory @change="loadMusicDirectory">
-                            </div>
+                                <div class="control-row">
+                                    <label for="musicTrackSelect">Musikstück:</label>
 
-                            <div class="control-row">
-                                <label for="musicTrackSelect">Musikstück:</label>
+                                    <select 
+                                        id="musicTrackSelect" 
+                                        v-model.number="selectedMusicTrackIndex" 
+                                        @change="updateMusicTrack"
+                                        :disabled="availableMusicTracks.length === 0">
 
-                                <select 
-                                    id="musicTrackSelect" 
-                                    v-model.number="selectedMusicTrackIndex" 
-                                    @change="updateMusicTrack"
-                                    :disabled="availableMusicTracks.length === 0">
+                                        <option v-for="(track, index) in availableMusicTracks" :key="track.src" :value="index">
+                                            {{ track.title }}
+                                        </option>
 
-                                    <option v-for="(track, index) in availableMusicTracks" :key="track.src" :value="index">
-                                        {{ track.title }}
-                                    </option>
+                                    </select>
+                                </div>
 
-                                </select>
-                            </div>
+                                <div class="control-row music-player-buttons">
+                                    <button 
+                                        @click="previousMusicTrack" 
+                                        class="btn btn-outline music-button"
+                                        :disabled="availableMusicTracks.length === 0">
+                                        ⏮
+                                    </button>
 
-                            <div class="control-row music-player-buttons">
-                                <button 
-                                    @click="previousMusicTrack" 
-                                    class="btn btn-outline music-button"
-                                    :disabled="availableMusicTracks.length === 0">
-                                    ⏮
-                                </button>
+                                    <button 
+                                        @click="playMusicPlayback" 
+                                        class="btn btn-outline music-button"
+                                        :disabled="availableMusicTracks.length === 0">
+                                        ▶
+                                    </button>
 
-                                <button 
-                                    @click="playMusicPlayback" 
-                                    class="btn btn-outline music-button"
-                                    :disabled="availableMusicTracks.length === 0">
-                                    ▶
-                                </button>
+                                    <button 
+                                        @click="pauseMusicPlayback" 
+                                        class="btn btn-outline music-button"
+                                        :disabled="availableMusicTracks.length === 0">
+                                        ⏸
+                                    </button>
 
-                                <button 
-                                    @click="pauseMusicPlayback" 
-                                    class="btn btn-outline music-button"
-                                    :disabled="availableMusicTracks.length === 0">
-                                    ⏸
-                                </button>
+                                    <button 
+                                        @click="stopMusicPlayback" 
+                                        class="btn btn-outline music-button"
+                                        :disabled="availableMusicTracks.length === 0">
+                                        ⏹
+                                    </button>
 
-                                <button 
-                                    @click="stopMusicPlayback" 
-                                    class="btn btn-outline music-button"
-                                    :disabled="availableMusicTracks.length === 0">
-                                    ⏹
-                                </button>
+                                    <button 
+                                        @click="nextMusicTrack" 
+                                        class="btn btn-outline music-button"
+                                        :disabled="availableMusicTracks.length === 0">
+                                        ⏭
+                                    </button>
+                                </div>
 
-                                <button 
-                                    @click="nextMusicTrack" 
-                                    class="btn btn-outline music-button"
-                                    :disabled="availableMusicTracks.length === 0">
-                                    ⏭
-                                </button>
-                            </div>
+                                <div class="control-row">
+                                    <label>Lautstärke: {{ Math.round(musicVolume * 100) }} %</label>
 
-                            <div class="control-row">
-                                <label>Lautstärke: {{ Math.round(musicVolume * 100) }} %</label>
+                                    <input type="range" min="0" max="1" step="0.01" v-model.number="musicVolume" @input="updateMusicVolume">
+                                </div>
 
-                                <input type="range" min="0" max="1" step="0.01" v-model.number="musicVolume" @input="updateMusicVolume">
-                            </div>
+                                <div class="control-row">
+                                    <label>
+                                        <input type="checkbox" v-model="musicLoop" @change="updateMusicLoop">
 
-                            <div class="control-row">
-                                <label>
-                                    <input type="checkbox" v-model="musicLoop" @change="updateMusicLoop">
+                                        Playlist wiederholen
+                                    </label>
+                                </div>
 
-                                    Playlist wiederholen
-                                </label>
-                            </div>
+                                <div class="control-row" v-if="availableMusicTracks.length === 0">
+                                    <small>Kein Musikverzeichnis ausgewählt.</small>
+                                </div>
 
-                            <div class="control-row" v-if="availableMusicTracks.length === 0">
-                                <small>Kein Musikverzeichnis ausgewählt.</small>
-                            </div>
+                                <div class="control-row" v-if="availableMusicTracks.length > 0">
+                                    <small>{{ availableMusicTracks.length }} Musikstücke geladen.</small>
+                                </div>
 
-                            <div class="control-row" v-if="availableMusicTracks.length > 0">
-                                <small>{{ availableMusicTracks.length }} Musikstücke geladen.</small>
-                            </div>
-
-                        </div>       
+                            </div>       
+                        </div>
                     </div>
 
                 </aside>

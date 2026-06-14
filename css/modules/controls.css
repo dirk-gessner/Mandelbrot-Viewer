@@ -16,8 +16,6 @@
     animation: reveal-controls 1.5s ease 0.4s;
     
     overflow:visible;
-    align-items: top;
-    justify-content: left;
     padding: 20px 20px;
     box-sizing: border-box;
     border-left: 1px solid #333; 
@@ -124,7 +122,6 @@
 /*---------------------------------------------------------------*/
 
 .vertical-control-tabs {
-    appearance: none;
     position: absolute;
     top: 44px;
     right: 300px;
@@ -179,7 +176,12 @@
     border-right: none;
 }
 
-.controls-close-button,
+/*
+ * Close-Button und Tabs erhalten dieselbe Initial-Reveal-Animation wie das Panel.
+ * Die Animation bleibt auch im Open-State aktiv, damit sie beim Schließen nicht erneut getriggert wird.
+ */
+ 
+ .controls-close-button,
 .vertical-control-tabs {
     animation: reveal-control-handles 1.5s ease 0.4s;
 }
@@ -202,12 +204,6 @@
     }
 }
 
-/* .controls-drawer.open .controls-close-button,
-.controls-drawer.open .vertical-control-tabs {
-  transform: translateX(0);
-  animation: none;
-} */
-
 /*---------------------------------------------------------------*/
 .control-group {
     margin-top: 20px;
@@ -216,6 +212,10 @@
 
 .separation-line {
     border-top: 1px solid #888;
+}
+
+.control-group.separation-line {
+    padding-top: 0.75rem;
 }
 
 .control-group label {
