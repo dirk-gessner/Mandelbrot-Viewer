@@ -179,6 +179,35 @@
     border-right: none;
 }
 
+.controls-close-button,
+.vertical-control-tabs {
+    animation: reveal-control-handles 1.5s ease 0.4s;
+}
+
+@keyframes reveal-control-handles {
+    0% {
+        transform: translateX(332px);
+    }
+
+    15% {
+        transform: translateX(0);
+    }
+
+    70% {
+        transform: translateX(0);
+    }
+
+    100% {
+        transform: translateX(332px);
+    }
+}
+
+/* .controls-drawer.open .controls-close-button,
+.controls-drawer.open .vertical-control-tabs {
+  transform: translateX(0);
+  animation: none;
+} */
+
 /*---------------------------------------------------------------*/
 .control-group {
     margin-top: 20px;
