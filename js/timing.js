@@ -2,6 +2,13 @@
 const COMPUTATION_BACKEND_CPU = "CPU";
 const COMPUTATION_BACKEND_WEBGPU = "WebGPU";
 
+/**
+ * @typedef {Object} RuntimeStats
+ * @property {number} iterationDataUpdateStartedAt          - (integer) Timestamp, wann die aktuelle Datenaktualisierung begonnen hat.
+ * @property {number} lastIterationDataUpdateMs             - (integer) Dauer der letzten vollständigen Datenaktualisierung in Millisekunden.
+ * @property {number|null} lastIterationDataUpdateSeconds   - (integer) Dauer der letzten vollständigen Datenaktualisierung.
+ * @property {string|null} lastComputationBackend           - (string) Zuletzt tatsächlich verwendetes Backend.
+ */
 const runtimeStats = {
     iterationDataUpdateStartedAt: 0,
     lastIterationDataUpdateMs: 0,

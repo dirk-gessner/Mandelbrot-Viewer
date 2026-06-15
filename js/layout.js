@@ -8,9 +8,13 @@ function resetView() {
     computeRenderAndDrawScene();
 }
 
-// Berechnet den initialen View basierend auf dem Seitenverhältnis der Canvas,
-// um sicherzustellen, dass der relevante Bereich der Mandelbrot-Menge immer 
-// vollständig sichtbar ist, ohne Verzerrung
+/**
+ * Erzeugt den initialen View so, dass der definierte Mandelbrot-Startbereich
+ * vollständig sichtbar bleibt und an das Canvas-Seitenverhältnis angepasst wird.
+ *
+ * @param {number} aspectRatio - Breite/Höhe des Canvas.
+ * @returns {View} Sichtbarer Ausschnitt der komplexen Ebene.
+ */
 function createInitialViewForAspectRatio(aspectRatio) {
     const requiredView = {
         minX: -2.5,
@@ -49,8 +53,17 @@ function createInitialViewForAspectRatio(aspectRatio) {
     };
 }
 
-// Erweitert den aktuellen View so, dass er das Ziel-Seitenverhältnis erfüllt,
-// ohne den Mittelpunkt zu verändern, um Verzerrungen zu vermeiden
+/**
+ * Erweitert einen View auf ein Ziel-Seitenverhältnis, ohne den Mittelpunkt
+ * des aktuellen Ausschnitts zu verschieben.
+ *
+ * Die Funktion zoomt nicht hinein, sondern erweitert bei Bedarf horizontal
+ * oder vertikal, damit das Bild nach einem Resize nicht verzerrt wird.
+ *
+ * @param {View} view - Aktueller Ausschnitt der komplexen Ebene.
+ * @param {number} targetAspectRatio - Ziel-Seitenverhältnis Breite/Höhe.
+ * @returns {View} Neuer, seitenverhältnistreuer View.
+ */
 function expandViewToAspectRatio(view, targetAspectRatio) {
 
     const currentWidth = view.maxX - view.minX;
@@ -162,13 +175,72 @@ function initializeCanvasAndView() {
     computationSettings.view = { ...initialView };
 }
 
+function openControlsDrawer() {
+    controlsDrawer.classList.add('open');
+    controlsDrawer.setAttribute('aria-expanded', 'true');
+}
+
+function closeControlsDrawer() {
+    controlsDrawer.classList.remove('open');
+    controlsDrawer.setAttribute('aria-expanded', 'false');
+}
+
+/**
+ * Umschaltfunktion für spätere explizite Toggle-Buttons.
+ *
+ * Aktuell wird der Drawer über open/close direkt gesteuert.
+ *
+ * @returns {void}
+ */
+function toggleControlsDrawer() {
+    if (controlsDrawer.classList.contains('open')) {
+        closeControlsDrawer();
+    } else {
+        openControlsDrawer();
+    }
+}
+
+/**
+ * Initialisiert den Control-Drawer für Maus-, Touch- und Tastaturbedienung.
+ *
+ * Desktop: Öffnen per Hover.
+ * Touch: Öffnen per Pointer-Down auf die Griff-/Tab-Fläche.
+ * Tastatur: Schließen per Escape.
+ *
+ * @returns {void}
+ */
 function initializeControlsDrawer() {
+    controlsDrawer.setAttribute('aria-expanded', 'false');
+
     controlsDrawer.addEventListener('mouseenter', () => {
-        controlsDrawer.classList.add('open');
+        if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+            openControlsDrawer();
+        }
     });
 
-    controlsCloseButton.addEventListener('click', () => {
-        controlsDrawer.classList.remove('open');
+    controlsDrawer.addEventListener('pointerdown', (event) => {
+        if (controlsDrawer.classList.contains('open')) {
+            return;
+        }
+
+        event.preventDefault();
+        openControlsDrawer();
     });
+
+    controlsCloseButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        closeControlsDrawer();
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeControlsDrawer();
+        }
+    });
+
+    window.setTimeout(() => {
+        controlsDrawer.classList.add('initial-reveal-done');
+    }, 2000);    
 }
 

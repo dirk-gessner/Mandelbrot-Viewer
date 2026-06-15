@@ -20,9 +20,12 @@ Die Berechnung kann je nach Konfiguration und Ansicht über ein CPU-Backend mit 
 
 - Interaktive Darstellung der Mandelbrot-Menge im Browser.
 - Zoom in frei wählbare Bildbereiche.
-- Verschieben des sichtbaren Ausschnitts per Maus.
-- Änderung der Iterationstiefe direkt über das Mausrad.
+- Verschieben des sichtbaren Ausschnitts per Maus oder Touch-Geste.
+- Schrittweiser Zoom-Out per Doppelklick oder Double-Tap.
+- Touch-Zoom-In per Zwei-Finger-Geste auf dem Canvas.
+- Änderung der Größe des Zoom-Zielbereichs per Mausrad.
 - Thematisch gegliedertes Control-Panel mit seitlichen Tabs.
+- Control-Panel mit explizitem Drawer-State für Maus-, Touch- und Tastaturbedienung.
 - Anzeige der aktuellen X- und Y-Bereiche sowie des Zoom-Levels.
 - Anzeige der zuletzt verwendeten Berechnungszeit und des zuletzt verwendeten Backends.
 - Auswahl verschiedener Farbpaletten.
@@ -41,6 +44,7 @@ Die Berechnung kann je nach Konfiguration und Ansicht über ein CPU-Backend mit 
 - Lokaler Musikplayer für selbst ausgewählte Audio-Dateien.
 - Speichern der aktuellen Ansicht als PNG.
 - Zurücksetzen auf den initialen Bildausschnitt.
+- Responsive Anpassungen für Tablets und Smartphones, einschließlich angepasster Touch-Flächen und ausgeblendeter Header-Grafik auf kleinen Displays.
 
 ### Inbetriebnahme
 
@@ -65,19 +69,42 @@ Für das WebGPU-Backend wird ein Browser mit WebGPU-Unterstützung benötigt. Is
 
 #### Canvas
 
-Der große zentrale Bereich zeigt die Mandelbrot-Menge. Dort finden die wichtigsten Interaktionen statt: Zoomen, Verschieben und Ändern der Iterationstiefe.
+Der große zentrale Bereich zeigt die Mandelbrot-Menge. Dort finden die wichtigsten Interaktionen statt: Zoomen, Verschieben und Ändern der Zoom-Zielgröße.
+
+##### Desktop / Maus
 
 | Aktion | Bedienung |
 |---|---|
 | Ansicht verschieben | Linke Maustaste auf dem Canvas gedrückt halten und ziehen |
-| Zoom-Out | Linke Maustaste klicken, ohne zu ziehen |
+| Schrittweise herauszoomen | Doppelklick auf den Canvas |
 | Zoom-In | Rechte Maustaste drücken, Auswahlrahmen positionieren, optional mit Mausrad skalieren, dann loslassen |
 | Auswahlrahmen positionieren | Rechte Maustaste gedrückt halten und Maus bewegen |
-| Iterationstiefe ändern | Mausrad über dem Canvas verwenden, solange keine Zoom-Auswahl aktiv ist |
+| Auswahlrahmen skalieren | Mausrad verwenden, solange eine Zoom-Auswahl aktiv ist |
+
+##### Touch / Tablet / Smartphone
+
+| Aktion | Bedienung |
+|---|---|
+| Ansicht verschieben | Mit einem Finger auf dem Canvas ziehen |
+| Zoom-In | Zwei Finger auf dem Canvas auseinanderziehen |
+| Schrittweise herauszoomen | Doppelt auf den Canvas tippen |
+| Control-Panel öffnen | Seitliche Tabs oder rechten Fensterrand antippen |
+
+Touch-Gesten werden über Pointer-Events verarbeitet. Zwei-Finger-Gesten sind auf das Canvas begrenzt, damit die übrige Oberfläche bedienbar bleibt.
 
 #### Control-Panel
 
-Das Control-Panel befindet sich als Overlay-Drawer am rechten Fensterrand. Beim Start fährt es kurz ein Stück heraus, um auf seine Position hinzuweisen. Über den rechten Fensterrand kann es geöffnet werden. Der Close-Button links neben dem Panel schließt es wieder.
+Das Control-Panel befindet sich als Overlay-Drawer am rechten Fensterrand. Beim Start fährt es kurz ein Stück heraus, um auf seine Position hinzuweisen.
+
+Der dauerhafte Sichtbarkeitszustand des Drawers wird über die CSS-Klasse `.open` gesteuert. JavaScript setzt diese Klasse explizit:
+
+- auf Desktop-Geräten beim Überfahren des rechten Fensterrands mit der Maus,
+- auf Touch-Geräten per Pointer-/Tap-Ereignis,
+- beim Antippen der seitlichen Tabs,
+- beim Schließen über den Close-Button,
+- beim Schließen über die `Escape`-Taste.
+
+Auf Touch-Geräten ist die geschlossene Trefferfläche größer als auf Desktop-Geräten, damit der rechte Randbereich zuverlässiger getroffen werden kann.
 
 Die Inhalte des Control-Panels sind in seitliche Tabs gegliedert:
 
@@ -92,17 +119,21 @@ Die Inhalte des Control-Panels sind in seitliche Tabs gegliedert:
 
 | Aktion | Bedienung |
 |---|---|
-| Control-Panel öffnen | Maus an den rechten Fensterrand bewegen |
-| Control-Panel schließen | Close-Button links neben dem geöffneten Control-Panel klicken |
-| Tab wechseln | Seitlichen Tab links am Control-Panel klicken |
+| Control-Panel öffnen | Maus an den rechten Fensterrand bewegen, rechten Rand antippen oder seitlichen Tab antippen |
+| Control-Panel schließen | Close-Button links neben dem geöffneten Control-Panel klicken/tippen oder `Escape` drücken |
+| Tab wechseln | Seitlichen Tab links am Control-Panel klicken/tippen |
 | Ansicht zurücksetzen | Im Tab „Ansicht“ den Button „Ansicht zurücksetzen“ verwenden |
 | PNG speichern | Im Tab „Darstellung“ den Button „Als PNG speichern“ verwenden |
 
+### Hilfe-Modal
+
+Über den Button „Steuerung“ in der Fußzeile kann ein Hilfe-Modal geöffnet werden. Das Modal beschreibt die wichtigsten Desktop- und Touch-Bedienungen getrennt voneinander.
+
 ### Musikplayer
 
-Der Musikplayer befindet sich im Tab „Audio“. Musikdateien werden nicht mit dem Projekt ausgeliefert und sollten auch nicht ins Repository eingecheckt werden. Stattdessen wählt der Nutzer lokal ein Musikverzeichnis aus.
+Der Musikplayer befindet sich im Tab „Audio“.
 
-Die Dateien bleiben lokal im Browser. Sie werden nicht hochgeladen und nicht im Projekt gespeichert. Die Anwendung erzeugt temporäre Objekt-URLs für die Dauer der Browser-Sitzung.
+Musikdateien werden nicht mit dem Projekt ausgeliefert und sollten auch nicht ins Repository eingecheckt werden. Stattdessen wählt der Nutzer lokal ein Musikverzeichnis aus. Die Dateien bleiben lokal im Browser. Sie werden nicht hochgeladen und nicht im Projekt gespeichert. Die Anwendung erzeugt temporäre Objekt-URLs für die Dauer der Browser-Sitzung.
 
 Unterstützt werden aktuell:
 
@@ -216,14 +247,14 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 
 - `index.html` enthält Seitenstruktur, Canvas, Render-Overlay, Control-Drawer, seitliche Control-Tabs, Help-Modal, Vue-gebundene Controls und die Script-Einbindung.
 - `css/styles.css` bindet die CSS-Module ein.
-- `css/modules/controls.css` enthält das Styling und die Animationen für den Control-Drawer, den Close-Button, die seitlichen Tabs und die Controls im Panel.
+- `css/modules/controls.css` enthält das Styling und die Animationen für den Control-Drawer, den Close-Button, die seitlichen Tabs und die Controls im Panel. Außerdem definiert es Touch-spezifische Trefferflächen und die Initial-Reveal-Animation.
 - `css/modules/modal.css` enthält das Styling des Help-Modals.
-- `img/definition.svg` wird im Header als Formelgrafik eingebunden.
+- `img/definition.svg` wird im Header als Formelgrafik eingebunden. Auf kleinen Displays wird die Header-Grafik ausgeblendet, um Platz für die Bedienoberfläche zu schaffen.
 - `js/dom.js` sammelt zentrale DOM-Referenzen wie Canvas, Context, Wrapper, Render-Overlay und Control-Drawer.
-- `js/settings.js` enthält Berechnungs-, Rendering-, Multithreading-, Backend- und Musik-Einstellungen.
+- `js/settings.js` enthält Berechnungs-, Rendering-, Multithreading-, Backend-, Runtime- und Musik-Einstellungen sowie JSDoc-Typdefinitionen für zentrale Settings-Strukturen.
 - `js/timing.js` enthält die Laufzeitmessung für vollständige Iterationsdaten-Aktualisierungen.
 - `js/palettes.js` definiert Farben und Farbpaletten.
-- `js/iteration-data.js` enthält generische Operationen auf Iterationsdaten, darunter Kopieren von Rechtecken, Dirty-Rect-Ermittlung, Panning- und Resize-Logik.
+- `js/iteration-data.js` enthält generische Operationen auf Iterationsdaten, darunter Kopieren von Rechtecken, Dirty-Rect-Ermittlung, Panning- und Resize-Logik. Die Datei dokumentiert die zentralen Datenstrukturen über JSDoc-Typdefinitionen.
 - `js/core/worker-rpc-client.js` enthält einen Promise-basierten RPC-Client für Worker-Kommunikation mit Request-IDs und Pending-Request-Verwaltung.
 - `js/webgpu/webgpu-worker-runtime.js` enthält wiederverwendbare WebGPU-Worker-Hilfsfunktionen, darunter Kontext- und Pipeline-Initialisierung sowie Fehlerantworten.
 - `js/fractals/fractal-gpu-utils.js` enthält GPU-nahe Hilfsfunktionen, die nicht direkt Mandelbrot-spezifisch sind, zum Beispiel Float32-Splitting und den Aufbau von `IterationData` aus GPU-Arrays.
@@ -232,8 +263,8 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 - `js/fractals/mandelbrot/mandelbrot-webgpu.js` enthält den Main-Thread-Proxy zum Mandelbrot-WebGPU-Worker.
 - `js/fractals/mandelbrot/mandelbrot-webgpu-worker.js` enthält die klassische WebGPU-Compute-Berechnung sowie die WebGPU-Perturbation-Berechnung der Mandelbrot-Iterations- und Escape-Werte.
 - `js/rendering.js` enthält Rendering-Funktionen, den Aufbau von `ImageData` aus Iterationsdaten, Bildausgabe, Render-Overlay, Panning-Vorschau sowie das optionale Overlay für Perturbation-Referenzpunkte.
-- `js/layout.js` behandelt Canvas-Größe, initialen View, Seitenverhältnis, Resize-Logik und Reset der Ansicht.
-- `js/interactions.js` enthält Mausinteraktion, Panning, Zoom-Auswahl, Zoom-Out-Schritte, Mausradsteuerung und das Zeichnen des Auswahlrahmens mit Fadenkreuz.
+- `js/layout.js` behandelt Canvas-Größe, initialen View, Seitenverhältnis, Resize-Logik, Reset der Ansicht und den expliziten Control-Drawer-State für Maus-, Touch- und Tastaturbedienung.
+- `js/interactions.js` enthält Pointer-basierte Interaktionen mit dem Canvas: Desktop-Mausbedienung, Touch-Panning, Touch-Double-Tap, Zwei-Finger-Zoom-In, Auswahlrahmen, Panning-Vorschau, Zoom-Out-Schritte und Resize-Handling.
 - `js/music.js` enthält den lokalen Audio-Player, das Laden von Audio-Dateien aus einem vom Nutzer ausgewählten Verzeichnis, Playlist-Verwaltung, temporäre Objekt-URLs und Player-Funktionen.
 - `js/help.js` steuert das Help-Modal.
 - `js/ui.js` enthält die Vue-App für das Control-Panel und synchronisiert UI-State mit Settings, Backend-Konfiguration, Laufzeitstatistik, Tab-Auswahl und Musikplayer.
@@ -242,9 +273,24 @@ Für die innere Menge stehen mehrere feste Farben zur Verfügung:
 
 ### UI-Struktur
 
-Das Control-Panel bleibt ein einfacher rechter Drawer. Die thematische Gliederung erfolgt über einen Vue-State `activeControlTab`. Die einzelnen Tab-Inhalte werden mit `v-show` ein- und ausgeblendet. Dadurch bleiben die Controls im DOM erhalten und verlieren ihren lokalen Zustand nicht beim Tab-Wechsel.
+Das Control-Panel bleibt ein rechter Drawer. Die thematische Gliederung erfolgt über einen Vue-State `activeControlTab`. Die einzelnen Tab-Inhalte werden mit `v-show` ein- und ausgeblendet. Dadurch bleiben die Controls im DOM erhalten und verlieren ihren lokalen Zustand nicht beim Tab-Wechsel.
 
 Die seitlichen Tabs und der Close-Button sind außerhalb der eigentlichen Panel-Fläche positioniert. Dadurch wirken sie wie Reiter am Rand des Panels und bleiben visuell mit dem Drawer verbunden.
+
+Der sichtbare Zustand des Drawers ist nicht mehr nur ein impliziter CSS-/Hover-Zustand. `layout.js` stellt Funktionen wie `openControlsDrawer()`, `closeControlsDrawer()` und `toggleControlsDrawer()` bereit und verwaltet den Zustand über die Klasse `.open` sowie `aria-expanded`.
+
+### Touch- und Pointer-Interaktionen
+
+Die Canvas-Interaktionen werden über Pointer-Events verarbeitet. Dadurch können Maus- und Touch-Bedienung in einer gemeinsamen Ereignisstruktur behandelt werden.
+
+Wichtige Zustände:
+
+- `pan` speichert eine aktive Verschiebegeste und unterscheidet über eine Bewegungsschwelle zwischen Tap und Drag.
+- `tap` speichert Zeit und Position des letzten Touch-Taps, um Double-Tap für den Zoom-Out zu erkennen.
+- `activePointers` hält die letzten bekannten Canvas-Positionen aktiver Pointer-IDs.
+- `pinch` beschreibt eine aktive Zwei-Finger-Geste und erzeugt während der Bewegung einen Zoom-Auswahlrahmen.
+
+Bei einer Zwei-Finger-Geste wird während der Bewegung nur die Vorschau des Zielbereichs gezeichnet. Die eigentliche Neuberechnung erfolgt erst beim Abschluss der Geste.
 
 ### Musikplayer-Architektur
 
@@ -276,11 +322,13 @@ Die Anwendung trennt drei Ebenen:
    - Die Mandelbrot-Menge wird für den aktuell sichtbaren View berechnet.
    - Ergebnis sind Iterationswerte und Escape-Werte.
    - Die Berechnung kann über CPU-Worker, WebGPU oder WebGPU mit Perturbation erfolgen.
+
 2. **Iterationsdaten**
    - Die Werte werden in einer Matrix gehalten.
    - Die Datenstruktur ist allgemeiner gedacht als die konkrete Mandelbrot-Berechnung.
    - Operationen wie Kopieren, Verschieben und Dirty-Rect-Ermittlung hängen nicht direkt von der Mandelbrot-Formel ab.
    - Mandelbrot-spezifische Metadaten wie Referenzkandidaten werden ergänzend an die fertigen Daten angehängt.
+
 3. **Rendering**
    - Aus den Iterationsdaten wird ein `ImageData`-Objekt erzeugt.
    - Render-Parameter wie Palette, Gamma, Smooth Coloring, logarithmische Skalierung und Paletteninvertierung werden erst beim Bildaufbau angewendet.
@@ -386,14 +434,12 @@ Die CPU-Worker selbst kennen keine Parallelisierungslogik. Sie berechnen nur ein
 Das WebGPU-Backend verwendet einen dauerhaft wiederverwendeten Worker:
 
 ```text
-mandelbrot.js
-  -> mandelbrot-webgpu.js
-       -> mandelbrot-webgpu-worker.js
+mandelbrot.js -> mandelbrot-webgpu.js -> mandelbrot-webgpu-worker.js
 ```
 
-`mandelbrot-webgpu.js` arbeitet als Main-Thread-Proxy. Es verwaltet die Worker-Instanz, Request-IDs und ausstehende Promises.
+`mandelbrot-webgpu.js` arbeitet als Main-Thread-Proxy. Es verwaltet die Worker-Instanz, Request-IDs und ausstehende Promises. `mandelbrot-webgpu-worker.js` initialisiert den WebGPU-Kontext und die Compute-Pipeline.
 
-`mandelbrot-webgpu-worker.js` initialisiert den WebGPU-Kontext und die Compute-Pipeline. Die klassische GPU-Berechnung erzeugt:
+Die klassische GPU-Berechnung erzeugt:
 
 - einen `iterations`-Buffer,
 - einen `escapeValues`-Buffer.
@@ -433,7 +479,9 @@ Der Perturbation-Shader schreibt pro Pixel einen Statuswert. Aus diesen Werten w
 - `nonFiniteCount`: Es sind nicht endliche Werte entstanden.
 - `invalidCount`: Summe aller nicht erfolgreichen Statuswerte.
 
-Harte Fehler wie abgelaufene Referenzorbits oder nicht endliche Werte werden nicht akzeptiert. Glitch-Verdacht durch kleine Orbits oder zu große Delta-Orbits wird nur bis zu konfigurierten Anteilsgrenzen toleriert. Die aktuelle Implementierung korrigiert fehlerhafte Pixel nicht einzeln, sondern verwirft das gesamte Perturbation-Ergebnis für den Kandidaten und versucht einen anderen Referenzpunkt.
+Harte Fehler wie abgelaufene Referenzorbits oder nicht endliche Werte werden nicht akzeptiert. Glitch-Verdacht durch kleine Orbits oder zu große Delta-Orbits wird nur bis zu konfigurierten Anteilsgrenzen toleriert.
+
+Die aktuelle Implementierung korrigiert fehlerhafte Pixel nicht einzeln, sondern verwirft das gesamte Perturbation-Ergebnis für den Kandidaten und versucht einen anderen Referenzpunkt.
 
 #### Referenzpunkte und Diagnose-Overlay
 
@@ -467,9 +515,9 @@ Der zuletzt gemessene Wert wird im Control-Panel in Sekunden mit drei Nachkommas
 
 #### Panning mit Dirty Rects
 
-Beim Verschieben der Ansicht wird während der Mausbewegung zunächst nur das bereits gerenderte Bild verschoben dargestellt. Dadurch fühlt sich das Panning unmittelbar an.
+Beim Verschieben der Ansicht wird während der Maus- oder Touch-Bewegung zunächst nur das bereits gerenderte Bild verschoben dargestellt. Dadurch fühlt sich das Panning unmittelbar an.
 
-Beim Loslassen der Maustaste passiert Folgendes:
+Beim Loslassen beziehungsweise Beenden der Geste passiert Folgendes:
 
 1. Der mathematische View wird um die Pixelverschiebung in Koordinaten verschoben.
 2. Die vorhandene Iterationsmatrix wird in eine neue Matrix kopiert.
@@ -536,13 +584,15 @@ Die Architektur ist darauf ausgelegt, dass die aufrufenden Schichten weiterhin m
 
 #### Warum WebGPU?
 
-Die Berechnung einzelner Mandelbrot-Pixel ist hochgradig parallelisierbar. WebGPU erlaubt es, viele Pixel gleichzeitig über einen Compute-Shader zu berechnen. In der aktuellen Umsetzung werden sowohl die Iterationswerte als auch die Escape-Werte auf der GPU berechnet und anschließend als Typed Arrays zurück in die bestehende `IterationData`-Pipeline übertragen.
+Die Berechnung einzelner Mandelbrot-Pixel ist hochgradig parallelisierbar. WebGPU erlaubt es, viele Pixel gleichzeitig über einen Compute-Shader zu berechnen.
+
+In der aktuellen Umsetzung werden sowohl die Iterationswerte als auch die Escape-Werte auf der GPU berechnet und anschließend als Typed Arrays zurück in die bestehende `IterationData`-Pipeline übertragen.
 
 #### Warum Perturbation?
 
-Der klassische WebGPU-Shader arbeitet mit `f32`. Das ist für viele normale Ansichten schnell und ausreichend genau, stößt bei tiefen Zoomstufen aber an Präzisionsgrenzen.
+Der klassische WebGPU-Shader arbeitet mit `f32`. Das ist für viele normale Ansichten schnell und ausreichend genau, stößt bei tiefen Zoomstufen aber an Präzisionsgrenzen. Der Perturbation-Ansatz nutzt einen Referenzorbit und berechnet Pixel relativ zu diesem Orbit.
 
-Der Perturbation-Ansatz nutzt einen Referenzorbit und berechnet Pixel relativ zu diesem Orbit. Dadurch können tiefere Ansichten experimentell weiterhin über WebGPU berechnet werden, ohne im Shader echte Double-Precision-Arithmetik vorauszusetzen.
+Dadurch können tiefere Ansichten experimentell weiterhin über WebGPU berechnet werden, ohne im Shader echte Double-Precision-Arithmetik vorauszusetzen.
 
 #### Warum CPU-Fallback?
 
@@ -566,6 +616,18 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Vergrößerung des Browserfensters,
 - Layoutänderungen, bei denen bereits sichtbare Bereiche erhalten bleiben.
 
+#### Warum Pointer-Events?
+
+Die Bedienung soll auf Desktop, Tablet und Smartphone möglichst konsistent funktionieren. Pointer-Events erlauben eine gemeinsame Behandlung von Maus- und Touch-Eingaben, ohne die Canvas-Logik in getrennte Maus- und Touch-Implementierungen aufzuteilen.
+
+Für Touch-Gesten werden Pointer-IDs verwendet. Dadurch kann die Anwendung erkennen, ob ein Finger oder zwei Finger aktiv sind, und zwischen Panning, Double-Tap und Pinch-Zoom unterscheiden.
+
+#### Warum ein expliziter Drawer-State?
+
+Ein reiner CSS-/Hover-Ansatz ist auf Touch-Geräten unzuverlässig, weil dort kein stabiles Hover-Modell existiert. Deshalb wird der Drawer-Zustand über JavaScript gesetzt und über `.open` dargestellt.
+
+CSS bleibt für Darstellung, Animation und responsive Trefferflächen zuständig. JavaScript entscheidet, wann das Panel geöffnet oder geschlossen ist.
+
 ### Grenzen der aktuellen Lösung
 
 - Die CPU-Worker werden aktuell pro Task über die bestehende Worker-Aufruffunktion erzeugt und nach Abschluss beendet; ein dauerhaft wiederverwendeter CPU-Worker-Pool wäre ein möglicher nächster Optimierungsschritt.
@@ -576,7 +638,7 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Die Glitch-Erkennung bewertet aktuell das gesamte Perturbation-Ergebnis eines Referenzkandidaten; einzelne fehlerhafte Pixel werden noch nicht lokal nachberechnet oder korrigiert.
 - Referenzorbits werden aktuell im Hauptthread berechnet.
 - Verkleinerungen des Canvas werden vollständig neu berechnet.
-- Es gibt noch keine Touch- oder Tastatursteuerung.
+- Die Touch-Bedienung deckt Panning, Double-Tap-Zoom-Out, Pinch-Zoom-In und Drawer-Öffnung ab; Tastaturbedienung ist aktuell im Wesentlichen auf das Schließen des Drawers per `Escape` beschränkt.
 - Es gibt noch keine Persistenz für Bookmarks, Presets oder Zoom-Historie.
 - Die Multithreading-Parameter sind manuell einstellbar; eine automatische Wahl anhand von `navigator.hardwareConcurrency` wäre denkbar.
 
@@ -599,6 +661,8 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Strukturierung eines einfachen JavaScript-Projekts in kleinere Module.
 - Umgang mit interaktivem UI-State.
 - Responsive Layouts ohne Verzerrung mathematischer Koordinaten.
+- Touch- und Pointer-Event-Verarbeitung für Canvas-Interaktionen.
+- Explizite UI-Zustände für mobile Drawer-Bedienung.
 - Experimentieren mit Farbpaletten, Smooth Coloring und logarithmischer Skalierung.
 - Vorbereitung einer generischeren Fraktal-Pipeline, zum Beispiel für spätere Julia-Mengen.
 
@@ -614,7 +678,8 @@ Dirty Rects reduzieren die Arbeit auf die Bereiche, für die noch keine gültige
 - Referenzorbit-Berechnung in einen Worker auslagern.
 - Double-Single-Arithmetik oder weitere Perturbation-Varianten für tiefere GPU-Zoomstufen prüfen.
 - Robustere Merge-Logik für beliebige Teilrechtecke ergänzen.
-- Touch- und Tastaturbedienung verbessern.
+- Touch-Bedienung weiter verfeinern, insbesondere das Verhalten bei Pinch-Abbruch und Wechsel zwischen Pan- und Pinch-Gesten.
+- Tastaturbedienung erweitern, zum Beispiel für Zoom, Panning oder Fokussteuerung im Control-Panel.
 - Presets, Bookmarks oder eine Zoom-History einbauen.
 - Frei editierbare Palettenparameter ergänzen.
 - Export-Metadaten ergänzen, zum Beispiel View-Koordinaten oder Rendering-Parameter.

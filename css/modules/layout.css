@@ -14,6 +14,12 @@
   filter: invert(1);
 }
 
+@media (max-width: 600px) {
+    .header-img {
+        display: none;
+    }
+}
+
 .footer {
     background: #333;
     color: whitesmoke;

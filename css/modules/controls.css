@@ -1,6 +1,17 @@
 /*---------------------------------------------------------------*/
 /* Control Panel                                                 */
 /*---------------------------------------------------------------*/
+
+button,
+select,
+input,
+label,
+.controls,
+.controls-drawer,
+.control-tab-button {
+  touch-action: manipulation;
+}
+
 .controls {
     background: #e9e9e9;
 
@@ -36,6 +47,11 @@
     }
 }
 
+/*
+ * Der Drawer selbst bildet die Trefferfläche am rechten Rand.
+ * Die sichtbare Panel-Fläche steckt in .controls und wird per transform
+ * ein-/ausgefahren. .open ist der einzige dauerhafte Sichtbarkeitszustand.
+ */
 .controls-drawer {
     position: absolute;
     top: 0;
@@ -71,6 +87,32 @@
 .controls-content {
   height: 100%;
   overflow-y: auto;
+}
+
+/*
+ * Auf Touch-Geräten ist die geschlossene Hit-Area größer als auf Desktop,
+ * damit der Randbereich zuverlässig getroffen werden kann.
+ */
+@media (pointer: coarse), (hover: none) {
+  .controls-drawer {
+    width: 44px;
+  }
+
+  .controls-drawer.open {
+    width: min(100vw, 332px);
+  }
+
+  .controls {
+    width: min(300px, calc(100vw - 44px));
+  }
+
+  .controls-close-button {
+    right: min(300px, calc(100vw - 44px));
+  }
+
+  .vertical-control-tabs {
+    right: min(300px, calc(100vw - 44px));
+  }
 }
 
 /* --------------------------------------------------------------*/
@@ -202,6 +244,12 @@
     100% {
         transform: translateX(332px);
     }
+}
+
+.controls-drawer.initial-reveal-done .controls,
+.controls-drawer.initial-reveal-done .controls-close-button,
+.controls-drawer.initial-reveal-done .vertical-control-tabs {
+  animation: none;
 }
 
 /*---------------------------------------------------------------*/
