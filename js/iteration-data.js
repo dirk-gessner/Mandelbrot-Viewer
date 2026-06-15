@@ -130,6 +130,14 @@ let iterationData = null;
  * @property {number} height    - (integer) Höhe des Kopierbereichs.
  */
 
+/**
+ * Berechnetes Ergebnis für ein Teilrechteck.
+ *
+ * @typedef {Object} IterationRectResult
+ * @property {PixelRect} rect - Berechneter Bereich in Zielkoordinaten.
+ * @property {IterationData} iterationData - Daten für genau diesen Bereich.
+ */
+
 // -----------------------------------------------------------------------------
 // 
 // -----------------------------------------------------------------------------
@@ -301,11 +309,11 @@ function getDirtyPanRects(
  * Berechnet Iterationsdaten für einen rechteckigen Pixelbereich.
  *
  * @callback ComputeIterationRect
- * @param {PixelRect} rect - Zu berechnender Pixelbereich.
- * @param {number} imageWidth - (integer) Breite der vollständigen Zielmatrix.
- * @param {number} imageHeight - (integer) Höhe der vollständigen Zielmatrix.
- * @param {ComputationSettings} computationSettings - Einstellungen für die Fraktalberechnung.
- * @returns {Promise<IterationData>} Berechnete Iterationsdaten für `rect`.
+ * @param {PixelRect} rect                                  - zu berechnender Pixelbereich.
+ * @param {number} imageWidth                               - (integer) Breite der vollständigen Zielmatrix.
+ * @param {number} imageHeight                              - (integer) Höhe der vollständigen Zielmatrix.
+ * @param {ComputationSettings} computationSettings         - Einstellungen für die Fraktalberechnung.
+ * @returns {Promise<IterationData|IterationRectResult>}    - Berechnete Iterationsdaten für `rect`.
  */
 
 /**

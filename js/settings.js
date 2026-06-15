@@ -127,9 +127,9 @@ const multiThreadSettings = {
  * welche Implementierungsstrategie verwendet werden darf.
  *
  * @typedef {Object} MandelbrotBackendSettings
- * @property {boolean} useWebGpu - Erlaubt die Berechnung ueber WebGPU.
- * @property {boolean} usePerturbation - Erlaubt den Perturbation-Shader fuer tiefe Zoomstufen.
- * @property {boolean} useCpu - Erlaubt Rueckfall auf CPU, wenn GPU/Perturbation nicht geeignet ist.
+ * @property {boolean} useWebGpu        - Erlaubt die Berechnung ueber WebGPU.
+ * @property {boolean} usePerturbation  - Erlaubt den Perturbation-Shader fuer tiefe Zoomstufen.
+ * @property {boolean} useCpu           - Erlaubt Rueckfall auf CPU, wenn GPU/Perturbation nicht geeignet ist.
  */
 
 /**
@@ -162,19 +162,22 @@ let inputTimer = 0;
 // -----------------------------------------------------------------------------
 
 /**
+ * Einstellungen und Daten für den eingebauten Musik-Player.
+ * 
  * @typedef {Object} MusicTrack
- * @property {string} title - Anzeigename.
- * @property {string} src - Blob-URL oder regulärer URL-Pfad.
- * @property {string} fileName - Ursprünglicher Dateiname.
+ * @property {string} title     - Anzeigename.
+ * @property {string} src       - Blob-URL oder regulärer URL-Pfad.
+ * @property {string} fileName  - Ursprünglicher Dateiname.
  */
 
 /**
- * @typedef {Object} MusicSettings
- * @property {MusicTrack[]} tracks
- * @property {number} selectedTrackIndex
- * @property {number} volume
- * @property {boolean} enabled
- * @property {boolean} loop
+ * Einstellungen für den eingebauten Musik-Player.
+ * @typedef {Object} MusicSettings 
+ * @property {MusicTrack[]} tracks          - Liste der verfügbaren Musikstücke.
+ * @property {number} selectedTrackIndex    - Index des aktuell ausgewählten Musikstücks.
+ * @property {number} volume                - Lautstärke (0.0 bis 1.0).
+ * @property {boolean} enabled              - Musik-Player aktiviert/deaktiviert.
+ * @property {boolean} loop                 - Wiederholung aktiviert/deaktiviert.
  */
 
 /**
@@ -183,9 +186,9 @@ let inputTimer = 0;
  * @type {MusicSettings}
  */
 const musicSettings = {
-  tracks: [],
-  selectedTrackIndex: -1,
-  volume: 0.25,
-  enabled: false,
-  loop: true,
+    tracks: [],
+    selectedTrackIndex: -1,
+    volume: 0.25,
+    enabled: false,
+    loop: true,
 };

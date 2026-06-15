@@ -47,6 +47,11 @@ label,
     }
 }
 
+/*
+ * Der Drawer selbst bildet die Trefferfläche am rechten Rand.
+ * Die sichtbare Panel-Fläche steckt in .controls und wird per transform
+ * ein-/ausgefahren. .open ist der einzige dauerhafte Sichtbarkeitszustand.
+ */
 .controls-drawer {
     position: absolute;
     top: 0;
@@ -84,6 +89,10 @@ label,
   overflow-y: auto;
 }
 
+/*
+ * Auf Touch-Geräten ist die geschlossene Hit-Area größer als auf Desktop,
+ * damit der Randbereich zuverlässig getroffen werden kann.
+ */
 @media (pointer: coarse), (hover: none) {
   .controls-drawer {
     width: 44px;

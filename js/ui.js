@@ -61,6 +61,15 @@ const app = Vue.createApp({
     
     methods: {
 
+        /**
+         * Wechselt den aktiven Control-Tab und öffnet den Drawer explizit.
+         *
+         * Wichtig für Touch-Geräte: Das Öffnen hängt dadurch nicht von Hover-
+         * oder CSS-Zuständen ab.
+         *
+         * @param {'view'|'calculation'|'rendering'|'audio'} tabKey - Schlüssel des Ziel-Tabs.
+         * @returns {void}
+         */
         setControlTab(tabKey) {
             this.activeControlTab = tabKey;
             
@@ -69,6 +78,12 @@ const app = Vue.createApp({
             }            
         },
 
+        /**
+         * Synchronisiert die angezeigten View- und Laufzeitinformationen aus den
+         * globalen Settings in den Vue-State.
+         *
+         * @returns {void}
+         */
         updateInfo() {
             const { view, initialView } = computationSettings;
             this.viewInfo.minX = view.minX;
@@ -80,6 +95,20 @@ const app = Vue.createApp({
             this.lastComputationBackend = runtimeStats.lastComputationBackend;
         },
 
+        scheduleRecompute(delayMs = 250) {
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {
+                computeRenderAndDrawScene();
+            }, delayMs);
+        },
+
+        scheduleRender(delayMs = 250) {
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => {
+                renderAndDrawScene();
+            }, delayMs);
+        },
+
         updateMaxIterations() {
             const limits = inputConstraints.iterationLimit;
             computationSettings.iterationLimit = Math.max(
@@ -88,8 +117,7 @@ const app = Vue.createApp({
             );
             this.iterationLimitInput = computationSettings.iterationLimit;
             this.updateInfo();
-            clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
+            this.scheduleRecompute(); 
         }, 
 
         updateEscapeRadius() {
@@ -100,8 +128,7 @@ const app = Vue.createApp({
             this.escapeRadiusInput = computationSettings.escapeRadius;
 
             this.updateInfo();
-            clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
+            this.scheduleRecompute();
         },
 
         updateWorkerCount() {
@@ -110,8 +137,7 @@ const app = Vue.createApp({
                 limits.min, 
                 Math.min(Number(this.workerCountInput), limits.max));
             this.workerCountInput = multiThreadSettings.workerCount;
-            clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
+            this.scheduleRecompute();
         },
 
         updateTasksPerWorker() {
@@ -120,9 +146,7 @@ const app = Vue.createApp({
                 limits.min, 
                 Math.min(Number(this.tasksPerWorkerInput), limits.max));
             this.tasksPerWorkerInput = multiThreadSettings.tasksPerWorker;
-
-            clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
+            this.scheduleRecompute();
         },
 
         updateBackendMode() {
@@ -142,26 +166,22 @@ const app = Vue.createApp({
                 renderSettings.showPerturbationReferences = false;
             }; 
 
-            clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {computeRenderAndDrawScene()}, 250); 
+            this.scheduleRecompute();
         },
 
         updateGamma() {
             renderSettings.gamma = this.gamma;
-            clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {renderAndDrawScene()}, 250); 
+            this.scheduleRender();
         },
 
         updateColorscalingCorrection() {
             renderSettings.colorScalingCorrection = this.colorScalingCorrection;
-            clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {renderAndDrawScene()}, 250); 
+            this.scheduleRender();
         },
         
         updateLogStrength() {
             renderSettings.logStrength = this.logStrength;
-            clearTimeout(this.inputTimer);
-            this.inputTimer = setTimeout(() => {renderAndDrawScene()}, 250); 
+            this.scheduleRender();
         },
 
         updateRenderOptions() {

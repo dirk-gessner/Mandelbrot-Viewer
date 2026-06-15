@@ -6,9 +6,18 @@
 // Änderungen der View
 // -----------------------------------------------------------------------------
 
-// Zoom-Out-Schritt: Vergrößert den aktuellen View 
-// schrittweise zurück zum initialen View
-// -----------------------------------------------------------------------------
+/**
+ * Vergrößert den aktuellen View schrittweise zurück in Richtung initialView.
+ *
+ * Wird für Desktop-Doppelklick und Touch-Double-Tap verwendet.
+ * Sobald der Zielbereich erreicht oder überschritten würde, wird exakt
+ * `initialView` zurückgegeben.
+ *
+ * @param {View} view - Aktueller Ausschnitt.
+ * @param {View} initialView - Ursprünglicher Startausschnitt.
+ * @param {number} [zoomOutFactor=2.0] - Faktor zur Vergrößerung des Ausschnitts.
+ * @returns {View} Neuer Ausschnitt.
+ */
 function zoomOutView(
     view, 
     initialView, 
@@ -27,9 +36,6 @@ function zoomOutView(
     const nextWidth = Math.min(currentWidth * zoomOutFactor, targetWidth);
     const nextHeight = Math.min(currentHeight * zoomOutFactor, targetHeight);
 
-    const sizeProgress =
-        (nextWidth - currentWidth) / (targetWidth - currentWidth || 1);
-
     if (nextWidth >= targetWidth || nextHeight >= targetHeight) {
         return {
             minX: initialView.minX,
@@ -40,7 +46,6 @@ function zoomOutView(
     }
 
     return {
-        minX : centerX - nextWidth  / 2,
         minX : centerX - nextWidth  / 2,
         maxX : centerX + nextWidth  / 2,
         minY : centerY - nextHeight / 2,
@@ -107,14 +112,23 @@ const pan = {
     dy: 0,
 };
 
+// pan.moved unterscheidet Tap von Drag. Erst ab panDragThreshold wird eine
+// Verschiebung als echte Pan-Geste behandelt.
 const panDragThreshold = 4;
 
 // -----------------------------------------------------------------------------
 // Event-Listener für Mausinteraktionen
 // -----------------------------------------------------------------------------
 
-// liefert die Koordinaten relativ zum Canvas, um die Mausposition
-// korrekt zu interpretieren
+/**
+ * Rechnet Pointer-Koordinaten aus CSS-Pixeln in Canvas-Pixel um.
+ *
+ * Das ist notwendig, weil die interne Canvas-Auflösung von der dargestellten
+ * CSS-Größe abweichen kann.
+ *
+ * @param {PointerEvent|MouseEvent|WheelEvent} event - Browser-Event mit clientX/clientY.
+ * @returns {{x: number, y: number}} Position relativ zur Canvas-Bitmap.
+ */
 function getCanvasCoords(event) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -134,6 +148,15 @@ const tap = {
   maxDistancePx: 24,
 };
 
+/**
+ * Prüft, ob eine Touch-Position als zweiter Tap eines Double-Taps gilt.
+ *
+ * Die Funktion aktualisiert den gespeicherten Tap-Zustand immer, auch wenn
+ * kein Double-Tap erkannt wurde.
+ *
+ * @param {{x: number, y: number}} pos - Aktuelle Touch-Position in Canvas-Pixeln.
+ * @returns {boolean} True, wenn Zeit- und Distanzschwelle erfüllt sind.
+ */
 function isDoubleTap(pos) {
   const now = performance.now();
   const dt = now - tap.lastTime;
@@ -148,16 +171,19 @@ function isDoubleTap(pos) {
   return result;
 }
 
+// Touch-Interaktionen verwenden Pointer-IDs, weil mehrere Finger parallel
+// aktiv sein können. activePointers enthält immer die letzte bekannte
+// Canvas-Position je Pointer.
 const activePointers = new Map();
 
 let pinchFrameRequested = false;
 
+// Pinch-Zoom wird in zwei Phasen behandelt:
+// 1. Während der Bewegung wird nur ein Auswahlrahmen gezeichnet.
+// 2. Beim Loslassen wird daraus ein neuer View berechnet.
 const pinch = {
     active: false,
     startDistance: 0,
-    startCenterX: 0,
-    startCenterY: 0,
-    startView: null,
 
     lastFrameCenterX: 0,
     lastFrameCenterY: 0,
@@ -189,34 +215,6 @@ function cloneView(view) {
     };
 }
 
-function getViewFromPinch(startView, startCenter, currentCenter, startDistance, currentDistance, imageWidth, imageHeight) {
-
-    if (currentDistance <= startDistance) {
-        return null;
-    }
-
-    const zoomFactor = startDistance / currentDistance;
-
-    const startViewWidth = startView.maxX - startView.minX;
-    const startViewHeight = startView.maxY - startView.minY;
-
-    const newViewWidth = startViewWidth * zoomFactor;
-    const newViewHeight = startViewHeight * zoomFactor;
-
-    const focalX = startView.minX + (startCenter.x / imageWidth) * startViewWidth;
-    const focalY = startView.minY + (startCenter.y / imageHeight) * startViewHeight;
-
-    const newMinX = focalX - (currentCenter.x / imageWidth) * newViewWidth;
-    const newMinY = focalY - (currentCenter.y / imageHeight) * newViewHeight;
-
-    return {
-        minX: newMinX,
-        maxX: newMinX + newViewWidth,
-        minY: newMinY,
-        maxY: newMinY + newViewHeight,
-    };
-}
-
 function startPinch() {
     const pointers = getActivePointerList();
 
@@ -228,9 +226,6 @@ function startPinch() {
 
     pinch.active = true;
     pinch.startDistance = getPointerDistance(pointers[0], pointers[1]);
-    pinch.startCenterX = center.x;
-    pinch.startCenterY = center.y;
-    pinch.startView = cloneView(computationSettings.view);
 
     pan.active = false;
     pan.moved = false;
@@ -245,9 +240,6 @@ function finishPinch() {
         return false;
     }
 
-    const currentDistance = getPointerDistance(pointers[0], pointers[1]);
-    const currentCenter = getPointerCenter(pointers[0], pointers[1]);
-
     const newView = getViewFromSelection(
         computationSettings.view,
         selection,
@@ -257,7 +249,6 @@ function finishPinch() {
 
     selection.active = false;
     pinch.active = false;
-    pinch.startView = null;
     pinchFrameRequested = false;
 
     if (!newView) {
@@ -270,6 +261,14 @@ function finishPinch() {
     return true;
 }
 
+/**
+ * Aktualisiert den sichtbaren Zoom-Auswahlrahmen während einer Pinch-Geste.
+ *
+ * Die eigentliche Neuberechnung des Fraktals erfolgt erst beim Abschluss
+ * der Geste; während der Bewegung wird nur die Vorschau gezeichnet.
+ *
+ * @returns {void}
+ */
 function updatePinchSelectionFrame() {
     if (!pinch.active || activePointers.size !== 2) {
         selection.active = false;
@@ -345,6 +344,7 @@ function handleCanvasPointerDown(event) {
 
     canvas.setPointerCapture(event.pointerId);
 
+    // Touch: Startet die Pinch-Geste oder das Verschieben des Views
     if (event.pointerType === 'touch') {
 
         const pos = getCanvasCoords(event);
@@ -368,10 +368,8 @@ function handleCanvasPointerDown(event) {
         return;
     }
 
-    if (
-        (event.pointerType === 'mouse' && event.button === 0) ||
-         event.pointerType === 'touch'
-    ) {    
+    // linke Maustaste: Startet das Verschieben des Views
+    else if (event.pointerType === 'mouse' && event.button === 0) {    
         const pos = getCanvasCoords(event);
 
         pan.active = true;
@@ -381,6 +379,7 @@ function handleCanvasPointerDown(event) {
         pan.dx = 0;
         pan.dy = 0;
     } 
+
     // rechte Maustaste: Startet die Auswahl eines neuen Bereichs
     else if (event.pointerType === 'mouse' && event.button === 2) {
 
@@ -393,6 +392,7 @@ function handleCanvasPointerDown(event) {
         selection.width   = width * 0.25;
         selection.height  = height * 0.25;
     }
+
     drawScene();
 };
 
@@ -534,7 +534,6 @@ function handleCanvasPointerCancel(event) {
 
     if (activePointers.size === 0) {
         pinch.active = false;
-        pinch.startView = null;
     }
 
     drawScene();
