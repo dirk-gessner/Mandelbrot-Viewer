@@ -217,7 +217,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   const MANDELBROT_ITERATION_SENTINEL: u32 = 0xffffffffu;
   const GLITCH_THRESHOLD: f32 = 1.0e-6;
-  const DELTA_TOO_LARGE_THRESHOLD: f32 = 1.0e6;
+  const DELTA_TOO_LARGE_THRESHOLD: f32 = 1.0e4;
   const MIN_REFERENCE_MAG2_FOR_DELTA_TEST: f32 = 1.0e-12;
 
   let localX = globalId.x;
